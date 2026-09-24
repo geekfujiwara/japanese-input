@@ -48,6 +48,7 @@
 | Windows x64（`windows-latest`） | ビルド（x64 / x86）、単体、.NET、TIP結合 |
 | macOS arm64（`macos-latest`） | ビルド（Universal 2）、単体、XCTest |
 | macOS x86_64（`macos-15-intel`） | Universal 2のx86_64部分での単体 |
+| Linux x64（`ubuntu-latest`） | Coreのファジング（clang + libFuzzer + ASan/UBSan。CoreはOSに依存しないためLinuxで行う） |
 
 - ランナー名はGitHubのドキュメント（GitHub-hosted runners reference、2026-09-24確認）による。公開リポジトリでは無料で使える
 - ワークフローは [.github/workflows/ci.yml](../.github/workflows/ci.yml)。PRと `main` への反映で実行する
@@ -250,7 +251,7 @@
 
 | ID | 対象 | 内容 | 期待結果 |
 | --- | --- | --- | --- |
-| F-01 | ローマ字変換 | 任意のキー列（最大1万キー） | クラッシュしない。メモリエラーがない（ASan） |
+| F-01 | ローマ字変換 | 任意のキー列（最大1万キー）。PRごとに60秒、毎晩は長時間実行する。固定の乱数種による1万キーの単体テストも全環境で実行する | クラッシュしない。メモリエラーがない（ASan） |
 | F-02 | 辞書の読み込み | 壊れた・切り詰めた・巨大な辞書ファイル | 読み込みを拒否し、クラッシュしない |
 | F-03 | IPCメッセージ | 不正な長さ、不正な形式、上限を超えるサイズ | 接続を切り、サーバーは動き続ける |
 | F-04 | ユーザー辞書・設定の取り込み | 不正なファイル | 取り込みを拒否し、既存データを壊さない |
