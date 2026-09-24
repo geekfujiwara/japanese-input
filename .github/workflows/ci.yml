@@ -18,16 +18,20 @@ jobs:
     runs-on: ${{ matrix.runner }}
     env:
       ASTELIO_TIP_INTEGRATION: "1"
+      ASTELIO_TIP_REQUIRE_FOCUS: ${{ matrix.require_focus }}
     strategy:
       fail-fast: false
       matrix:
         include:
           - runner: windows-11-arm
             preset: windows-arm64
+            require_focus: "0"
           - runner: windows-latest
             preset: windows-x64
+            require_focus: "1"
           - runner: windows-latest
             preset: windows-x86
+            require_focus: "1"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:

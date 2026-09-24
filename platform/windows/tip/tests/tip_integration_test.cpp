@@ -309,7 +309,9 @@ protected:
         BOOL thread_focus = FALSE;
         ASSERT_HRESULT_SUCCEEDED(thread_mgr_->IsThreadFocus(&thread_focus));
         if (!thread_focus) {
-            // Some CI machines (the Windows ARM64 runner) refuse foreground to test windows; TSF then routes no keys.
+            // CI requires focus on x64/x86; the Windows ARM64 runner refuses foreground to test windows.
+            ASSERT_FALSE(EnvironmentFlag("ASTELIO_TIP_REQUIRE_FOCUS"))
+                << "The OS did not give this thread keyboard focus (foreground window denied)";
             GTEST_SKIP() << "The OS did not give this thread keyboard focus (foreground window denied)";
         }
     }
@@ -353,7 +355,17 @@ protected:
             return nullptr;
         }
         ShowWindow(window, SW_SHOW);
-        SetForegroundWindow(window);
+        // Windows only lets a process take the foreground right after input, so tap Alt before each attempt.
+        for (int attempt = 0; attempt < 20 && GetForegroundWindow() != window; ++attempt) {
+            INPUT alt[2] = {};
+            alt[0].type = alt[1].type = INPUT_KEYBOARD;
+            alt[0].ki.wVk = alt[1].ki.wVk = VK_MENU;
+            alt[1].ki.dwFlags = KEYEVENTF_KEYUP;
+            SendInput(2, alt, sizeof(INPUT));
+            SetForegroundWindow(window);
+            PumpMessages();
+            Sleep(50);
+        }
         SetActiveWindow(window);
         SetFocus(window);
         PumpMessages();
