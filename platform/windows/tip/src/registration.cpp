@@ -100,12 +100,12 @@ HRESULT RegisterProfile()
 
 HRESULT UnregisterProfile()
 {
-    Microsoft::WRL::ComPtr<ITfInputProcessorProfileMgr> profiles;
+    Microsoft::WRL::ComPtr<ITfInputProcessorProfiles> profiles;
     HRESULT hr = CoCreateInstance(CLSID_TF_InputProcessorProfiles, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&profiles));
     if (FAILED(hr)) {
         return hr;
     }
-    return profiles->UnregisterProfile(kTextServiceClsid, kJapaneseLangId, kJapaneseProfileGuid, 0);
+    return profiles->Unregister(kTextServiceClsid);
 }
 
 HRESULT RegisterCategories()

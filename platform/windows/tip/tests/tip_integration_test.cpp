@@ -166,7 +166,8 @@ TEST(TipRegistration, WritesComServerAndJapaneseProfileAndRemovesThem)
 
     ASSERT_HRESULT_SUCCEEDED(tip.Unregister());
     EXPECT_FALSE(KeyExists(HKEY_CLASSES_ROOT, kClsidKey));
-    EXPECT_FALSE(KeyExists(HKEY_LOCAL_MACHINE, kTipKey + L"\\LanguageProfile\\0x00000411"));
+    EXPECT_FALSE(KeyExists(HKEY_LOCAL_MACHINE,
+                           kTipKey + L"\\LanguageProfile\\0x00000411\\" + GuidString(astelio::tip::kJapaneseProfileGuid)));
 }
 
 TEST(TipActivation, ActivateAdvisesAndDeactivateRemovesTheKeyEventSink)
@@ -187,21 +188,28 @@ TEST(TipActivation, ActivateAdvisesAndDeactivateRemovesTheKeyEventSink)
     ComPtr<ITfKeystrokeMgr> keystrokes;
     ASSERT_HRESULT_SUCCEEDED(thread_mgr.As(&keystrokes));
 
+    // TSF only accepts key event sinks from client ids issued to a text service.
+    ComPtr<ITfClientId> client_ids;
+    ASSERT_HRESULT_SUCCEEDED(thread_mgr.As(&client_ids));
+    TfClientId tip_id = TF_CLIENTID_NULL;
+    ASSERT_HRESULT_SUCCEEDED(client_ids->GetClientId(astelio::tip::kTextServiceClsid, &tip_id));
+
     ComPtr<ITfTextInputProcessorEx> service;
     ASSERT_HRESULT_SUCCEEDED(CoCreateInstance(astelio::tip::kTextServiceClsid, nullptr, CLSCTX_INPROC_SERVER,
                                               IID_PPV_ARGS(&service)));
     ComPtr<ITfKeyEventSink> service_sink;
     ASSERT_HRESULT_SUCCEEDED(service.As(&service_sink));
 
-    ASSERT_HRESULT_SUCCEEDED(service->ActivateEx(thread_mgr.Get(), client_id, 0));
+    ASSERT_HRESULT_SUCCEEDED(service->ActivateEx(thread_mgr.Get(), tip_id, 0));
     // The client id already owns a key event sink, so a second one is refused.
-    EXPECT_EQ(keystrokes->AdviseKeyEventSink(client_id, service_sink.Get(), TRUE), CONNECT_E_ADVISELIMIT);
+    EXPECT_EQ(keystrokes->AdviseKeyEventSink(tip_id, service_sink.Get(), TRUE), CONNECT_E_ADVISELIMIT);
 
     ASSERT_HRESULT_SUCCEEDED(service->Deactivate());
-    EXPECT_EQ(keystrokes->UnadviseKeyEventSink(client_id), CONNECT_E_NOCONNECTION);
+    EXPECT_EQ(keystrokes->UnadviseKeyEventSink(tip_id), CONNECT_E_NOCONNECTION);
 
     service_sink.Reset();
     service.Reset();
+    client_ids.Reset();
     keystrokes.Reset();
     EXPECT_HRESULT_SUCCEEDED(thread_mgr->Deactivate());
 }
