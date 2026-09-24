@@ -292,7 +292,14 @@ protected:
         ASSERT_HRESULT_SUCCEEDED(
             document_->CreateContext(client_id, 0, static_cast<ITextStoreACP*>(store_.Get()), &context_, &cookie));
         ASSERT_HRESULT_SUCCEEDED(document_->Push(context_.Get()));
+
+        // TSF sends keys only to a thread that has keyboard focus, so the document gets a real focused window.
+        window_ = CreateFocusedWindow();
+        ASSERT_NE(window_, nullptr);
+        ComPtr<ITfDocumentMgr> previous;
+        ASSERT_HRESULT_SUCCEEDED(thread_mgr_->AssociateFocus(window_, document_.Get(), &previous));
         ASSERT_HRESULT_SUCCEEDED(thread_mgr_->SetFocus(document_.Get()));
+        PumpMessages();
 
         ASSERT_HRESULT_SUCCEEDED(profiles_->ActivateProfile(TF_PROFILETYPE_INPUTPROCESSOR, language_,
                                                             astelio::tip::kTextServiceClsid, kTestProfileGuid,
@@ -313,12 +320,46 @@ protected:
             thread_mgr_->Deactivate();
         }
         thread_mgr_.Reset();
+        if (window_ != nullptr) {
+            DestroyWindow(window_);
+            window_ = nullptr;
+        }
         if (profile_registered_) {
             profiles_->UnregisterProfile(astelio::tip::kTextServiceClsid, language_, kTestProfileGuid, 0);
         }
         profiles_.Reset();
         store_.Reset();
         tip_.reset();
+    }
+
+    static HWND CreateFocusedWindow()
+    {
+        const HINSTANCE instance = GetModuleHandleW(nullptr);
+        WNDCLASSW window_class{};
+        window_class.lpfnWndProc = DefWindowProcW;
+        window_class.hInstance = instance;
+        window_class.lpszClassName = L"AstelioTipTestWindow";
+        RegisterClassW(&window_class);
+        HWND window = CreateWindowExW(WS_EX_TOPMOST, window_class.lpszClassName, L"Astelio TIP test",
+                                      WS_OVERLAPPEDWINDOW, 0, 0, 200, 100, nullptr, nullptr, instance, nullptr);
+        if (window == nullptr) {
+            return nullptr;
+        }
+        ShowWindow(window, SW_SHOW);
+        SetForegroundWindow(window);
+        SetActiveWindow(window);
+        SetFocus(window);
+        PumpMessages();
+        return window;
+    }
+
+    static void PumpMessages()
+    {
+        MSG message{};
+        while (PeekMessageW(&message, nullptr, 0, 0, PM_REMOVE)) {
+            TranslateMessage(&message);
+            DispatchMessageW(&message);
+        }
     }
 
     static void SetModifierState(bool shift, bool control)
@@ -382,6 +423,7 @@ protected:
     bool profile_registered_ = false;
     ComPtr<ITfThreadMgr> thread_mgr_;
     bool thread_mgr_active_ = false;
+    HWND window_ = nullptr;
     ComPtr<ITfDocumentMgr> document_;
     ComPtr<ITfContext> context_;
     ComPtr<astelio::tip::testing::TestTextStore> store_;
@@ -398,6 +440,11 @@ TEST_F(TypingTest, KeyRouteReachesTheTextService)
     ComPtr<ITfDocumentMgr> focused;
     EXPECT_HRESULT_SUCCEEDED(thread_mgr_->GetFocus(&focused));
     EXPECT_EQ(focused.Get(), document_.Get()) << "test document is not focused";
+    BOOL thread_focus = FALSE;
+    EXPECT_HRESULT_SUCCEEDED(thread_mgr_->IsThreadFocus(&thread_focus));
+    std::cout << "[diagnostics] thread_focus=" << thread_focus << " foreground_is_test_window="
+              << (GetForegroundWindow() == window_) << " focus_is_test_window=" << (GetFocus() == window_)
+              << std::endl;
 
     SetModifierState(false, false);
     const LPARAM down = 1 | (0x1E << 16);
