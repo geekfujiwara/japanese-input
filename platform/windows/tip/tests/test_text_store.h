@@ -3,6 +3,7 @@
 #include <windows.h>
 
 #include <msctf.h>
+#include <olectl.h>
 #include <textstor.h>
 #include <wrl/client.h>
 

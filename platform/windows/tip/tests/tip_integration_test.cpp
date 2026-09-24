@@ -360,7 +360,7 @@ protected:
             return -1;
         }
         ComPtr<IEnumITfCompositionView> views;
-        if (FAILED(compositions->EnumCompositions(nullptr, &views)) || !views) {
+        if (FAILED(compositions->EnumCompositions(&views)) || !views) {
             return -1;
         }
         int count = 0;
