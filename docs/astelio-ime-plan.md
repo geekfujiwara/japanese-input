@@ -587,6 +587,8 @@ C:\dev\IME
 ## 11. 最初の作業
 
 1. Visual Studio Build Tools（C++ ARM64 / x64 / x86）とCMakeを導入する
-2. Gitリポジトリを作成し、現在のコードを記録する
+2. Gitリポジトリを作成し、現在のコードを記録する（2026-09-24 完了。公開リポジトリ: https://github.com/geekfujiwara/japanese-input ）
 3. `core/` を作り、`InputNormalizer` と `AltPressTracker` をC++へ移植し、既存テストを移植する
 4. フェーズ2のWindows TIPに着手する
+
+開発はClaude Opus 5.5で行い、作業は `.github/prompts/` のプロンプト（`/astelio-task`、`/astelio-bugfix`、`/astelio-acceptance-tests`）から始める。共通の決まりは `.github/copilot-instructions.md` と `.github/instructions/` に置く。
