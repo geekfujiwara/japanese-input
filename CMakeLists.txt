@@ -35,6 +35,7 @@ if(ASTELIO_BUILD_TESTS)
 endif()
 
 add_subdirectory(core)
+add_subdirectory(dictionary/tools)
 
 if(WIN32)
     add_subdirectory(platform/windows/tip)

@@ -1,0 +1,239 @@
+#include "astelio/dictionary.h"
+
+#include "dictionary_format.h"
+
+#include <algorithm>
+#include <cstring>
+
+namespace astelio {
+namespace {
+
+namespace fmt = dictionary_format;
+
+template <typename T>
+T Read(const std::byte* base, std::size_t offset)
+{
+    T value;
+    std::memcpy(&value, base + offset, sizeof(T));
+    return value;
+}
+
+struct ReadingRecord {
+    std::uint32_t text = 0;
+    std::uint32_t first_entry = 0;
+    std::uint16_t length = 0;
+    std::uint16_t entry_count = 0;
+};
+
+struct EntryRecord {
+    std::uint32_t text = 0;
+    std::uint16_t length = 0;
+    std::uint16_t left = 0;
+    std::uint16_t right = 0;
+    std::int16_t cost = 0;
+};
+
+ReadingRecord ReadReading(const std::byte* base, std::uint32_t section, std::size_t index)
+{
+    const std::size_t offset = section + index * fmt::kReadingRecordSize;
+    ReadingRecord record;
+    record.text = Read<std::uint32_t>(base, offset);
+    record.first_entry = Read<std::uint32_t>(base, offset + 4);
+    record.length = Read<std::uint16_t>(base, offset + 8);
+    record.entry_count = Read<std::uint16_t>(base, offset + 10);
+    return record;
+}
+
+EntryRecord ReadEntry(const std::byte* base, std::uint32_t section, std::size_t index)
+{
+    const std::size_t offset = section + index * fmt::kEntryRecordSize;
+    EntryRecord record;
+    record.text = Read<std::uint32_t>(base, offset);
+    record.length = Read<std::uint16_t>(base, offset + 4);
+    record.left = Read<std::uint16_t>(base, offset + 6);
+    record.right = Read<std::uint16_t>(base, offset + 8);
+    record.cost = Read<std::int16_t>(base, offset + 10);
+    return record;
+}
+
+bool SectionFits(std::uint64_t offset, std::uint64_t size, std::uint64_t file_size, std::uint64_t alignment)
+{
+    return offset >= fmt::kHeaderSize && offset % alignment == 0 && offset <= file_size && size <= file_size - offset;
+}
+
+bool TextFits(std::uint32_t offset, std::uint16_t length, std::uint32_t pool_units)
+{
+    return length >= 1 && length <= fmt::kMaxTextLength && static_cast<std::uint64_t>(offset) + length <= pool_units;
+}
+
+std::optional<SystemDictionary> Fail(DictionaryError* error, DictionaryError reason)
+{
+    if (error != nullptr) {
+        *error = reason;
+    }
+    return std::nullopt;
+}
+
+} // namespace
+
+std::optional<SystemDictionary> SystemDictionary::Open(std::span<const std::byte> bytes, DictionaryError* error)
+{
+    if (bytes.size() < fmt::kHeaderSize || bytes.size() > UINT32_MAX) {
+        return Fail(error, DictionaryError::TooSmall);
+    }
+    const std::byte* base = bytes.data();
+    if (reinterpret_cast<std::uintptr_t>(base) % 4 != 0) {
+        return Fail(error, DictionaryError::Misaligned);
+    }
+    if (std::memcmp(base, fmt::kMagic, sizeof(fmt::kMagic)) != 0) {
+        return Fail(error, DictionaryError::BadMagic);
+    }
+    if (Read<std::uint32_t>(base, fmt::header::kVersion) != fmt::kVersion) {
+        return Fail(error, DictionaryError::UnsupportedVersion);
+    }
+
+    const std::uint64_t file_size = bytes.size();
+    const std::uint32_t id_count = Read<std::uint32_t>(base, fmt::header::kIdCount);
+    const std::uint32_t bos_id = Read<std::uint32_t>(base, fmt::header::kBosId);
+    const std::uint32_t eos_id = Read<std::uint32_t>(base, fmt::header::kEosId);
+    const std::uint32_t reading_count = Read<std::uint32_t>(base, fmt::header::kReadingCount);
+    const std::uint32_t readings_offset = Read<std::uint32_t>(base, fmt::header::kReadingsOffset);
+    const std::uint32_t entry_count = Read<std::uint32_t>(base, fmt::header::kEntryCount);
+    const std::uint32_t entries_offset = Read<std::uint32_t>(base, fmt::header::kEntriesOffset);
+    const std::uint32_t pool_offset = Read<std::uint32_t>(base, fmt::header::kPoolOffset);
+    const std::uint32_t pool_units = Read<std::uint32_t>(base, fmt::header::kPoolUnits);
+    const std::uint32_t matrix_offset = Read<std::uint32_t>(base, fmt::header::kMatrixOffset);
+    if (Read<std::uint32_t>(base, fmt::header::kFileSize) != file_size || id_count == 0 || id_count > UINT16_MAX ||
+        bos_id >= id_count || eos_id >= id_count) {
+        return Fail(error, DictionaryError::BadHeader);
+    }
+    if (!SectionFits(readings_offset, std::uint64_t{reading_count} * fmt::kReadingRecordSize, file_size, 4) ||
+        !SectionFits(entries_offset, std::uint64_t{entry_count} * fmt::kEntryRecordSize, file_size, 4) ||
+        !SectionFits(pool_offset, std::uint64_t{pool_units} * 2, file_size, 2) ||
+        !SectionFits(matrix_offset, std::uint64_t{id_count} * id_count * 2, file_size, 2)) {
+        return Fail(error, DictionaryError::OutOfBounds);
+    }
+
+    SystemDictionary dictionary;
+    dictionary.base_ = base;
+    dictionary.reading_count_ = reading_count;
+    dictionary.entry_count_ = entry_count;
+    dictionary.id_count_ = static_cast<std::uint16_t>(id_count);
+    dictionary.bos_id_ = static_cast<std::uint16_t>(bos_id);
+    dictionary.eos_id_ = static_cast<std::uint16_t>(eos_id);
+    dictionary.readings_offset_ = readings_offset;
+    dictionary.entries_offset_ = entries_offset;
+    dictionary.pool_ = reinterpret_cast<const char16_t*>(base + pool_offset);
+    dictionary.matrix_offset_ = matrix_offset;
+
+    std::u16string_view previous;
+    for (std::size_t i = 0; i < reading_count; ++i) {
+        const ReadingRecord record = ReadReading(base, readings_offset, i);
+        if (!TextFits(record.text, record.length, pool_units) || record.entry_count == 0 ||
+            std::uint64_t{record.first_entry} + record.entry_count > entry_count) {
+            return Fail(error, DictionaryError::BadReading);
+        }
+        const std::u16string_view reading = dictionary.PoolText(record.text, record.length);
+        if (i > 0 && !(previous < reading)) {
+            return Fail(error, DictionaryError::NotSorted);
+        }
+        previous = reading;
+    }
+    for (std::size_t i = 0; i < entry_count; ++i) {
+        const EntryRecord record = ReadEntry(base, entries_offset, i);
+        if (!TextFits(record.text, record.length, pool_units) || record.left >= id_count || record.right >= id_count) {
+            return Fail(error, DictionaryError::BadEntry);
+        }
+    }
+    return dictionary;
+}
+
+std::u16string_view SystemDictionary::PoolText(std::uint32_t offset, std::uint16_t length) const
+{
+    return {pool_ + offset, length};
+}
+
+std::u16string_view SystemDictionary::Reading(std::size_t index) const
+{
+    const ReadingRecord record = ReadReading(base_, readings_offset_, index);
+    return PoolText(record.text, record.length);
+}
+
+void SystemDictionary::VisitEntries(std::size_t reading_index, std::size_t length, const Visitor& visit) const
+{
+    const ReadingRecord reading = ReadReading(base_, readings_offset_, reading_index);
+    for (std::size_t i = 0; i < reading.entry_count; ++i) {
+        const EntryRecord record = ReadEntry(base_, entries_offset_, reading.first_entry + i);
+        DictionaryEntry entry;
+        entry.surface = PoolText(record.text, record.length);
+        entry.left_id = record.left;
+        entry.right_id = record.right;
+        entry.cost = record.cost;
+        visit(length, entry);
+    }
+}
+
+void SystemDictionary::CommonPrefixSearch(std::u16string_view text, const Visitor& visit) const
+{
+    // Invariant: readings in [low, high) all start with text[0, length - 1).
+    std::size_t low = 0;
+    std::size_t high = reading_count_;
+    for (std::size_t length = 1; length <= text.size() && length <= fmt::kMaxTextLength; ++length) {
+        const char16_t unit = text[length - 1];
+        const auto at = [this, length](std::size_t index) -> int {
+            const std::u16string_view reading = Reading(index);
+            return reading.size() < length ? -1 : static_cast<int>(reading[length - 1]);
+        };
+        std::size_t first = low;
+        std::size_t count = high - low;
+        while (count > 0) {
+            const std::size_t step = count / 2;
+            if (at(first + step) < static_cast<int>(unit)) {
+                first += step + 1;
+                count -= step + 1;
+            } else {
+                count = step;
+            }
+        }
+        low = first;
+        count = high - low;
+        while (count > 0) {
+            const std::size_t step = count / 2;
+            if (at(first + step) == static_cast<int>(unit)) {
+                first += step + 1;
+                count -= step + 1;
+            } else {
+                count = step;
+            }
+        }
+        high = first;
+        if (low == high) {
+            return;
+        }
+        if (Reading(low).size() == length) {
+            VisitEntries(low, length, visit);
+        }
+    }
+}
+
+std::vector<DictionaryEntry> SystemDictionary::Lookup(std::u16string_view reading) const
+{
+    std::vector<DictionaryEntry> result;
+    CommonPrefixSearch(reading, [&result, &reading](std::size_t length, const DictionaryEntry& entry) {
+        if (length == reading.size()) {
+            result.push_back(entry);
+        }
+    });
+    return result;
+}
+
+std::int16_t SystemDictionary::ConnectionCost(std::uint16_t previous_right_id, std::uint16_t next_left_id) const
+{
+    if (previous_right_id >= id_count_ || next_left_id >= id_count_) {
+        return INT16_MAX;
+    }
+    const std::size_t index = std::size_t{previous_right_id} * id_count_ + next_left_id;
+    return Read<std::int16_t>(base_, matrix_offset_ + index * 2);
+}
+
+} // namespace astelio

@@ -74,7 +74,7 @@ jobs:
         run: ctest --preset macos-universal
 
   core-fuzz:
-    name: Core fuzzing (F-01)
+    name: Core fuzzing (F-01, F-02)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -83,9 +83,48 @@ jobs:
       - name: Configure
         run: cmake -S . -B build/fuzz -DCMAKE_CXX_COMPILER=clang++ -DCMAKE_BUILD_TYPE=RelWithDebInfo -DASTELIO_BUILD_TESTS=OFF -DASTELIO_BUILD_FUZZERS=ON
       - name: Build
-        run: cmake --build build/fuzz --target astelio_composer_fuzzer
-      - name: Fuzz for 60 seconds
+        run: cmake --build build/fuzz --target astelio_composer_fuzzer astelio_dictionary_fuzzer
+      - name: Fuzz the composer for 60 seconds
         run: build/fuzz/core/astelio_composer_fuzzer -max_total_time=60 -max_len=12000
+      - name: Fuzz the dictionary for 60 seconds
+        run: build/fuzz/core/astelio_dictionary_fuzzer -max_total_time=60 -max_len=4096
+
+  dictionary:
+    name: System dictionary
+    runs-on: ubuntu-latest
+    env:
+      AZOOKEY_COMMIT: 4d418525b090cf49c219819d05a7e3cc2a4346eb
+      AZOOKEY_SHA256: 9a4f66c3f4b6a80d59471eb7890209faf49a6c856e7a72c1a6f9b862266aa026
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Download azooKey_dictionary_storage
+        run: |
+          curl -fsSL -o azookey.tar.gz "https://github.com/azooKey/azooKey_dictionary_storage/archive/${AZOOKEY_COMMIT}.tar.gz"
+          echo "${AZOOKEY_SHA256}  azookey.tar.gz" | sha256sum -c -
+          mkdir -p build/azookey
+          tar -xzf azookey.tar.gz -C build/azookey --strip-components=1
+      - name: Build the dictionary tool
+        run: |
+          cmake -S . -B build/dictionary -DCMAKE_BUILD_TYPE=Release -DASTELIO_BUILD_TESTS=OFF
+          cmake --build build/dictionary --target astelio_dicbuild
+      - name: Build the system dictionary
+        run: |
+          mkdir -p build/dictionary/out
+          build/dictionary/dictionary/tools/astelio_dicbuild import-azookey build/azookey/Dictionary build/dictionary/words.tsv build/dictionary/connection.tsv
+          build/dictionary/dictionary/tools/astelio_dicbuild build build/dictionary/connection.tsv build/dictionary/out/system.dic build/dictionary/words.tsv
+          cp build/azookey/LICENSE build/dictionary/out/LICENSE-azooKey_dictionary_storage.txt
+          cp THIRD_PARTY_NOTICES build/dictionary/out/
+      - name: Check lookups (T-D01)
+        run: build/dictionary/dictionary/tools/astelio_dicbuild lookup build/dictionary/out/system.dic わたし にほんご がっこう は です
+      - name: Upload the dictionary
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: astelio-dictionary
+          path: build/dictionary/out/
+          if-no-files-found: error
+          retention-days: 30
 
   dotnet:
     name: .NET (${{ matrix.runner }})
