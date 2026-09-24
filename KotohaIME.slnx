@@ -1,0 +1,10 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/KotohaIME.App/KotohaIME.App.csproj" />
+    <Project Path="src/KotohaIME.Core/KotohaIME.Core.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/KotohaIME.App.Tests/KotohaIME.App.Tests.csproj" />
+    <Project Path="tests/KotohaIME.Core.Tests/KotohaIME.Core.Tests.csproj" />
+  </Folder>
+</Solution>

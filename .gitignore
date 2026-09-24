@@ -1,0 +1,23 @@
+bin/
+obj/
+.vs/
+artifacts/
+*.user
+
+# C++ / CMake
+build/
+out/
+CMakeUserPresets.json
+
+# Local models and dictionary runs (large or regenerated)
+*.gguf
+*.safetensors
+*.onnx
+dictionary/work/
+dictionary/runs/
+
+# Local databases and secrets
+*.db
+*.db-wal
+*.db-shm
+.env
