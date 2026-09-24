@@ -1,5 +1,7 @@
 #pragma once
 
+#include "astelio/dictionary.h"
+
 #include <cstddef>
 #include <cstdint>
 #include <optional>
@@ -19,6 +21,12 @@ inline constexpr std::uint16_t kBosId = 0;
 inline constexpr std::uint16_t kEosId = 1316;
 // azooKey's value for a connection row that has no file.
 inline constexpr float kMissingRowValue = -25.0f;
+// Text not in the dictionary is treated as a proper noun, about as likely as the rarest dictionary words.
+inline constexpr std::uint16_t kUnknownId = 1288;
+inline constexpr std::int16_t kUnknownCost = 3000;
+
+// Segment role of an azooKey part-of-speech id (same classes as azooKey's clause detection).
+WordType WordTypeOf(std::uint16_t id);
 
 struct Entry {
     std::u16string reading; // katakana, as stored by azooKey

@@ -16,7 +16,9 @@
 //   44 u32 pool_units
 //   48 u32 matrix_offset    i16[id_count * id_count], row = previous right id, column = next left id
 //   52 u32 file_size
-//   56 reserved (zero)
+//   56 u32 word_types_offset u8[id_count] (WordType per part-of-speech id)
+//   60 u16 unknown_id       part-of-speech id for text that is not in the dictionary
+//   62 i16 unknown_cost
 
 #include <bit>
 #include <cstddef>
@@ -27,7 +29,7 @@ namespace astelio::dictionary_format {
 static_assert(std::endian::native == std::endian::little, "the dictionary format is little-endian");
 
 inline constexpr char kMagic[8] = {'A', 'S', 'T', 'L', 'D', 'I', 'C', '\0'};
-inline constexpr std::uint32_t kVersion = 1;
+inline constexpr std::uint32_t kVersion = 2;
 inline constexpr std::size_t kHeaderSize = 64;
 inline constexpr std::size_t kReadingRecordSize = 12; // u32 text, u32 first_entry, u16 length, u16 entry_count
 inline constexpr std::size_t kEntryRecordSize = 12;   // u32 text, u16 length, u16 left, u16 right, i16 cost
@@ -46,6 +48,9 @@ inline constexpr std::size_t kPoolOffset = 40;
 inline constexpr std::size_t kPoolUnits = 44;
 inline constexpr std::size_t kMatrixOffset = 48;
 inline constexpr std::size_t kFileSize = 52;
+inline constexpr std::size_t kWordTypesOffset = 56;
+inline constexpr std::size_t kUnknownId = 60;
+inline constexpr std::size_t kUnknownCost = 62;
 } // namespace header
 
 } // namespace astelio::dictionary_format

@@ -1,5 +1,7 @@
 #pragma once
 
+#include "astelio/dictionary.h"
+
 #include <cstddef>
 #include <cstdint>
 #include <optional>
@@ -15,6 +17,9 @@ struct ConnectionMatrix {
     std::uint16_t bos_id = 0;
     std::uint16_t eos_id = 0;
     std::vector<std::int16_t> costs;
+    std::vector<WordType> word_types; // per id; missing ids are Content
+    std::uint16_t unknown_id = 0;
+    std::int16_t unknown_cost = 3000;
 };
 
 struct DictionarySourceEntry {
@@ -35,6 +40,8 @@ struct SourceError {
 //   size<TAB>id_count<TAB>bos_id<TAB>eos_id     first data line
 //   right_id<TAB>*<TAB>cost                      default for the row
 //   right_id<TAB>left_id<TAB>cost                one cell (overrides the row default)
+//   type<TAB>id<TAB>prefix|content|suffix|edge   segment role of a part-of-speech id (default content)
+//   unknown<TAB>id<TAB>cost                      part-of-speech id and cost for text not in the dictionary
 std::optional<ConnectionMatrix> ParseConnectionSource(std::string_view utf8, SourceError* error = nullptr);
 
 // Word source (UTF-8 TSV, '#' comments): reading<TAB>surface<TAB>left_id<TAB>right_id<TAB>meaning_id<TAB>cost.

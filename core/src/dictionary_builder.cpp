@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <charconv>
 #include <cstring>
+#include <iterator>
 #include <limits>
 #include <tuple>
 #include <utility>
@@ -103,7 +104,30 @@ std::optional<ConnectionMatrix> ParseConnectionSource(std::string_view utf8, Sou
                 fail(number, "expected size<TAB>id_count<TAB>bos_id<TAB>eos_id");
                 return;
             }
-            matrix = ConnectionMatrix{size, bos, eos, std::vector<std::int16_t>(std::size_t{size} * size, 0)};
+            matrix.emplace();
+            matrix->size = size;
+            matrix->bos_id = bos;
+            matrix->eos_id = eos;
+            matrix->costs.assign(std::size_t{size} * size, 0);
+            matrix->word_types.assign(size, WordType::Content);
+            return;
+        }
+        if (fields.size() == 3 && fields[0] == "type") {
+            std::uint16_t id = 0;
+            static constexpr std::string_view kNames[] = {"prefix", "content", "suffix", "edge"};
+            const auto* name = std::find(std::begin(kNames), std::end(kNames), fields[2]);
+            if (!ParseInteger(fields[1], id) || id >= matrix->size || name == std::end(kNames)) {
+                fail(number, "expected type<TAB>id<TAB>prefix|content|suffix|edge");
+                return;
+            }
+            matrix->word_types[id] = static_cast<WordType>(name - std::begin(kNames));
+            return;
+        }
+        if (fields.size() == 3 && fields[0] == "unknown") {
+            if (!ParseInteger(fields[1], matrix->unknown_id) || matrix->unknown_id >= matrix->size ||
+                !ParseInteger(fields[2], matrix->unknown_cost)) {
+                fail(number, "expected unknown<TAB>id<TAB>cost");
+            }
             return;
         }
         std::uint16_t right = 0;
@@ -189,7 +213,8 @@ bool DictionaryBuilder::Add(DictionarySourceEntry entry)
 
 std::vector<std::byte> DictionaryBuilder::Build() const
 {
-    if (matrix_.size == 0 || matrix_.costs.size() != std::size_t{matrix_.size} * matrix_.size) {
+    if (matrix_.size == 0 || matrix_.costs.size() != std::size_t{matrix_.size} * matrix_.size ||
+        matrix_.unknown_id >= matrix_.size || matrix_.word_types.size() > matrix_.size) {
         return {};
     }
     std::vector<const DictionarySourceEntry*> sorted;
@@ -248,7 +273,8 @@ std::vector<std::byte> DictionaryBuilder::Build() const
     const std::size_t entries_offset = readings_offset + groups.size() * fmt::kReadingRecordSize;
     const std::size_t pool_offset = entries_offset + kept * fmt::kEntryRecordSize;
     const std::size_t matrix_offset = pool_offset + pool.size() * 2;
-    const std::size_t file_size = matrix_offset + matrix_.costs.size() * 2;
+    const std::size_t word_types_offset = matrix_offset + matrix_.costs.size() * 2;
+    const std::size_t file_size = word_types_offset + matrix_.size;
     if (file_size > std::numeric_limits<std::uint32_t>::max()) {
         return {};
     }
@@ -267,6 +293,9 @@ std::vector<std::byte> DictionaryBuilder::Build() const
     Write<std::uint32_t>(out, fmt::header::kPoolUnits, static_cast<std::uint32_t>(pool.size()));
     Write<std::uint32_t>(out, fmt::header::kMatrixOffset, static_cast<std::uint32_t>(matrix_offset));
     Write<std::uint32_t>(out, fmt::header::kFileSize, static_cast<std::uint32_t>(file_size));
+    Write<std::uint32_t>(out, fmt::header::kWordTypesOffset, static_cast<std::uint32_t>(word_types_offset));
+    Write<std::uint16_t>(out, fmt::header::kUnknownId, matrix_.unknown_id);
+    Write<std::int16_t>(out, fmt::header::kUnknownCost, matrix_.unknown_cost);
 
     std::size_t entry_index = 0;
     for (std::size_t g = 0; g < groups.size(); ++g) {
@@ -289,6 +318,10 @@ std::vector<std::byte> DictionaryBuilder::Build() const
         std::memcpy(out.data() + pool_offset, pool.data(), pool.size() * 2);
     }
     std::memcpy(out.data() + matrix_offset, matrix_.costs.data(), matrix_.costs.size() * 2);
+    for (std::size_t id = 0; id < matrix_.size; ++id) {
+        const WordType type = id < matrix_.word_types.size() ? matrix_.word_types[id] : WordType::Content;
+        out[word_types_offset + id] = static_cast<std::byte>(type);
+    }
     return out;
 }
 

@@ -1,4 +1,5 @@
 // Dictionary builder: azooKey_dictionary_storage -> Astelio TSV sources -> binary system dictionary.
+#include "astelio/converter.h"
 #include "astelio/dictionary.h"
 #include "astelio/dictionary_builder.h"
 #include "astelio/utf.h"
@@ -89,6 +90,14 @@ int ImportAzooKey(const fs::path& root, const fs::path& words_path, const fs::pa
     connection << "# part-of-speech connection costs (from azooKey_dictionary_storage, Apache-2.0)\n";
     connection << "size\t" << astelio::azookey::kIdCount << '\t' << astelio::azookey::kBosId << '\t'
                << astelio::azookey::kEosId << '\n';
+    connection << "unknown\t" << astelio::azookey::kUnknownId << '\t' << astelio::azookey::kUnknownCost << '\n';
+    static constexpr const char* kTypeNames[] = {"prefix", "content", "suffix", "edge"};
+    for (std::uint16_t id = 0; id < astelio::azookey::kIdCount; ++id) {
+        const astelio::WordType type = astelio::azookey::WordTypeOf(id);
+        if (type != astelio::WordType::Content) {
+            connection << "type\t" << id << '\t' << kTypeNames[static_cast<int>(type)] << '\n';
+        }
+    }
     std::size_t missing_rows = 0;
     for (std::uint16_t right = 0; right < astelio::azookey::kIdCount; ++right) {
         const std::optional<std::vector<std::byte>> bytes =
@@ -204,12 +213,50 @@ int Lookup(const fs::path& path, const std::vector<std::string>& readings)
     return status;
 }
 
+// Prints the segments and their top candidates; fails when `expected` is given and the best result differs.
+int Convert(const fs::path& path, const std::string& reading, const std::string& expected)
+{
+    const std::optional<std::vector<std::byte>> bytes = ReadFile(path);
+    std::optional<astelio::SystemDictionary> dictionary;
+    if (bytes) {
+        dictionary = astelio::SystemDictionary::Open(*bytes);
+    }
+    const std::optional<std::u16string> query = astelio::Utf8ToUtf16(reading);
+    if (!dictionary || !query) {
+        std::cerr << "invalid dictionary or reading\n";
+        return 1;
+    }
+    const astelio::Converter converter(*dictionary);
+    static_cast<void>(converter.Convert(*query));
+    const auto started = std::chrono::steady_clock::now();
+    const std::vector<astelio::ConvertedSegment> segments = converter.Convert(*query);
+    const auto finished = std::chrono::steady_clock::now();
+
+    std::string best;
+    for (const astelio::ConvertedSegment& segment : segments) {
+        best += astelio::Utf16ToUtf8(segment.candidates.front());
+        std::cout << '[' << astelio::Utf16ToUtf8(segment.reading) << ']';
+        for (std::size_t i = 0; i < segment.candidates.size() && i < 5; ++i) {
+            std::cout << ' ' << astelio::Utf16ToUtf8(segment.candidates[i]);
+        }
+        std::cout << '\n';
+    }
+    std::cout << "best=" << best << " convert_us="
+              << std::chrono::duration_cast<std::chrono::microseconds>(finished - started).count() << '\n';
+    if (!expected.empty() && best != expected) {
+        std::cerr << "expected " << expected << '\n';
+        return 1;
+    }
+    return 0;
+}
+
 int Usage()
 {
     std::cerr << "usage:\n"
                  "  astelio_dicbuild import-azookey <azooKey Dictionary dir> <words.tsv> <connection.tsv>\n"
                  "  astelio_dicbuild build <connection.tsv> <system.dic> <words.tsv>...\n"
-                 "  astelio_dicbuild lookup <system.dic> <reading>...\n";
+                 "  astelio_dicbuild lookup <system.dic> <reading>...\n"
+                 "  astelio_dicbuild convert <system.dic> <reading> [expected]\n";
     return 2;
 }
 
@@ -227,6 +274,9 @@ int main(int argc, char** argv)
         }
         if (args.size() >= 3 && args[0] == "lookup") {
             return Lookup(args[1], std::vector<std::string>(args.begin() + 2, args.end()));
+        }
+        if ((args.size() == 3 || args.size() == 4) && args[0] == "convert") {
+            return Convert(args[1], args[2], args.size() == 4 ? args[3] : std::string());
         }
     } catch (const std::exception& exception) {
         std::cerr << exception.what() << '\n';

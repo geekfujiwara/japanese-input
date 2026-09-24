@@ -17,6 +17,15 @@ struct DictionaryEntry {
     std::int16_t cost = 0; // lower is more likely
 };
 
+// Role of a part-of-speech id in a segment (bunsetsu): a segment is prefixes, content words, then suffixes
+// (particles, auxiliary verbs, inflections).
+enum class WordType : std::uint8_t {
+    Prefix = 0,
+    Content = 1,
+    Suffix = 2,
+    Edge = 3, // beginning / end of sentence
+};
+
 enum class DictionaryError : std::uint8_t {
     TooSmall,
     Misaligned,
@@ -48,6 +57,9 @@ public:
     std::vector<DictionaryEntry> Lookup(std::u16string_view reading) const;
 
     std::int16_t ConnectionCost(std::uint16_t previous_right_id, std::uint16_t next_left_id) const;
+    WordType word_type(std::uint16_t id) const;
+    std::uint16_t unknown_id() const { return unknown_id_; }
+    std::int16_t unknown_cost() const { return unknown_cost_; }
 
 private:
     SystemDictionary() = default;
@@ -66,6 +78,9 @@ private:
     std::uint32_t entries_offset_ = 0;
     const char16_t* pool_ = nullptr;
     std::uint32_t matrix_offset_ = 0;
+    std::uint32_t word_types_offset_ = 0;
+    std::uint16_t unknown_id_ = 0;
+    std::int16_t unknown_cost_ = 0;
 };
 
 } // namespace astelio
