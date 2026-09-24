@@ -1,6 +1,7 @@
 add_library(astelio_core STATIC
     src/character_rules.cpp
     src/composer.cpp
+    src/input_session.cpp
     src/modifier_tap_tracker.cpp
     src/romaji_table.cpp
     src/romaji_table_io.cpp
