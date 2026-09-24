@@ -1,5 +1,5 @@
 add_executable(astelio_tip_tests
-    tip_activation_test.cpp
+    tip_integration_test.cpp
 )
 
 target_link_libraries(astelio_tip_tests PRIVATE GTest::gtest_main)

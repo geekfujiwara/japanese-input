@@ -36,15 +36,6 @@ jobs:
         run: cmake --preset ${{ matrix.preset }}
       - name: Build
         run: cmake --build --preset ${{ matrix.preset }}
-      - name: Add Japanese input language
-        shell: powershell
-        run: |
-          $languages = Get-WinUserLanguageList
-          if (-not ($languages | Where-Object { $_.LanguageTag -like 'ja*' })) {
-            $languages.Add('ja-JP')
-            Set-WinUserLanguageList $languages -Force
-          }
-          Get-WinUserLanguageList | ForEach-Object { $_.LanguageTag }
       - name: Test
         run: ctest --preset ${{ matrix.preset }}
 
