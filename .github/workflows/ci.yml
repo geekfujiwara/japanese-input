@@ -64,6 +64,20 @@ jobs:
       - name: Test
         run: ctest --preset macos-universal
 
+  core-fuzz:
+    name: Core fuzzing (F-01)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Configure
+        run: cmake -S . -B build/fuzz -DCMAKE_CXX_COMPILER=clang++ -DCMAKE_BUILD_TYPE=RelWithDebInfo -DASTELIO_BUILD_TESTS=OFF -DASTELIO_BUILD_FUZZERS=ON
+      - name: Build
+        run: cmake --build build/fuzz --target astelio_composer_fuzzer
+      - name: Fuzz for 60 seconds
+        run: build/fuzz/core/astelio_composer_fuzzer -max_total_time=60 -max_len=12000
+
   dotnet:
     name: .NET (${{ matrix.runner }})
     runs-on: ${{ matrix.runner }}

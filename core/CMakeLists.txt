@@ -3,6 +3,8 @@ add_library(astelio_core STATIC
     src/composer.cpp
     src/modifier_tap_tracker.cpp
     src/romaji_table.cpp
+    src/romaji_table_io.cpp
+    src/utf.cpp
     src/version.cpp
 )
 
@@ -17,4 +19,11 @@ endif()
 
 if(ASTELIO_BUILD_TESTS)
     add_subdirectory(tests)
+endif()
+
+if(ASTELIO_BUILD_FUZZERS)
+    add_executable(astelio_composer_fuzzer fuzz/composer_fuzzer.cpp)
+    target_link_libraries(astelio_composer_fuzzer PRIVATE astelio_core)
+    target_compile_options(astelio_composer_fuzzer PRIVATE -fsanitize=fuzzer,address,undefined)
+    target_link_options(astelio_composer_fuzzer PRIVATE -fsanitize=fuzzer,address,undefined)
 endif()

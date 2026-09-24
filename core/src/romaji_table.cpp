@@ -96,6 +96,23 @@ const RomajiRule* RomajiTable::FindExact(std::u16string_view input) const
     return it == rules_.end() ? nullptr : &it->second;
 }
 
+RomajiTable::AddResult RomajiTable::Add(RomajiRule rule)
+{
+    std::u16string key = rule.input;
+    const bool inserted = rules_.try_emplace(std::move(key), std::move(rule)).second;
+    return inserted ? AddResult::Added : AddResult::AlreadyExists;
+}
+
+bool RomajiTable::Remove(std::u16string_view input)
+{
+    const auto it = rules_.find(input);
+    if (it == rules_.end()) {
+        return false;
+    }
+    rules_.erase(it);
+    return true;
+}
+
 bool RomajiTable::HasLongerRule(std::u16string_view input) const
 {
     auto it = rules_.upper_bound(input);
