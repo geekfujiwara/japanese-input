@@ -38,6 +38,21 @@ std::optional<KeyEvent> Translate(WPARAM wparam, LPARAM lparam)
     return TranslateKey(static_cast<std::uint32_t>(wparam), static_cast<std::uint32_t>(lparam), CurrentModifiers());
 }
 
+std::optional<ModifierSide> AltSide(WPARAM wparam, LPARAM lparam)
+{
+    switch (wparam) {
+    case VK_LMENU: return ModifierSide::Left;
+    case VK_RMENU: return ModifierSide::Right;
+    case VK_MENU: return (lparam & (1 << 24)) != 0 ? ModifierSide::Right : ModifierSide::Left;
+    default: return std::nullopt;
+    }
+}
+
+std::uint64_t Now()
+{
+    return GetTickCount64();
+}
+
 HRESULT SetCaret(TfEditCookie cookie, ITfContext* context, ITfRange* range)
 {
     TF_SELECTION selection{};
@@ -237,11 +252,17 @@ STDMETHODIMP TextService::OnTestKeyDown(ITfContext* context, WPARAM wparam, LPAR
     }
     *eaten = FALSE;
     ++Diagnostics().test_key_down;
-    if (context == nullptr) {
-        ++Diagnostics().null_context;
-        return S_OK;
-    }
     try {
+        // Alt down always reaches the app so Alt shortcuts keep working; only the tap's release is eaten.
+        if (const std::optional<ModifierSide> side = AltSide(wparam, lparam)) {
+            alt_taps_.Press(*side, Now());
+            return S_OK;
+        }
+        alt_taps_.MarkChordUsed();
+        if (context == nullptr) {
+            ++Diagnostics().null_context;
+            return S_OK;
+        }
         const std::optional<KeyEvent> key = Translate(wparam, lparam);
         *eaten = key && session_.WillHandle(*key) ? TRUE : FALSE;
     } catch (...) {
@@ -250,12 +271,22 @@ STDMETHODIMP TextService::OnTestKeyDown(ITfContext* context, WPARAM wparam, LPAR
     return S_OK;
 }
 
-STDMETHODIMP TextService::OnTestKeyUp(ITfContext* /*context*/, WPARAM /*wparam*/, LPARAM /*lparam*/, BOOL* eaten)
+STDMETHODIMP TextService::OnTestKeyUp(ITfContext* /*context*/, WPARAM wparam, LPARAM lparam, BOOL* eaten)
 {
     if (eaten == nullptr) {
         return E_INVALIDARG;
     }
     *eaten = FALSE;
+    try {
+        if (const std::optional<ModifierSide> side = AltSide(wparam, lparam)) {
+            if (alt_taps_.Release(*side, Now())) {
+                pending_alt_tap_ = *side;
+                *eaten = TRUE;
+            }
+        }
+    } catch (...) {
+        *eaten = FALSE;
+    }
     return S_OK;
 }
 
@@ -266,11 +297,16 @@ STDMETHODIMP TextService::OnKeyDown(ITfContext* context, WPARAM wparam, LPARAM l
     }
     *eaten = FALSE;
     ++Diagnostics().key_down;
-    if (context == nullptr) {
-        ++Diagnostics().null_context;
-        return S_OK;
-    }
     try {
+        if (const std::optional<ModifierSide> side = AltSide(wparam, lparam)) {
+            alt_taps_.Press(*side, Now());
+            return S_OK;
+        }
+        alt_taps_.MarkChordUsed();
+        if (context == nullptr) {
+            ++Diagnostics().null_context;
+            return S_OK;
+        }
         const std::optional<KeyEvent> key = Translate(wparam, lparam);
         if (!key || !session_.WillHandle(*key)) {
             return S_OK;
@@ -287,13 +323,35 @@ STDMETHODIMP TextService::OnKeyDown(ITfContext* context, WPARAM wparam, LPARAM l
     }
 }
 
-STDMETHODIMP TextService::OnKeyUp(ITfContext* /*context*/, WPARAM /*wparam*/, LPARAM /*lparam*/, BOOL* eaten)
+STDMETHODIMP TextService::OnKeyUp(ITfContext* context, WPARAM wparam, LPARAM lparam, BOOL* eaten)
 {
     if (eaten == nullptr) {
         return E_INVALIDARG;
     }
     *eaten = FALSE;
-    return S_OK;
+    try {
+        const std::optional<ModifierSide> side = AltSide(wparam, lparam);
+        if (!side) {
+            return S_OK;
+        }
+        bool tap = pending_alt_tap_ == side;
+        pending_alt_tap_.reset();
+        if (!tap) {
+            tap = alt_taps_.Release(*side, Now());
+        }
+        if (!tap) {
+            return S_OK;
+        }
+        // R-03: left Alt tap switches to English, right Alt tap to Japanese.
+        *eaten = TRUE;
+        SessionOutput output = session_.SetJapaneseMode(*side == ModifierSide::Right);
+        if (context != nullptr && (output.composition_changed || !output.commit.empty())) {
+            return RequestEdit(context, std::move(output.commit));
+        }
+        return S_OK;
+    } catch (...) {
+        return E_UNEXPECTED;
+    }
 }
 
 STDMETHODIMP TextService::OnPreservedKey(ITfContext* /*context*/, REFGUID /*guid*/, BOOL* eaten)
@@ -428,16 +486,31 @@ HRESULT TextService::ApplyToDocument(TfEditCookie cookie, ITfContext* context, c
     return hr;
 }
 
-HRESULT TextService::TestKeyDown(ITfContext* context, WPARAM wparam, LPARAM lparam, BOOL* eaten)
+HRESULT TextService::TestKey(ITfContext* context, WPARAM wparam, LPARAM lparam, BOOL key_up, BOOL* eaten)
 {
-    return g_active_service == nullptr ? E_UNEXPECTED
-                                       : g_active_service->OnKeyDown(context, wparam, lparam, eaten);
+    if (eaten == nullptr) {
+        return E_INVALIDARG;
+    }
+    *eaten = FALSE;
+    TextService* service = g_active_service;
+    if (service == nullptr) {
+        return E_UNEXPECTED;
+    }
+    // Same order as TSF: the test call decides whether the real call happens.
+    BOOL test_eaten = FALSE;
+    const HRESULT hr = key_up ? service->OnTestKeyUp(context, wparam, lparam, &test_eaten)
+                              : service->OnTestKeyDown(context, wparam, lparam, &test_eaten);
+    if (FAILED(hr) || !test_eaten) {
+        return hr;
+    }
+    return key_up ? service->OnKeyUp(context, wparam, lparam, eaten) : service->OnKeyDown(context, wparam, lparam, eaten);
 }
 
 } // namespace astelio::tip
 
-// Test entry point: sends a key down to the TSF-activated text service without OS keyboard focus.
-extern "C" HRESULT WINAPI AstelioTipTestKeyDown(ITfContext* context, WPARAM wparam, LPARAM lparam, BOOL* eaten)
+// Test entry point: sends a key to the TSF-activated text service without OS keyboard focus.
+extern "C" HRESULT WINAPI AstelioTipTestKey(ITfContext* context, WPARAM wparam, LPARAM lparam, BOOL key_up,
+                                            BOOL* eaten)
 {
-    return astelio::tip::TextService::TestKeyDown(context, wparam, lparam, eaten);
+    return astelio::tip::TextService::TestKey(context, wparam, lparam, key_up, eaten);
 }

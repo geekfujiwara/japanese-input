@@ -1,12 +1,14 @@
 #pragma once
 
 #include "astelio/input_session.h"
+#include "astelio/modifier_tap_tracker.h"
 
 #include <windows.h>
 
 #include <msctf.h>
 #include <wrl/client.h>
 
+#include <optional>
 #include <string>
 
 namespace astelio::tip {
@@ -39,7 +41,7 @@ public:
     // Runs inside an edit session: commits `commit`, then shows the session's uncommitted text.
     HRESULT ApplyToDocument(TfEditCookie cookie, ITfContext* context, const std::u16string& commit);
 
-    static HRESULT TestKeyDown(ITfContext* context, WPARAM wparam, LPARAM lparam, BOOL* eaten);
+    static HRESULT TestKey(ITfContext* context, WPARAM wparam, LPARAM lparam, BOOL key_up, BOOL* eaten);
 
 private:
     TextService();
@@ -55,6 +57,8 @@ private:
     bool key_sink_advised_ = false;
     InputSession session_;
     Microsoft::WRL::ComPtr<ITfComposition> composition_;
+    ModifierTapTracker alt_taps_;
+    std::optional<ModifierSide> pending_alt_tap_;
 };
 
 } // namespace astelio::tip
