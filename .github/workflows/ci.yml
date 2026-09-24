@@ -16,6 +16,8 @@ jobs:
   core-windows:
     name: Core (${{ matrix.preset }})
     runs-on: ${{ matrix.runner }}
+    env:
+      ASTELIO_TIP_INTEGRATION: "1"
     strategy:
       fail-fast: false
       matrix:
