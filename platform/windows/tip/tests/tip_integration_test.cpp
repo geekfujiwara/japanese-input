@@ -305,6 +305,13 @@ protected:
                                                             astelio::tip::kTextServiceClsid, kTestProfileGuid,
                                                             nullptr, TF_IPPMF_FORPROCESS));
         ASSERT_HRESULT_SUCCEEDED(thread_mgr_.As(&keystrokes_));
+
+        BOOL thread_focus = FALSE;
+        ASSERT_HRESULT_SUCCEEDED(thread_mgr_->IsThreadFocus(&thread_focus));
+        if (!thread_focus) {
+            // Some CI machines (the Windows ARM64 runner) refuse foreground to test windows; TSF then routes no keys.
+            GTEST_SKIP() << "The OS did not give this thread keyboard focus (foreground window denied)";
+        }
     }
 
     void TearDown() override
@@ -440,11 +447,6 @@ TEST_F(TypingTest, KeyRouteReachesTheTextService)
     ComPtr<ITfDocumentMgr> focused;
     EXPECT_HRESULT_SUCCEEDED(thread_mgr_->GetFocus(&focused));
     EXPECT_EQ(focused.Get(), document_.Get()) << "test document is not focused";
-    BOOL thread_focus = FALSE;
-    EXPECT_HRESULT_SUCCEEDED(thread_mgr_->IsThreadFocus(&thread_focus));
-    std::cout << "[diagnostics] thread_focus=" << thread_focus << " foreground_is_test_window="
-              << (GetForegroundWindow() == window_) << " focus_is_test_window=" << (GetFocus() == window_)
-              << std::endl;
 
     SetModifierState(false, false);
     const LPARAM down = 1 | (0x1E << 16);
