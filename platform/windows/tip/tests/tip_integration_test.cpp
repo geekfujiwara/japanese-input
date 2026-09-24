@@ -5,6 +5,7 @@
 #include <windows.h>
 
 #include <msctf.h>
+#include <oleauto.h>
 #include <wrl/client.h>
 
 #include <gtest/gtest.h>
@@ -282,15 +283,14 @@ protected:
 
         ASSERT_HRESULT_SUCCEEDED(
             CoCreateInstance(CLSID_TF_ThreadMgr, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&thread_mgr_)));
-        TfClientId client_id = TF_CLIENTID_NULL;
-        ASSERT_HRESULT_SUCCEEDED(thread_mgr_->Activate(&client_id));
+        ASSERT_HRESULT_SUCCEEDED(thread_mgr_->Activate(&client_id_));
         thread_mgr_active_ = true;
 
         ASSERT_HRESULT_SUCCEEDED(thread_mgr_->CreateDocumentMgr(&document_));
         store_.Attach(new astelio::tip::testing::TestTextStore());
         TfEditCookie cookie = TF_INVALID_EDIT_COOKIE;
         ASSERT_HRESULT_SUCCEEDED(
-            document_->CreateContext(client_id, 0, static_cast<ITextStoreACP*>(store_.Get()), &context_, &cookie));
+            document_->CreateContext(client_id_, 0, static_cast<ITextStoreACP*>(store_.Get()), &context_, &cookie));
         ASSERT_HRESULT_SUCCEEDED(document_->Push(context_.Get()));
 
         // TSF sends keys only to a thread that has keyboard focus, so the document gets a real focused window.
@@ -451,12 +451,72 @@ protected:
 
     const std::wstring& Text() const { return store_->Text(); }
 
+    ComPtr<ITfCompartment> OpenClose()
+    {
+        ComPtr<ITfCompartmentMgr> compartments;
+        ComPtr<ITfCompartment> compartment;
+        EXPECT_HRESULT_SUCCEEDED(thread_mgr_.As(&compartments));
+        if (compartments) {
+            EXPECT_HRESULT_SUCCEEDED(compartments->GetCompartment(GUID_COMPARTMENT_KEYBOARD_OPENCLOSE, &compartment));
+        }
+        return compartment;
+    }
+
+    // -1 when the value is missing.
+    long OpenCloseValue()
+    {
+        const ComPtr<ITfCompartment> compartment = OpenClose();
+        VARIANT value;
+        VariantInit(&value);
+        if (!compartment || FAILED(compartment->GetValue(&value)) || value.vt != VT_I4) {
+            VariantClear(&value);
+            return -1;
+        }
+        return value.lVal;
+    }
+
+    void SetOpenClose(long open)
+    {
+        const ComPtr<ITfCompartment> compartment = OpenClose();
+        ASSERT_TRUE(compartment);
+        VARIANT value;
+        VariantInit(&value);
+        value.vt = VT_I4;
+        value.lVal = open;
+        ASSERT_HRESULT_SUCCEEDED(compartment->SetValue(client_id_, &value));
+    }
+
+    ComPtr<ITfLangBarItemButton> ModeButton()
+    {
+        ComPtr<ITfLangBarItemMgr> items;
+        ComPtr<ITfLangBarItem> item;
+        ComPtr<ITfLangBarItemButton> button;
+        EXPECT_HRESULT_SUCCEEDED(thread_mgr_.As(&items));
+        if (items && SUCCEEDED(items->GetItem(astelio::tip::kLangBarInputModeGuid, &item)) && item) {
+            item.As(&button);
+        }
+        return button;
+    }
+
+    std::wstring ModeButtonText()
+    {
+        const ComPtr<ITfLangBarItemButton> button = ModeButton();
+        BSTR text = nullptr;
+        if (!button || FAILED(button->GetText(&text)) || text == nullptr) {
+            return L"(none)";
+        }
+        std::wstring result(text, SysStringLen(text));
+        SysFreeString(text);
+        return result;
+    }
+
     ComApartment apartment_;
     std::unique_ptr<RegisteredTip> tip_;
     ComPtr<ITfInputProcessorProfileMgr> profiles_;
     LANGID language_ = 0;
     bool profile_registered_ = false;
     ComPtr<ITfThreadMgr> thread_mgr_;
+    TfClientId client_id_ = TF_CLIENTID_NULL;
     bool thread_mgr_active_ = false;
     HWND window_ = nullptr;
     ComPtr<ITfDocumentMgr> document_;
@@ -667,6 +727,65 @@ TEST_F(TypingTest, BothAltKeysTogetherAreNotATap)
     EXPECT_FALSE(AltUp(false));
     TypeLetters("a");
     EXPECT_EQ(Text(), L"\u3042");
+}
+
+// B-12: the taskbar mode indicator and the keyboard open state follow the mode.
+TEST_F(TypingTest, ModeIndicatorFollowsTheMode)
+{
+    ASSERT_TRUE(ModeButton()) << "input mode button (GUID_LBI_INPUTMODE) is not in the language bar";
+    TF_LANGBARITEMINFO info{};
+    ASSERT_HRESULT_SUCCEEDED(ModeButton()->GetInfo(&info));
+    EXPECT_TRUE(IsEqualCLSID(info.clsidService, astelio::tip::kTextServiceClsid));
+    EXPECT_EQ(ModeButtonText(), L"\u3042");
+    EXPECT_EQ(OpenCloseValue(), 1);
+
+    HICON icon = nullptr;
+    EXPECT_HRESULT_SUCCEEDED(ModeButton()->GetIcon(&icon));
+    EXPECT_NE(icon, nullptr);
+    if (icon != nullptr) {
+        DestroyIcon(icon);
+    }
+
+    EXPECT_TRUE(TapAlt(false));
+    EXPECT_EQ(ModeButtonText(), L"A");
+    EXPECT_EQ(OpenCloseValue(), 0);
+
+    EXPECT_TRUE(TapAlt(true));
+    EXPECT_EQ(ModeButtonText(), L"\u3042");
+    EXPECT_EQ(OpenCloseValue(), 1);
+}
+
+// B-12: clicking the indicator toggles the mode and commits the uncommitted text.
+TEST_F(TypingTest, ModeButtonClickTogglesTheMode)
+{
+    TypeLetters("ka");
+    const ComPtr<ITfLangBarItemButton> button = ModeButton();
+    ASSERT_TRUE(button);
+    const RECT area{};
+    ASSERT_HRESULT_SUCCEEDED(button->OnClick(TF_LBI_CLK_LEFT, POINT{}, &area));
+    EXPECT_EQ(Text(), L"\u304B");
+    EXPECT_EQ(CompositionCount(), 0);
+    EXPECT_EQ(ModeButtonText(), L"A");
+    EXPECT_FALSE(Press('A', 0x1E));
+
+    ASSERT_HRESULT_SUCCEEDED(button->OnClick(TF_LBI_CLK_LEFT, POINT{}, &area));
+    TypeLetters("a");
+    EXPECT_EQ(Text(), L"\u304B\u3042");
+}
+
+// Closing the keyboard from outside (taskbar, app, IME on/off key) commits and switches to English.
+TEST_F(TypingTest, KeyboardCloseFromOutsideSwitchesToEnglish)
+{
+    TypeLetters("ka");
+    SetOpenClose(0);
+    EXPECT_EQ(Text(), L"\u304B");
+    EXPECT_EQ(CompositionCount(), 0);
+    EXPECT_EQ(ModeButtonText(), L"A");
+    EXPECT_FALSE(Press('A', 0x1E));
+
+    SetOpenClose(1);
+    EXPECT_TRUE(Press('A', 0x1E));
+    EXPECT_EQ(Text(), L"\u304B\u3042");
 }
 
 } // namespace

@@ -1,7 +1,10 @@
 #include "text_service.h"
 
 #include "key_translation.h"
+#include "lang_bar_button.h"
 #include "module.h"
+
+#include <oleauto.h>
 
 #include <new>
 #include <optional>
@@ -172,6 +175,8 @@ STDMETHODIMP TextService::QueryInterface(REFIID riid, void** object)
         *object = static_cast<ITfKeyEventSink*>(this);
     } else if (riid == IID_ITfCompositionSink) {
         *object = static_cast<ITfCompositionSink*>(this);
+    } else if (riid == IID_ITfCompartmentEventSink) {
+        *object = static_cast<ITfCompartmentEventSink*>(this);
     } else {
         *object = nullptr;
         return E_NOINTERFACE;
@@ -218,6 +223,11 @@ STDMETHODIMP TextService::ActivateEx(ITfThreadMgr* thread_mgr, TfClientId client
     }
     key_sink_advised_ = true;
     g_active_service = this;
+    try {
+        StartModeIndicators();
+    } catch (...) {
+        // The indicator is optional; typing works without it.
+    }
     return S_OK;
 }
 
@@ -226,6 +236,7 @@ STDMETHODIMP TextService::Deactivate()
     if (g_active_service == this) {
         g_active_service = nullptr;
     }
+    StopModeIndicators();
     if (key_sink_advised_ && thread_mgr_) {
         Microsoft::WRL::ComPtr<ITfKeystrokeMgr> keystroke_mgr;
         if (SUCCEEDED(thread_mgr_.As(&keystroke_mgr))) {
@@ -344,11 +355,7 @@ STDMETHODIMP TextService::OnKeyUp(ITfContext* context, WPARAM wparam, LPARAM lpa
         }
         // R-03: left Alt tap switches to English, right Alt tap to Japanese.
         *eaten = TRUE;
-        SessionOutput output = session_.SetJapaneseMode(*side == ModifierSide::Right);
-        if (context != nullptr && (output.composition_changed || !output.commit.empty())) {
-            return RequestEdit(context, std::move(output.commit));
-        }
-        return S_OK;
+        return SetMode(*side == ModifierSide::Right, context);
     } catch (...) {
         return E_UNEXPECTED;
     }
@@ -368,6 +375,140 @@ STDMETHODIMP TextService::OnCompositionTerminated(TfEditCookie /*cookie*/, ITfCo
     composition_.Reset();
     session_.AbandonComposition();
     return S_OK;
+}
+
+// Another component (the taskbar, an app, the IME on/off key) changed the keyboard open state.
+STDMETHODIMP TextService::OnChange(REFGUID compartment_guid)
+{
+    if (!IsEqualGUID(compartment_guid, GUID_COMPARTMENT_KEYBOARD_OPENCLOSE)) {
+        return S_OK;
+    }
+    try {
+        const ComPtr<ITfCompartment> compartment = OpenCloseCompartment();
+        if (!compartment) {
+            return S_OK;
+        }
+        VARIANT value;
+        VariantInit(&value);
+        if (FAILED(compartment->GetValue(&value)) || value.vt != VT_I4) {
+            VariantClear(&value);
+            return S_OK;
+        }
+        const bool open = value.lVal != 0;
+        if (open == JapaneseMode()) {
+            return S_OK;
+        }
+        return SetMode(open, FocusedContext().Get());
+    } catch (...) {
+        return E_UNEXPECTED;
+    }
+}
+
+HRESULT TextService::ToggleMode()
+{
+    try {
+        return SetMode(!JapaneseMode(), FocusedContext().Get());
+    } catch (...) {
+        return E_UNEXPECTED;
+    }
+}
+
+HRESULT TextService::SetMode(bool japanese, ITfContext* context)
+{
+    SessionOutput output = session_.SetJapaneseMode(japanese);
+    HRESULT hr = S_OK;
+    if (context != nullptr && (output.composition_changed || !output.commit.empty())) {
+        hr = RequestEdit(context, std::move(output.commit));
+    }
+    PublishMode();
+    return hr;
+}
+
+ComPtr<ITfContext> TextService::FocusedContext() const
+{
+    ComPtr<ITfContext> context;
+    if (composition_) {
+        ComPtr<ITfRange> range;
+        if (SUCCEEDED(composition_->GetRange(&range)) && SUCCEEDED(range->GetContext(&context))) {
+            return context;
+        }
+    }
+    ComPtr<ITfDocumentMgr> document;
+    if (thread_mgr_ && SUCCEEDED(thread_mgr_->GetFocus(&document)) && document) {
+        document->GetTop(&context);
+    }
+    return context;
+}
+
+ComPtr<ITfCompartment> TextService::OpenCloseCompartment() const
+{
+    ComPtr<ITfCompartmentMgr> compartments;
+    ComPtr<ITfCompartment> compartment;
+    if (thread_mgr_ && SUCCEEDED(thread_mgr_.As(&compartments))) {
+        compartments->GetCompartment(GUID_COMPARTMENT_KEYBOARD_OPENCLOSE, &compartment);
+    }
+    return compartment;
+}
+
+void TextService::StartModeIndicators()
+{
+    if (const ComPtr<ITfCompartment> compartment = OpenCloseCompartment()) {
+        VARIANT value;
+        VariantInit(&value);
+        // Keep the open state from an earlier activation on this thread.
+        if (SUCCEEDED(compartment->GetValue(&value)) && value.vt == VT_I4) {
+            static_cast<void>(session_.SetJapaneseMode(value.lVal != 0));
+        }
+        VariantClear(&value);
+        ComPtr<ITfSource> source;
+        if (FAILED(compartment.As(&source)) ||
+            FAILED(source->AdviseSink(IID_ITfCompartmentEventSink, static_cast<ITfCompartmentEventSink*>(this),
+                                      &compartment_cookie_))) {
+            compartment_cookie_ = TF_INVALID_COOKIE;
+        }
+    }
+    mode_button_ = LangBarButton::Create(this);
+    ComPtr<ITfLangBarItemMgr> items;
+    if (mode_button_ != nullptr && SUCCEEDED(thread_mgr_.As(&items))) {
+        mode_button_added_ = SUCCEEDED(items->AddItem(mode_button_));
+    }
+    PublishMode();
+}
+
+void TextService::StopModeIndicators()
+{
+    if (compartment_cookie_ != TF_INVALID_COOKIE) {
+        ComPtr<ITfSource> source;
+        if (const ComPtr<ITfCompartment> compartment = OpenCloseCompartment();
+            compartment && SUCCEEDED(compartment.As(&source))) {
+            source->UnadviseSink(compartment_cookie_);
+        }
+        compartment_cookie_ = TF_INVALID_COOKIE;
+    }
+    if (mode_button_ != nullptr) {
+        ComPtr<ITfLangBarItemMgr> items;
+        if (mode_button_added_ && thread_mgr_ && SUCCEEDED(thread_mgr_.As(&items))) {
+            items->RemoveItem(mode_button_);
+        }
+        mode_button_->Detach();
+        mode_button_->Release();
+        mode_button_ = nullptr;
+        mode_button_added_ = false;
+    }
+}
+
+void TextService::PublishMode()
+{
+    if (const ComPtr<ITfCompartment> compartment = OpenCloseCompartment()) {
+        VARIANT value;
+        VariantInit(&value);
+        value.vt = VT_I4;
+        value.lVal = JapaneseMode() ? 1 : 0;
+        compartment->SetValue(client_id_, &value);
+    }
+    if (mode_button_ != nullptr) {
+        mode_button_->NotifyModeChanged();
+    }
 }
 
 HRESULT TextService::RequestEdit(ITfContext* context, std::u16string commit)
