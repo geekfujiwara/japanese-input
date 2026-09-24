@@ -4,7 +4,8 @@
 .DESCRIPTION
     Copies astelio_tip.dll to "Program Files\Astelio IME\<arch>" (writable only by administrators, because the TIP is
     loaded into every app) and registers it with regsvr32. Needs an administrator PowerShell.
-    The source folder is laid out like "gh run download": <Path>\astelio-tip-windows-<arch>\astelio_tip.dll.
+    The source folder is laid out like "gh run download": <Path>\astelio-tip-windows-<arch>\astelio_tip.dll and
+    <Path>\astelio-dictionary\system.dic (installed to "Program Files\Astelio IME\dictionary").
 .EXAMPLE
     ./tools/Register-AstelioTip.ps1 -Path artifacts/tip
 .EXAMPLE
@@ -39,8 +40,8 @@ function Invoke-RegSvr([string]$RegSvr, [string[]]$Arguments) {
     }
 }
 
-# Apps that have the TIP loaded lock the DLL; a loaded DLL can still be renamed, so move it aside first.
-function Install-Dll([string]$Source, [string]$Destination) {
+# Apps that have the TIP loaded lock the DLL and the dictionary; loaded files can still be renamed, so move them aside first.
+function Install-File([string]$Source, [string]$Destination) {
     New-Item -ItemType Directory -Force -Path (Split-Path $Destination) | Out-Null
     if (Test-Path $Destination) {
         Move-Item -LiteralPath $Destination -Destination "$Destination.$([DateTime]::Now.ToString('yyyyMMddHHmmss')).old" -Force
@@ -68,9 +69,23 @@ foreach ($target in $targets) {
         throw "Not found: $source (download the CI artifact astelio-tip-windows-$($target.Arch))"
     }
     if ($PSCmdlet.ShouldProcess($installed, "Install from $source and register")) {
-        Install-Dll $source $installed
+        Install-File $source $installed
         Invoke-RegSvr $target.RegSvr @('/s', "`"$installed`"")
         Write-Host "Registered $($target.Arch): $installed"
+    }
+}
+
+if (-not $Unregister) {
+    $dictionarySource = Join-Path $Path 'astelio-dictionary'
+    if (-not (Test-Path (Join-Path $dictionarySource 'system.dic'))) {
+        throw "Not found: $dictionarySource\system.dic (download the CI artifact astelio-dictionary)"
+    }
+    $dictionaryTarget = Join-Path $installRoot 'dictionary'
+    if ($PSCmdlet.ShouldProcess($dictionaryTarget, "Install the system dictionary from $dictionarySource")) {
+        foreach ($file in Get-ChildItem -LiteralPath $dictionarySource -File) {
+            Install-File $file.FullName (Join-Path $dictionaryTarget $file.Name)
+        }
+        Write-Host "Installed the dictionary: $dictionaryTarget"
     }
 }
 

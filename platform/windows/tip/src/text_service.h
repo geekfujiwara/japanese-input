@@ -54,6 +54,7 @@ public:
     HRESULT ApplyToDocument(TfEditCookie cookie, ITfContext* context, const std::u16string& commit);
 
     static HRESULT TestKey(ITfContext* context, WPARAM wparam, LPARAM lparam, BOOL key_up, BOOL* eaten);
+    static HRESULT TestUseDictionary(const wchar_t* path);
 
 private:
     TextService();

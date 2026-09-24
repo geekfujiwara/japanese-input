@@ -1,5 +1,6 @@
 #include "astelio/tip/guids.h"
 
+#include "astelio/dictionary_builder.h"
 #include "test_text_store.h"
 
 #include <windows.h>
@@ -12,6 +13,7 @@
 
 #include <cstdlib>
 #include <cwctype>
+#include <fstream>
 #include <ios>
 #include <iostream>
 #include <iterator>
@@ -258,6 +260,34 @@ TEST(TipProfile, JapaneseProfileBecomesTheActiveKeyboard)
     EXPECT_HRESULT_SUCCEEDED(thread_mgr->Deactivate());
 }
 
+// Writes a small dictionary (わたし: 私 / 渡し, は) and returns its path.
+std::wstring WriteTestDictionary()
+{
+    constexpr std::uint16_t kIds = 4; // 0 edge, 1 noun, 2 particle, 3 verb
+    astelio::ConnectionMatrix matrix;
+    matrix.size = kIds;
+    matrix.costs.assign(kIds * kIds, 100);
+    matrix.word_types = {astelio::WordType::Edge, astelio::WordType::Content, astelio::WordType::Suffix,
+                         astelio::WordType::Content};
+    matrix.unknown_id = 1;
+    matrix.unknown_cost = 5000;
+    matrix.costs[0 * kIds + 1] = 0;
+    matrix.costs[1 * kIds + 2] = 0;
+    matrix.costs[2 * kIds + 0] = 0;
+    astelio::DictionaryBuilder builder(std::move(matrix));
+    builder.Add({u"わたし", u"私", 1, 1, 0, 300});
+    builder.Add({u"わたし", u"渡し", 3, 3, 0, 900});
+    builder.Add({u"は", u"は", 2, 2, 0, 50});
+    const std::vector<std::byte> bytes = builder.Build();
+
+    wchar_t directory[MAX_PATH] = {};
+    GetTempPathW(MAX_PATH, directory);
+    const std::wstring path = std::wstring(directory) + L"astelio_tip_test.dic";
+    std::ofstream file(path, std::ios::binary | std::ios::trunc);
+    file.write(reinterpret_cast<const char*>(bytes.data()), static_cast<std::streamsize>(bytes.size()));
+    return file ? path : std::wstring();
+}
+
 // Types into an in-memory document through real TSF with Astelio active.
 class TypingTest : public ::testing::Test {
 protected:
@@ -312,12 +342,18 @@ protected:
         key_ = reinterpret_cast<TestKeyFunction>(
             GetProcAddress(GetModuleHandleW(TipPath().c_str()), "AstelioTipTestKey"));
         ASSERT_NE(key_, nullptr);
+        use_dictionary_ = reinterpret_cast<UseDictionaryFunction>(
+            GetProcAddress(GetModuleHandleW(TipPath().c_str()), "AstelioTipTestUseDictionary"));
+        ASSERT_NE(use_dictionary_, nullptr);
         ASSERT_HRESULT_SUCCEEDED(thread_mgr_->IsThreadFocus(&thread_focus_));
     }
 
     void TearDown() override
     {
         SetModifierState(false, false);
+        if (use_dictionary_ != nullptr && thread_mgr_active_) {
+            use_dictionary_(nullptr);
+        }
         if (thread_mgr_active_) {
             SetOpenClose(1);
         }
@@ -531,6 +567,8 @@ protected:
     ComPtr<ITfKeystrokeMgr> keystrokes_;
     using TestKeyFunction = HRESULT(WINAPI*)(ITfContext*, WPARAM, LPARAM, BOOL, BOOL*);
     TestKeyFunction key_ = nullptr;
+    using UseDictionaryFunction = HRESULT(WINAPI*)(const wchar_t*);
+    UseDictionaryFunction use_dictionary_ = nullptr;
     BOOL thread_focus_ = FALSE;
 };
 
@@ -792,6 +830,42 @@ TEST_F(TypingTest, KeyboardCloseFromOutsideSwitchesToEnglish)
     SetOpenClose(1);
     EXPECT_TRUE(Press('A', 0x1E));
     EXPECT_EQ(Text(), L"\u304B\u3042");
+}
+
+// T-B02-1, T-B06-1 (TIP): Space converts in the document, Space picks the next candidate,
+// Esc returns to the kana, Enter commits.
+TEST_F(TypingTest, SpaceConvertsWithTheDictionary)
+{
+    const std::wstring path = WriteTestDictionary();
+    ASSERT_FALSE(path.empty());
+    ASSERT_HRESULT_SUCCEEDED(use_dictionary_(path.c_str()));
+
+    TypeLetters("watasiha");
+    EXPECT_TRUE(Press(VK_SPACE, 0x39));
+    EXPECT_EQ(Text(), L"\u79C1\u306F");
+    EXPECT_EQ(CompositionCount(), 1) << "the conversion stays uncommitted";
+    EXPECT_TRUE(Press(VK_SPACE, 0x39));
+    EXPECT_EQ(Text(), L"\u6E21\u3057\u306F");
+    EXPECT_TRUE(Press(VK_DOWN, 0x50, false, true));
+    EXPECT_TRUE(Press(VK_ESCAPE, 0x01));
+    EXPECT_EQ(Text(), L"\u308F\u305F\u3057\u306F");
+    EXPECT_EQ(CompositionCount(), 1);
+
+    EXPECT_TRUE(Press(VK_SPACE, 0x39));
+    EXPECT_TRUE(Press(VK_RETURN, 0x1C));
+    EXPECT_EQ(Text(), L"\u79C1\u306F");
+    EXPECT_EQ(CompositionCount(), 0);
+    EXPECT_EQ(store_->SelectionEnd(), 2);
+}
+
+// Without an installed dictionary typing still works and Space keeps the kana.
+TEST_F(TypingTest, SpaceWithoutADictionaryKeepsTheKana)
+{
+    ASSERT_HRESULT_SUCCEEDED(use_dictionary_(nullptr));
+    TypeLetters("ka");
+    EXPECT_TRUE(Press(VK_SPACE, 0x39));
+    EXPECT_EQ(Text(), L"\u304B");
+    EXPECT_EQ(CompositionCount(), 1);
 }
 
 } // namespace

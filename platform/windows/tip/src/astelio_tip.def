@@ -2,6 +2,7 @@ LIBRARY astelio_tip
 EXPORTS
     AstelioTipKeyDiagnostics PRIVATE
     AstelioTipTestKey PRIVATE
+    AstelioTipTestUseDictionary PRIVATE
     DllCanUnloadNow PRIVATE
     DllGetClassObject PRIVATE
     DllRegisterServer PRIVATE

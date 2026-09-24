@@ -154,4 +154,10 @@ void Composer::Clear()
     temporary_alphanumeric_ = false;
 }
 
+void Composer::SetText(std::u16string text)
+{
+    Clear();
+    before_ = std::move(text);
+}
+
 } // namespace astelio

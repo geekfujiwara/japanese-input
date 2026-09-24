@@ -32,6 +32,8 @@ public:
     // Resolves pending romaji, returns the whole text, and resets.
     std::u16string Commit();
     void Clear();
+    // Replaces the text (already converted to kana) and puts the cursor at the end.
+    void SetText(std::u16string text);
 
 private:
     void ResolvePending(bool flush);

@@ -54,6 +54,10 @@ TEST(KeyTranslation, EditingKeys)
     EXPECT_EQ(TranslateKey(VK_BACK, LParam(0x0E), {})->kind, KeyKind::Backspace);
     EXPECT_EQ(TranslateKey(VK_SPACE, LParam(0x39), {})->kind, KeyKind::Space);
     EXPECT_EQ(TranslateKey(VK_LEFT, LParam(0x4B, true), {})->kind, KeyKind::Left);
+    EXPECT_FALSE(TranslateKey(VK_LEFT, LParam(0x4B, true), {})->shift);
+    EXPECT_TRUE(TranslateKey(VK_RIGHT, LParam(0x4D, true), {.shift = true})->shift);
+    EXPECT_EQ(TranslateKey(VK_UP, LParam(0x48, true), {})->kind, KeyKind::Up);
+    EXPECT_EQ(TranslateKey(VK_DOWN, LParam(0x50, true), {})->kind, KeyKind::Down);
 }
 
 TEST(KeyTranslation, ShortcutsAndOtherKeysAreNotHandled)

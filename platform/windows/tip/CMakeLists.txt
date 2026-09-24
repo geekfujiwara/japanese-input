@@ -8,6 +8,7 @@ target_compile_options(astelio_tip_keys PRIVATE /W4 /WX /utf-8 /permissive- /EHs
 
 add_library(astelio_tip SHARED
     src/astelio_tip.def
+    src/dictionary_loader.cpp
     src/dllmain.cpp
     src/lang_bar_button.cpp
     src/registration.cpp
