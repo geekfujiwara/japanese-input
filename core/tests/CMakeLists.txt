@@ -2,6 +2,7 @@ add_executable(astelio_core_tests
     character_rules_test.cpp
     composer_robustness_test.cpp
     composer_test.cpp
+    converter_test.cpp
     dictionary_test.cpp
     input_session_test.cpp
     modifier_tap_tracker_test.cpp

@@ -1,6 +1,7 @@
 add_library(astelio_core STATIC
     src/character_rules.cpp
     src/composer.cpp
+    src/converter.cpp
     src/dictionary.cpp
     src/dictionary_builder.cpp
     src/input_session.cpp

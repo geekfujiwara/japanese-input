@@ -173,12 +173,27 @@ TEST(SystemDictionary, RandomCorruptionNeverReadsOutOfBounds)
 TEST(DictionarySource, ParsesTheConnectionMatrixWithRowDefaults)
 {
     SourceError error;
-    const std::optional<ConnectionMatrix> matrix =
-        astelio::ParseConnectionSource("\xEF\xBB\xBF# comment\r\nsize\t3\t0\t2\r\n1\t2\t-5\n1\t*\t40\n0\t0\t9\n", &error);
+    const std::optional<ConnectionMatrix> matrix = astelio::ParseConnectionSource(
+        "\xEF\xBB\xBF# comment\r\nsize\t3\t0\t2\r\n1\t2\t-5\n1\t*\t40\n0\t0\t9\ntype\t2\tsuffix\nunknown\t1\t700\n", &error);
     ASSERT_TRUE(matrix) << error.line << ": " << error.message;
     EXPECT_EQ(matrix->size, 3);
     EXPECT_EQ(matrix->eos_id, 2);
     EXPECT_EQ(matrix->costs, (std::vector<std::int16_t>{9, 0, 0, 40, 40, -5, 0, 0, 0}));
+    EXPECT_EQ(matrix->word_types, (std::vector<astelio::WordType>{astelio::WordType::Content,
+                                                                  astelio::WordType::Content,
+                                                                  astelio::WordType::Suffix}));
+    EXPECT_EQ(matrix->unknown_id, 1);
+    EXPECT_EQ(matrix->unknown_cost, 700);
+    EXPECT_FALSE(astelio::ParseConnectionSource("size\t3\t0\t2\ntype\t1\tverb\n", &error));
+
+    DictionaryBuilder builder(*matrix);
+    const std::vector<std::byte> bytes = builder.Build();
+    const std::optional<SystemDictionary> dictionary = SystemDictionary::Open(bytes);
+    ASSERT_TRUE(dictionary);
+    EXPECT_EQ(dictionary->word_type(2), astelio::WordType::Suffix);
+    EXPECT_EQ(dictionary->word_type(0), astelio::WordType::Content);
+    EXPECT_EQ(dictionary->unknown_id(), 1);
+    EXPECT_EQ(dictionary->unknown_cost(), 700);
 }
 
 TEST(DictionarySource, ReportsTheLineOfABadConnectionSource)

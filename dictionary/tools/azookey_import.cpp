@@ -116,6 +116,22 @@ std::u16string KatakanaToHiragana(std::u16string_view text)
     return result;
 }
 
+WordType WordTypeOf(std::uint16_t id)
+{
+    if (id == kBosId || id == kEosId) {
+        return WordType::Edge;
+    }
+    if (id == 1315 || id == 6 || (id >= 557 && id <= 560)) {
+        return WordType::Prefix;
+    }
+    const auto in = [id](int first, int last) { return id >= first && id <= last; };
+    if (in(561, 867) || in(1283, 1296) || in(1306, 1309) || in(11, 52) || in(555, 556) || in(1281, 1282) ||
+        id == 1314 || in(1, 5) || id == 9) {
+        return WordType::Content;
+    }
+    return WordType::Suffix;
+}
+
 std::int16_t ToCost(float value)
 {
     if (std::isnan(value)) {

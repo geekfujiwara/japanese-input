@@ -103,15 +103,23 @@ std::optional<SystemDictionary> SystemDictionary::Open(std::span<const std::byte
     const std::uint32_t pool_offset = Read<std::uint32_t>(base, fmt::header::kPoolOffset);
     const std::uint32_t pool_units = Read<std::uint32_t>(base, fmt::header::kPoolUnits);
     const std::uint32_t matrix_offset = Read<std::uint32_t>(base, fmt::header::kMatrixOffset);
+    const std::uint32_t word_types_offset = Read<std::uint32_t>(base, fmt::header::kWordTypesOffset);
+    const std::uint16_t unknown_id = Read<std::uint16_t>(base, fmt::header::kUnknownId);
     if (Read<std::uint32_t>(base, fmt::header::kFileSize) != file_size || id_count == 0 || id_count > UINT16_MAX ||
-        bos_id >= id_count || eos_id >= id_count) {
+        bos_id >= id_count || eos_id >= id_count || unknown_id >= id_count) {
         return Fail(error, DictionaryError::BadHeader);
     }
     if (!SectionFits(readings_offset, std::uint64_t{reading_count} * fmt::kReadingRecordSize, file_size, 4) ||
         !SectionFits(entries_offset, std::uint64_t{entry_count} * fmt::kEntryRecordSize, file_size, 4) ||
         !SectionFits(pool_offset, std::uint64_t{pool_units} * 2, file_size, 2) ||
-        !SectionFits(matrix_offset, std::uint64_t{id_count} * id_count * 2, file_size, 2)) {
+        !SectionFits(matrix_offset, std::uint64_t{id_count} * id_count * 2, file_size, 2) ||
+        !SectionFits(word_types_offset, id_count, file_size, 1)) {
         return Fail(error, DictionaryError::OutOfBounds);
+    }
+    for (std::uint32_t id = 0; id < id_count; ++id) {
+        if (std::to_integer<std::uint8_t>(base[word_types_offset + id]) > static_cast<std::uint8_t>(WordType::Edge)) {
+            return Fail(error, DictionaryError::BadHeader);
+        }
     }
 
     SystemDictionary dictionary;
@@ -125,6 +133,9 @@ std::optional<SystemDictionary> SystemDictionary::Open(std::span<const std::byte
     dictionary.entries_offset_ = entries_offset;
     dictionary.pool_ = reinterpret_cast<const char16_t*>(base + pool_offset);
     dictionary.matrix_offset_ = matrix_offset;
+    dictionary.word_types_offset_ = word_types_offset;
+    dictionary.unknown_id_ = unknown_id;
+    dictionary.unknown_cost_ = Read<std::int16_t>(base, fmt::header::kUnknownCost);
 
     std::u16string_view previous;
     for (std::size_t i = 0; i < reading_count; ++i) {
@@ -234,6 +245,14 @@ std::int16_t SystemDictionary::ConnectionCost(std::uint16_t previous_right_id, s
     }
     const std::size_t index = std::size_t{previous_right_id} * id_count_ + next_left_id;
     return Read<std::int16_t>(base_, matrix_offset_ + index * 2);
+}
+
+WordType SystemDictionary::word_type(std::uint16_t id) const
+{
+    if (id >= id_count_) {
+        return WordType::Content;
+    }
+    return static_cast<WordType>(std::to_integer<std::uint8_t>(base_[word_types_offset_ + id]));
 }
 
 } // namespace astelio

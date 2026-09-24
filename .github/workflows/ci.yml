@@ -118,6 +118,14 @@ jobs:
           cp THIRD_PARTY_NOTICES build/dictionary/out/
       - name: Check lookups (T-D01)
         run: build/dictionary/dictionary/tools/astelio_dicbuild lookup build/dictionary/out/system.dic わたし にほんご がっこう は です
+      - name: Check conversion (T-B02-1)
+        run: |
+          tool=build/dictionary/dictionary/tools/astelio_dicbuild
+          dic=build/dictionary/out/system.dic
+          $tool convert $dic わたしはにほんごです 私は日本語です
+          for reading in きょうはいいてんきですね かいぎのしりょうをおくります あしたのごごさんじにえきでまちあわせましょう iphoneをかう; do
+            $tool convert $dic "$reading"
+          done
       - name: Upload the dictionary
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
