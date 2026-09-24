@@ -48,4 +48,15 @@ dotnet test KotohaIME.slnx -c Release
 
 - 起動中の `AstelioIME.exe` は配布フォルダーをロックする。発行の前に `Get-Process AstelioIME -ErrorAction SilentlyContinue | Stop-Process -Force` を実行する
 - 同じプロセス内から `SendInput` した入力は低レベルキーフックに届かない。キー処理のテストはフックの判定を直接呼ぶ（`ProcessKeyboardMessageForTest`）
-- C++ Core・TIP・macOS版のビルド手順は、フェーズ0で環境を整えた時点でここに追記する
+
+C++ Core（CMakeプリセット: `windows-arm64` / `windows-x64` / `windows-x86` / `macos-universal`）:
+
+```powershell
+cmake --preset windows-arm64
+cmake --build --preset windows-arm64
+ctest --preset windows-arm64
+```
+
+- このPCにはVisual C++とCMakeがまだ入っていない。C++の変更はPRのCI（`.github/workflows/ci.yml`）でビルドとテストを確認する
+- 外部の依存は版とSHA-256を固定する。GitHub Actionsの利用もコミットのSHAで固定する
+- TIP・macOS版のビルド手順は、該当フェーズでここに追記する
