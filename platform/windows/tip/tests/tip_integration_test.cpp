@@ -305,6 +305,9 @@ protected:
                                                             astelio::tip::kTextServiceClsid, kTestProfileGuid,
                                                             nullptr, TF_IPPMF_FORPROCESS));
         ASSERT_HRESULT_SUCCEEDED(thread_mgr_.As(&keystrokes_));
+        // With keyboard focus TSF carries the open state over from earlier tests, so start from Japanese.
+        SetOpenClose(1);
+        ASSERT_EQ(OpenCloseValue(), 1);
 
         key_ = reinterpret_cast<TestKeyFunction>(
             GetProcAddress(GetModuleHandleW(TipPath().c_str()), "AstelioTipTestKey"));
@@ -315,6 +318,9 @@ protected:
     void TearDown() override
     {
         SetModifierState(false, false);
+        if (thread_mgr_active_) {
+            SetOpenClose(1);
+        }
         keystrokes_.Reset();
         if (document_) {
             document_->Pop(TF_POPF_ALL);
