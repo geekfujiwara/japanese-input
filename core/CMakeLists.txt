@@ -1,6 +1,8 @@
 add_library(astelio_core STATIC
     src/character_rules.cpp
     src/composer.cpp
+    src/dictionary.cpp
+    src/dictionary_builder.cpp
     src/input_session.cpp
     src/modifier_tap_tracker.cpp
     src/romaji_table.cpp
@@ -27,4 +29,9 @@ if(ASTELIO_BUILD_FUZZERS)
     target_link_libraries(astelio_composer_fuzzer PRIVATE astelio_core)
     target_compile_options(astelio_composer_fuzzer PRIVATE -fsanitize=fuzzer,address,undefined)
     target_link_options(astelio_composer_fuzzer PRIVATE -fsanitize=fuzzer,address,undefined)
+
+    add_executable(astelio_dictionary_fuzzer fuzz/dictionary_fuzzer.cpp)
+    target_link_libraries(astelio_dictionary_fuzzer PRIVATE astelio_core)
+    target_compile_options(astelio_dictionary_fuzzer PRIVATE -fsanitize=fuzzer,address,undefined)
+    target_link_options(astelio_dictionary_fuzzer PRIVATE -fsanitize=fuzzer,address,undefined)
 endif()

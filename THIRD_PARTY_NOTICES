@@ -1,0 +1,24 @@
+Astelio IME - Third-party notices
+
+Astelio IME is distributed under the MIT License (see LICENSE). It includes or is derived from the
+following third-party material.
+
+--------------------------------------------------------------------------------
+azooKey_dictionary_storage
+https://github.com/azooKey/azooKey_dictionary_storage (commit 4d418525b090cf49c219819d05a7e3cc2a4346eb)
+Copyright 2024 Miwa / ensan
+Licensed under the Apache License, Version 2.0 (http://www.apache.org/licenses/LICENSE-2.0)
+
+Used for: the system dictionary (readings, surfaces, part-of-speech ids, costs) and the
+part-of-speech connection costs.
+Changes: converted from the azooKey binary format to the Astelio dictionary format
+(katakana readings converted to hiragana, log-probability values converted to integer costs).
+The full license text is shipped with the dictionary as LICENSE-azooKey_dictionary_storage.txt.
+
+--------------------------------------------------------------------------------
+AzooKeyKanaKanjiConverter
+https://github.com/azooKey/AzooKeyKanaKanjiConverter
+Copyright (c) ensan
+Licensed under the MIT License
+
+Used for: reference for the azooKey dictionary file layout. No code is included.

@@ -1,0 +1,23 @@
+add_library(astelio_dictionary_import STATIC azookey_import.cpp)
+target_include_directories(astelio_dictionary_import PUBLIC .)
+target_link_libraries(astelio_dictionary_import PUBLIC astelio_core)
+
+add_executable(astelio_dicbuild dicbuild.cpp)
+target_link_libraries(astelio_dicbuild PRIVATE astelio_dictionary_import)
+
+foreach(target astelio_dictionary_import astelio_dicbuild)
+    if(MSVC)
+        target_compile_options(${target} PRIVATE /W4 /WX /utf-8 /permissive-)
+    else()
+        target_compile_options(${target} PRIVATE -Wall -Wextra -Wpedantic -Werror)
+    endif()
+endforeach()
+
+if(ASTELIO_BUILD_TESTS)
+    add_executable(astelio_dictionary_tools_tests tests/azookey_import_test.cpp)
+    target_link_libraries(astelio_dictionary_tools_tests PRIVATE astelio_dictionary_import GTest::gtest_main)
+    if(MSVC)
+        target_compile_options(astelio_dictionary_tools_tests PRIVATE /utf-8)
+    endif()
+    gtest_discover_tests(astelio_dictionary_tools_tests)
+endif()
