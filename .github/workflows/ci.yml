@@ -38,6 +38,13 @@ jobs:
         run: cmake --build --preset ${{ matrix.preset }}
       - name: Test
         run: ctest --preset ${{ matrix.preset }}
+      - name: Upload TIP
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: astelio-tip-${{ matrix.preset }}
+          path: build/${{ matrix.preset }}/platform/windows/tip/Release/astelio_tip.dll
+          if-no-files-found: error
+          retention-days: 30
 
   core-macos:
     name: Core (macOS ${{ matrix.arch }})

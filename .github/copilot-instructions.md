@@ -60,3 +60,13 @@ ctest --preset windows-arm64
 - このPCにはVisual C++とCMakeがまだ入っていない。C++の変更はPRのCI（`.github/workflows/ci.yml`）でビルドとテストを確認する
 - 外部の依存は版とSHA-256を固定する。GitHub Actionsの利用もコミットのSHAで固定する
 - TIP・macOS版のビルド手順は、該当フェーズでここに追記する
+
+TIP（Windows）の試用: CIの成果物 `astelio-tip-windows-<arch>` を取得し、管理者のPowerShellで登録する（登録はユーザーが行う）。
+
+```powershell
+& "$env:LOCALAPPDATA\Programs\gh\bin\gh.exe" run download (& "$env:LOCALAPPDATA\Programs\gh\bin\gh.exe" run list --branch main --workflow CI --status success --limit 1 --json databaseId --jq '.[0].databaseId') -n astelio-tip-windows-arm64 -n astelio-tip-windows-x86 -D artifacts/tip
+./tools/Register-AstelioTip.ps1 -Path artifacts/tip   # 解除は -Unregister
+```
+
+- DLLは `Program Files\Astelio IME\<arch>` に置く（すべてのアプリに読み込まれるため、管理者だけが書き換えられる場所にする）
+- ARM64版Windowsのx64アプリは、ARM64Xの転送DLLを用意するまで対象外
