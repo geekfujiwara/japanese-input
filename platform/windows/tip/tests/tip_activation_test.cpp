@@ -115,6 +115,13 @@ TEST(TipActivation, JapaneseProfileActivatesTheTextService)
     ComPtr<ITfInputProcessorProfileMgr> profiles;
     ASSERT_HRESULT_SUCCEEDED(CoCreateInstance(CLSID_TF_InputProcessorProfiles, nullptr, CLSCTX_INPROC_SERVER,
                                               IID_PPV_ARGS(&profiles)));
+
+    TF_INPUTPROCESSORPROFILE registered{};
+    ASSERT_HRESULT_SUCCEEDED(profiles->GetProfile(TF_PROFILETYPE_INPUTPROCESSOR, astelio::tip::kJapaneseLangId,
+                                                  astelio::tip::kTextServiceClsid,
+                                                  astelio::tip::kJapaneseProfileGuid, nullptr, &registered));
+    EXPECT_NE(registered.dwFlags & TF_IPP_FLAG_ENABLED, 0u);
+
     ASSERT_HRESULT_SUCCEEDED(profiles->ActivateProfile(
         TF_PROFILETYPE_INPUTPROCESSOR, astelio::tip::kJapaneseLangId, astelio::tip::kTextServiceClsid,
         astelio::tip::kJapaneseProfileGuid, nullptr, TF_IPPMF_FORPROCESS | TF_IPPMF_DONTCARECURRENTINPUTLANGUAGE));
