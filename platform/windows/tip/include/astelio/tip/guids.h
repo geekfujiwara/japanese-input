@@ -14,4 +14,8 @@ inline constexpr GUID kJapaneseProfileGuid = {
 
 inline constexpr unsigned short kJapaneseLangId = 0x0411;
 
+// GUID_LBI_INPUTMODE: the language bar item the taskbar shows as the input mode indicator.
+inline constexpr GUID kLangBarInputModeGuid = {
+    0x2c77a81e, 0x41cc, 0x4178, {0xa3, 0xa7, 0x5f, 0x8a, 0x98, 0x75, 0x68, 0xe6}};
+
 } // namespace astelio::tip

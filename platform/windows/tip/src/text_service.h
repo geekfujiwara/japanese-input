@@ -13,7 +13,12 @@
 
 namespace astelio::tip {
 
-class TextService final : public ITfTextInputProcessorEx, public ITfKeyEventSink, public ITfCompositionSink {
+class LangBarButton;
+
+class TextService final : public ITfTextInputProcessorEx,
+                          public ITfKeyEventSink,
+                          public ITfCompositionSink,
+                          public ITfCompartmentEventSink {
 public:
     static HRESULT Create(REFIID riid, void** object);
 
@@ -38,6 +43,13 @@ public:
     // ITfCompositionSink
     STDMETHODIMP OnCompositionTerminated(TfEditCookie cookie, ITfComposition* composition) override;
 
+    // ITfCompartmentEventSink
+    STDMETHODIMP OnChange(REFGUID compartment) override;
+
+    bool JapaneseMode() const { return session_.JapaneseMode(); }
+    // Mode button click: switches the mode in the focused document.
+    HRESULT ToggleMode();
+
     // Runs inside an edit session: commits `commit`, then shows the session's uncommitted text.
     HRESULT ApplyToDocument(TfEditCookie cookie, ITfContext* context, const std::u16string& commit);
 
@@ -50,6 +62,13 @@ private:
     HRESULT RequestEdit(ITfContext* context, std::u16string commit);
     HRESULT StartComposition(TfEditCookie cookie, ITfContext* context);
     HRESULT EndComposition(TfEditCookie cookie);
+    // Switches the mode, commits into `context` when leaving Japanese, and updates the indicators.
+    HRESULT SetMode(bool japanese, ITfContext* context);
+    Microsoft::WRL::ComPtr<ITfContext> FocusedContext() const;
+    Microsoft::WRL::ComPtr<ITfCompartment> OpenCloseCompartment() const;
+    void StartModeIndicators();
+    void StopModeIndicators();
+    void PublishMode();
 
     LONG ref_count_ = 1;
     Microsoft::WRL::ComPtr<ITfThreadMgr> thread_mgr_;
@@ -59,6 +78,9 @@ private:
     Microsoft::WRL::ComPtr<ITfComposition> composition_;
     ModifierTapTracker alt_taps_;
     std::optional<ModifierSide> pending_alt_tap_;
+    DWORD compartment_cookie_ = TF_INVALID_COOKIE;
+    LangBarButton* mode_button_ = nullptr;
+    bool mode_button_added_ = false;
 };
 
 } // namespace astelio::tip
