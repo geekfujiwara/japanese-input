@@ -1,7 +1,10 @@
 add_executable(astelio_core_tests
     character_rules_test.cpp
+    composer_robustness_test.cpp
     composer_test.cpp
     modifier_tap_tracker_test.cpp
+    romaji_table_io_test.cpp
+    utf_test.cpp
     version_test.cpp
 )
 

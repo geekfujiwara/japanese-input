@@ -7,6 +7,13 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
 option(ASTELIO_BUILD_TESTS "Build unit tests" ON)
+option(ASTELIO_BUILD_FUZZERS "Build libFuzzer targets (clang only)" OFF)
+
+if(ASTELIO_BUILD_FUZZERS)
+    # Sanitizers must cover the library too, not only the fuzzer entry point.
+    add_compile_options(-fsanitize=fuzzer-no-link,address,undefined -fno-sanitize-recover=all -fno-omit-frame-pointer)
+    add_link_options(-fsanitize=address,undefined)
+endif()
 
 if(ASTELIO_BUILD_TESTS)
     enable_testing()

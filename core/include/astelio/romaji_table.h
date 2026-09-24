@@ -21,6 +21,15 @@ public:
 
     static const RomajiTable& Default();
 
+    enum class AddResult : unsigned char {
+        Added,
+        AlreadyExists,
+    };
+
+    // Callers validate rules first (see ValidateRomajiRule).
+    AddResult Add(RomajiRule rule);
+    bool Remove(std::u16string_view input);
+
     const RomajiRule* FindExact(std::u16string_view input) const;
     // True when some rule starts with `input` and is longer than it.
     bool HasLongerRule(std::u16string_view input) const;
