@@ -44,10 +44,13 @@
 
 | ランナー | 実行内容 |
 | --- | --- |
-| Windows ARM64 | ビルド（ARM64 / x64 / x86）、単体、精度（抜粋）、TIP結合、性能（簡易） |
-| Windows x64 | ビルド、単体、TIP結合 |
-| macOS arm64 | ビルド（Universal 2）、単体、XCTest |
-| macOS x86_64 | 単体（利用できるランナーがない場合はENV-M2で週1回手動実行） |
+| Windows ARM64（`windows-11-arm`） | ビルド（ARM64）、単体、.NET、精度（抜粋）、TIP結合、性能（簡易） |
+| Windows x64（`windows-latest`） | ビルド（x64 / x86）、単体、.NET、TIP結合 |
+| macOS arm64（`macos-latest`） | ビルド（Universal 2）、単体、XCTest |
+| macOS x86_64（`macos-15-intel`） | Universal 2のx86_64部分での単体 |
+
+- ランナー名はGitHubのドキュメント（GitHub-hosted runners reference、2026-09-24確認）による。公開リポジトリでは無料で使える
+- ワークフローは [.github/workflows/ci.yml](../.github/workflows/ci.yml)。PRと `main` への反映で実行する
 
 ### 3.3 Windows TIPのテスト用ホスト
 

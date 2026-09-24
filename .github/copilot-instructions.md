@@ -22,7 +22,22 @@
 - 対象は英語配列のみ。日本語配列（JIS）固有のキーには対応しない
 - モデルの使い分け: 開発はClaude Opus 5.5で行う。SLMは辞書作成環境の中でだけ使い、BYOKでローカル（Ollama / Foundry Local / llama.cpp）につなぐ。IME本体と辞書作成環境からクラウドのモデルを呼ばない
 - 管理者権限が必要な操作（ツールの導入、TIPの登録）は実行せず、コマンドをユーザーに示す
-- `git push`、履歴の書き換え、ファイルの一括削除はユーザーの確認なしに行わない
+- 履歴の書き換え、ファイルの一括削除はユーザーの確認なしに行わない
+
+## 秘匿情報
+
+- 秘匿・重要な情報（APIキー、証明書のパスワード、Appleの認証情報など）はリポジトリ直下の `.env` に置く。`.env` はGitの管理対象外
+- 新しい変数を使うときは、値を空にした名前だけを [.env.example](../.env.example) に追加する
+- コード・ドキュメント・コミット・PR・ログに秘匿情報を書かない。コマンドの出力に含まれる場合は伏せる
+- CIで必要な秘匿情報はGitHubのSecretsに登録してもらう（登録はユーザーが行う）
+
+## ブランチとPR
+
+- `main` に直接コミット・送信しない。作業ごとに `main` からブランチを作る（名前は `phase<番号>/<内容>`、不具合は `fix/<内容>`、文書だけは `docs/<内容>`）
+- コミットは意味のまとまりごとに分ける。メッセージは `<種類>: <内容>`（種類は feat / fix / test / docs / ci / chore）
+- 作業が終わったらブランチを送信し、`main` 向けのPRを作る。PRには対象のテストID、確認した内容、残った課題を書く
+- CIの結果を確認し、失敗したら同じブランチで直す。マージはユーザーが行う（指示がある場合を除く）
+- GitHub CLIは `& "$env:LOCALAPPDATA\Programs\gh\bin\gh.exe"` で実行する（PATHに入っていない）
 
 ## ビルドとテスト（現時点）
 
@@ -33,4 +48,15 @@ dotnet test KotohaIME.slnx -c Release
 
 - 起動中の `AstelioIME.exe` は配布フォルダーをロックする。発行の前に `Get-Process AstelioIME -ErrorAction SilentlyContinue | Stop-Process -Force` を実行する
 - 同じプロセス内から `SendInput` した入力は低レベルキーフックに届かない。キー処理のテストはフックの判定を直接呼ぶ（`ProcessKeyboardMessageForTest`）
-- C++ Core・TIP・macOS版のビルド手順は、フェーズ0で環境を整えた時点でここに追記する
+
+C++ Core（CMakeプリセット: `windows-arm64` / `windows-x64` / `windows-x86` / `macos-universal`）:
+
+```powershell
+cmake --preset windows-arm64
+cmake --build --preset windows-arm64
+ctest --preset windows-arm64
+```
+
+- このPCにはVisual C++とCMakeがまだ入っていない。C++の変更はPRのCI（`.github/workflows/ci.yml`）でビルドとテストを確認する
+- 外部の依存は版とSHA-256を固定する。GitHub Actionsの利用もコミットのSHAで固定する
+- TIP・macOS版のビルド手順は、該当フェーズでここに追記する
