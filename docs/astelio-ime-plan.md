@@ -396,6 +396,13 @@ flowchart TB
 - Alt単押しはTSFのキーイベント（`ITfKeyEventSink`）と優先キー（`ITfKeystrokeMgr::PreserveKey`）で処理する。低レベルフックは使わない
 - 管理者権限のアプリ、UWPアプリ、ロック画面の入力欄で動作を確認する
 
+**候補ウィンドウとモード表示のデザイン（両OS共通）**
+
+- 背景はすりガラスのように背後をぼかす（Windows 11: DWMのシステム背景 `DWMWA_SYSTEMBACKDROP_TYPE` のアクリル（`DWMSBT_TRANSIENTWINDOW`）と角丸 `DWMWA_WINDOW_CORNER_PREFERENCE`。macOS: `NSVisualEffectView`）
+- 淡い半透明の地に細い縁取りと柔らかい影。選択中の候補は半透明の強調色で示す。ライト/ダークはOSの設定に合わせる
+- 「透明効果」がオフの場合、ハイコントラスト、Windows 10ではぼかさず不透明の単色にする（文字の読みやすさを優先する）
+- 入力先アプリのプロセス内で描画するため、描画は軽くする（ぼかしはOSに任せ、TIPは文字と強調だけを描く）
+
 **macOS**
 
 - InputMethodKitのアプリとして `~/Library/Input Methods` または `/Library/Input Methods` に配置する
