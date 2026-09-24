@@ -387,6 +387,31 @@ protected:
     ComPtr<ITfKeystrokeMgr> keystrokes_;
 };
 
+// Reports each step of the key route so routing problems show up clearly in CI logs.
+TEST_F(TypingTest, KeyRouteReachesTheTextService)
+{
+    CLSID foreground{};
+    EXPECT_HRESULT_SUCCEEDED(keystrokes_->GetForeground(&foreground));
+    EXPECT_TRUE(IsEqualCLSID(foreground, astelio::tip::kTextServiceClsid)) << "Astelio is not the foreground TIP";
+
+    ComPtr<ITfDocumentMgr> focused;
+    EXPECT_HRESULT_SUCCEEDED(thread_mgr_->GetFocus(&focused));
+    EXPECT_EQ(focused.Get(), document_.Get()) << "test document is not focused";
+
+    SetModifierState(false, false);
+    const LPARAM down = 1 | (0x1E << 16);
+    BOOL test_eaten = FALSE;
+    const HRESULT test_hr = keystrokes_->TestKeyDown('A', down, &test_eaten);
+    EXPECT_HRESULT_SUCCEEDED(test_hr);
+    EXPECT_TRUE(test_eaten) << "TestKeyDown('A') was not eaten";
+
+    BOOL eaten = FALSE;
+    const HRESULT key_hr = keystrokes_->KeyDown('A', down, &eaten);
+    EXPECT_HRESULT_SUCCEEDED(key_hr) << "KeyDown hr=0x" << std::hex << static_cast<unsigned long>(key_hr);
+    EXPECT_TRUE(eaten) << "KeyDown('A') was not eaten";
+    EXPECT_EQ(Text(), L"\u3042");
+}
+
 // T-R01-1, T-B01-1: romaji becomes uncommitted hiragana; Enter commits (T-B06-1).
 TEST_F(TypingTest, RomajiIsComposedAndEnterCommits)
 {
