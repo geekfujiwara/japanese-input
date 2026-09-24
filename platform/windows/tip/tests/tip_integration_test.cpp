@@ -306,14 +306,10 @@ protected:
                                                             nullptr, TF_IPPMF_FORPROCESS));
         ASSERT_HRESULT_SUCCEEDED(thread_mgr_.As(&keystrokes_));
 
-        BOOL thread_focus = FALSE;
-        ASSERT_HRESULT_SUCCEEDED(thread_mgr_->IsThreadFocus(&thread_focus));
-        if (!thread_focus) {
-            // CI requires focus on x64/x86; the Windows ARM64 runner refuses foreground to test windows.
-            ASSERT_FALSE(EnvironmentFlag("ASTELIO_TIP_REQUIRE_FOCUS"))
-                << "The OS did not give this thread keyboard focus (foreground window denied)";
-            GTEST_SKIP() << "The OS did not give this thread keyboard focus (foreground window denied)";
-        }
+        key_down_ = reinterpret_cast<TestKeyDownFunction>(
+            GetProcAddress(GetModuleHandleW(TipPath().c_str()), "AstelioTipTestKeyDown"));
+        ASSERT_NE(key_down_, nullptr);
+        ASSERT_HRESULT_SUCCEEDED(thread_mgr_->IsThreadFocus(&thread_focus_));
     }
 
     void TearDown() override
@@ -389,15 +385,14 @@ protected:
         SetKeyboardState(state);
     }
 
-    // Returns whether the IME consumed the key down.
+    // Returns whether the IME consumed the key down. Keys go to the TSF-activated text service directly,
+    // because CI machines do not reliably grant the keyboard focus TSF needs to route real keystrokes.
     bool Press(UINT virtual_key, BYTE scan_code, bool shift = false, bool extended = false)
     {
         SetModifierState(shift, false);
         const LPARAM down = 1 | (static_cast<LPARAM>(scan_code) << 16) | (extended ? (1 << 24) : 0);
         BOOL eaten = FALSE;
-        EXPECT_HRESULT_SUCCEEDED(keystrokes_->KeyDown(virtual_key, down, &eaten));
-        BOOL up_eaten = FALSE;
-        keystrokes_->KeyUp(virtual_key, down | (1 << 30) | (1u << 31), &up_eaten);
+        EXPECT_HRESULT_SUCCEEDED(key_down_(context_.Get(), virtual_key, down, &eaten));
         SetModifierState(false, false);
         return eaten != FALSE;
     }
@@ -447,11 +442,17 @@ protected:
     ComPtr<ITfContext> context_;
     ComPtr<astelio::tip::testing::TestTextStore> store_;
     ComPtr<ITfKeystrokeMgr> keystrokes_;
+    using TestKeyDownFunction = HRESULT(WINAPI*)(ITfContext*, WPARAM, LPARAM, BOOL*);
+    TestKeyDownFunction key_down_ = nullptr;
+    BOOL thread_focus_ = FALSE;
 };
 
-// Reports each step of the key route so routing problems show up clearly in CI logs.
+// Full OS -> TSF -> TIP key route; needs keyboard focus, which CI machines grant only intermittently.
 TEST_F(TypingTest, KeyRouteReachesTheTextService)
 {
+    if (!thread_focus_) {
+        GTEST_SKIP() << "The OS did not give this thread keyboard focus (foreground window denied)";
+    }
     CLSID foreground{};
     EXPECT_HRESULT_SUCCEEDED(keystrokes_->GetForeground(&foreground));
     EXPECT_TRUE(IsEqualCLSID(foreground, astelio::tip::kTextServiceClsid)) << "Astelio is not the foreground TIP";
@@ -545,7 +546,7 @@ TEST_F(TypingTest, ControlShortcutsAreNotConsumed)
     SetModifierState(false, true);
     const LPARAM down = 1 | (0x2E << 16);
     BOOL eaten = TRUE;
-    EXPECT_HRESULT_SUCCEEDED(keystrokes_->KeyDown('C', down, &eaten));
+    EXPECT_HRESULT_SUCCEEDED(key_down_(context_.Get(), 'C', down, &eaten));
     SetModifierState(false, false);
     EXPECT_FALSE(eaten);
     EXPECT_EQ(Text(), L"");

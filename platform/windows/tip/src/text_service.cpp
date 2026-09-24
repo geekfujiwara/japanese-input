@@ -113,6 +113,9 @@ private:
 
 } // namespace
 
+// The instance TSF activated on this thread (for the test entry point below).
+thread_local TextService* g_active_service = nullptr;
+
 HRESULT TextService::Create(REFIID riid, void** object)
 {
     if (object == nullptr) {
@@ -199,11 +202,15 @@ STDMETHODIMP TextService::ActivateEx(ITfThreadMgr* thread_mgr, TfClientId client
         return hr;
     }
     key_sink_advised_ = true;
+    g_active_service = this;
     return S_OK;
 }
 
 STDMETHODIMP TextService::Deactivate()
 {
+    if (g_active_service == this) {
+        g_active_service = nullptr;
+    }
     if (key_sink_advised_ && thread_mgr_) {
         Microsoft::WRL::ComPtr<ITfKeystrokeMgr> keystroke_mgr;
         if (SUCCEEDED(thread_mgr_.As(&keystroke_mgr))) {
@@ -312,9 +319,11 @@ HRESULT TextService::RequestEdit(ITfContext* context, std::u16string commit)
         return E_OUTOFMEMORY;
     }
     HRESULT session_result = S_OK;
-    const HRESULT hr = context->RequestEditSession(client_id_, edit, TF_ES_SYNC | TF_ES_READWRITE, &session_result);
+    // Synchronous inside key handling; queued if the document cannot be locked right now.
+    const HRESULT hr =
+        context->RequestEditSession(client_id_, edit, TF_ES_ASYNCDONTCARE | TF_ES_READWRITE, &session_result);
     edit->Release();
-    return FAILED(hr) ? hr : session_result;
+    return FAILED(hr) ? hr : (session_result == TF_S_ASYNC ? S_OK : session_result);
 }
 
 HRESULT TextService::StartComposition(TfEditCookie cookie, ITfContext* context)
@@ -419,4 +428,16 @@ HRESULT TextService::ApplyToDocument(TfEditCookie cookie, ITfContext* context, c
     return hr;
 }
 
+HRESULT TextService::TestKeyDown(ITfContext* context, WPARAM wparam, LPARAM lparam, BOOL* eaten)
+{
+    return g_active_service == nullptr ? E_UNEXPECTED
+                                       : g_active_service->OnKeyDown(context, wparam, lparam, eaten);
+}
+
 } // namespace astelio::tip
+
+// Test entry point: sends a key down to the TSF-activated text service without OS keyboard focus.
+extern "C" HRESULT WINAPI AstelioTipTestKeyDown(ITfContext* context, WPARAM wparam, LPARAM lparam, BOOL* eaten)
+{
+    return astelio::tip::TextService::TestKeyDown(context, wparam, lparam, eaten);
+}

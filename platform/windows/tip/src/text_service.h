@@ -39,6 +39,8 @@ public:
     // Runs inside an edit session: commits `commit`, then shows the session's uncommitted text.
     HRESULT ApplyToDocument(TfEditCookie cookie, ITfContext* context, const std::u16string& commit);
 
+    static HRESULT TestKeyDown(ITfContext* context, WPARAM wparam, LPARAM lparam, BOOL* eaten);
+
 private:
     TextService();
     ~TextService();
