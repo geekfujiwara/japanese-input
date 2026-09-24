@@ -3,13 +3,14 @@
 #include <windows.h>
 
 #include <msctf.h>
-#include <olectl.h>
 #include <wrl/client.h>
 
 #include <gtest/gtest.h>
 
 #include <cstdlib>
 #include <cwctype>
+#include <ios>
+#include <iterator>
 #include <string>
 
 namespace {
@@ -170,7 +171,11 @@ TEST(TipRegistration, WritesComServerAndJapaneseProfileAndRemovesThem)
                            kTipKey + L"\\LanguageProfile\\0x00000411\\" + GuidString(astelio::tip::kJapaneseProfileGuid)));
 }
 
-TEST(TipActivation, ActivateAdvisesAndDeactivateRemovesTheKeyEventSink)
+// {39C14AD5-B069-4C7D-8F50-19E3E0001609}: test-only profile under the machine's current input language,
+// because TSF will not switch to ja-JP where Japanese is not installed (such as CI runners).
+constexpr GUID kTestProfileGuid = {0x39c14ad5, 0xb069, 0x4c7d, {0x8f, 0x50, 0x19, 0xe3, 0xe0, 0x00, 0x16, 0x09}};
+
+TEST(TipActivation, TsfActivatesTheTextServiceAsForegroundKeySink)
 {
     if (!IntegrationEnabled()) {
         GTEST_SKIP() << "Set ASTELIO_TIP_INTEGRATION=1 to run (needs administrator rights)";
@@ -180,38 +185,37 @@ TEST(TipActivation, ActivateAdvisesAndDeactivateRemovesTheKeyEventSink)
     RegisteredTip tip;
     ASSERT_HRESULT_SUCCEEDED(tip.result());
 
+    ComPtr<ITfInputProcessorProfileMgr> profiles;
+    ASSERT_HRESULT_SUCCEEDED(CoCreateInstance(CLSID_TF_InputProcessorProfiles, nullptr, CLSCTX_INPROC_SERVER,
+                                              IID_PPV_ARGS(&profiles)));
+    const LANGID language = LOWORD(reinterpret_cast<UINT_PTR>(GetKeyboardLayout(0)));
+    constexpr wchar_t kName[] = L"Astelio IME test";
+    ASSERT_HRESULT_SUCCEEDED(profiles->RegisterProfile(astelio::tip::kTextServiceClsid, language, kTestProfileGuid,
+                                                       kName, static_cast<ULONG>(std::size(kName) - 1), nullptr, 0,
+                                                       0, nullptr, 0, TRUE, 0));
+
     ComPtr<ITfThreadMgr> thread_mgr;
     ASSERT_HRESULT_SUCCEEDED(
         CoCreateInstance(CLSID_TF_ThreadMgr, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&thread_mgr)));
     TfClientId client_id = TF_CLIENTID_NULL;
     ASSERT_HRESULT_SUCCEEDED(thread_mgr->Activate(&client_id));
+
+    const HRESULT activated = profiles->ActivateProfile(TF_PROFILETYPE_INPUTPROCESSOR, language,
+                                                        astelio::tip::kTextServiceClsid, kTestProfileGuid, nullptr,
+                                                        TF_IPPMF_FORPROCESS);
+    EXPECT_HRESULT_SUCCEEDED(activated) << "language 0x" << std::hex << language;
+
     ComPtr<ITfKeystrokeMgr> keystrokes;
     ASSERT_HRESULT_SUCCEEDED(thread_mgr.As(&keystrokes));
+    CLSID foreground{};
+    EXPECT_HRESULT_SUCCEEDED(keystrokes->GetForeground(&foreground));
+    EXPECT_TRUE(IsEqualCLSID(foreground, astelio::tip::kTextServiceClsid));
 
-    // TSF only accepts key event sinks from client ids issued to a text service.
-    ComPtr<ITfClientId> client_ids;
-    ASSERT_HRESULT_SUCCEEDED(thread_mgr.As(&client_ids));
-    TfClientId tip_id = TF_CLIENTID_NULL;
-    ASSERT_HRESULT_SUCCEEDED(client_ids->GetClientId(astelio::tip::kTextServiceClsid, &tip_id));
-
-    ComPtr<ITfTextInputProcessorEx> service;
-    ASSERT_HRESULT_SUCCEEDED(CoCreateInstance(astelio::tip::kTextServiceClsid, nullptr, CLSCTX_INPROC_SERVER,
-                                              IID_PPV_ARGS(&service)));
-    ComPtr<ITfKeyEventSink> service_sink;
-    ASSERT_HRESULT_SUCCEEDED(service.As(&service_sink));
-
-    ASSERT_HRESULT_SUCCEEDED(service->ActivateEx(thread_mgr.Get(), tip_id, 0));
-    // The client id already owns a key event sink, so a second one is refused.
-    EXPECT_EQ(keystrokes->AdviseKeyEventSink(tip_id, service_sink.Get(), TRUE), CONNECT_E_ADVISELIMIT);
-
-    ASSERT_HRESULT_SUCCEEDED(service->Deactivate());
-    EXPECT_EQ(keystrokes->UnadviseKeyEventSink(tip_id), CONNECT_E_NOCONNECTION);
-
-    service_sink.Reset();
-    service.Reset();
-    client_ids.Reset();
     keystrokes.Reset();
     EXPECT_HRESULT_SUCCEEDED(thread_mgr->Deactivate());
+    thread_mgr.Reset();
+    EXPECT_HRESULT_SUCCEEDED(
+        profiles->UnregisterProfile(astelio::tip::kTextServiceClsid, language, kTestProfileGuid, 0));
 }
 
 // Switching to the ja-JP profile needs the Japanese input language on the machine, so it only runs on request.
