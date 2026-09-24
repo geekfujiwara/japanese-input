@@ -306,9 +306,9 @@ protected:
                                                             nullptr, TF_IPPMF_FORPROCESS));
         ASSERT_HRESULT_SUCCEEDED(thread_mgr_.As(&keystrokes_));
 
-        key_down_ = reinterpret_cast<TestKeyDownFunction>(
-            GetProcAddress(GetModuleHandleW(TipPath().c_str()), "AstelioTipTestKeyDown"));
-        ASSERT_NE(key_down_, nullptr);
+        key_ = reinterpret_cast<TestKeyFunction>(
+            GetProcAddress(GetModuleHandleW(TipPath().c_str()), "AstelioTipTestKey"));
+        ASSERT_NE(key_, nullptr);
         ASSERT_HRESULT_SUCCEEDED(thread_mgr_->IsThreadFocus(&thread_focus_));
     }
 
@@ -377,12 +377,25 @@ protected:
         }
     }
 
-    static void SetModifierState(bool shift, bool control)
+    static void SetModifierState(bool shift, bool control, bool alt = false)
     {
         BYTE state[256] = {};
         state[VK_SHIFT] = state[VK_LSHIFT] = shift ? 0x80 : 0;
         state[VK_CONTROL] = state[VK_LCONTROL] = control ? 0x80 : 0;
+        state[VK_MENU] = state[VK_LMENU] = alt ? 0x80 : 0;
         SetKeyboardState(state);
+    }
+
+    // Sends one key event the way TSF does (test call, then the real call). Returns whether it was eaten.
+    bool SendKey(UINT virtual_key, BYTE scan_code, bool key_up, bool extended = false)
+    {
+        LPARAM lparam = 1 | (static_cast<LPARAM>(scan_code) << 16) | (extended ? (1 << 24) : 0);
+        if (key_up) {
+            lparam |= (1 << 30) | (1u << 31);
+        }
+        BOOL eaten = FALSE;
+        EXPECT_HRESULT_SUCCEEDED(key_(context_.Get(), virtual_key, lparam, key_up ? TRUE : FALSE, &eaten));
+        return eaten != FALSE;
     }
 
     // Returns whether the IME consumed the key down. Keys go to the TSF-activated text service directly,
@@ -390,11 +403,19 @@ protected:
     bool Press(UINT virtual_key, BYTE scan_code, bool shift = false, bool extended = false)
     {
         SetModifierState(shift, false);
-        const LPARAM down = 1 | (static_cast<LPARAM>(scan_code) << 16) | (extended ? (1 << 24) : 0);
-        BOOL eaten = FALSE;
-        EXPECT_HRESULT_SUCCEEDED(key_down_(context_.Get(), virtual_key, down, &eaten));
+        const bool eaten = SendKey(virtual_key, scan_code, false, extended);
         SetModifierState(false, false);
-        return eaten != FALSE;
+        return eaten;
+    }
+
+    // Alt as delivered by WM_SYSKEYDOWN: VK_MENU, with the extended bit for the right key.
+    bool AltDown(bool right) { return SendKey(VK_MENU, 0x38, false, right); }
+    bool AltUp(bool right) { return SendKey(VK_MENU, 0x38, true, right); }
+    // Returns whether the release was eaten (so the app never sees a lone Alt and opens no menu).
+    bool TapAlt(bool right)
+    {
+        EXPECT_FALSE(AltDown(right)) << "Alt down must reach the app";
+        return AltUp(right);
     }
 
     void TypeLetters(const char* letters)
@@ -442,8 +463,8 @@ protected:
     ComPtr<ITfContext> context_;
     ComPtr<astelio::tip::testing::TestTextStore> store_;
     ComPtr<ITfKeystrokeMgr> keystrokes_;
-    using TestKeyDownFunction = HRESULT(WINAPI*)(ITfContext*, WPARAM, LPARAM, BOOL*);
-    TestKeyDownFunction key_down_ = nullptr;
+    using TestKeyFunction = HRESULT(WINAPI*)(ITfContext*, WPARAM, LPARAM, BOOL, BOOL*);
+    TestKeyFunction key_ = nullptr;
     BOOL thread_focus_ = FALSE;
 };
 
@@ -544,12 +565,108 @@ TEST_F(TypingTest, SpaceOutsideACompositionInsertsASpace)
 TEST_F(TypingTest, ControlShortcutsAreNotConsumed)
 {
     SetModifierState(false, true);
-    const LPARAM down = 1 | (0x2E << 16);
-    BOOL eaten = TRUE;
-    EXPECT_HRESULT_SUCCEEDED(key_down_(context_.Get(), 'C', down, &eaten));
+    const bool eaten = SendKey('C', 0x2E, false);
     SetModifierState(false, false);
     EXPECT_FALSE(eaten);
     EXPECT_EQ(Text(), L"");
+}
+
+// T-R03-3, REG-01: a left Alt tap in Japanese commits the uncommitted text and switches to English;
+// the release is eaten so the app never sees a lone Alt (no menu).
+TEST_F(TypingTest, LeftAltTapCommitsAndSwitchesToEnglish)
+{
+    TypeLetters("ka");
+    EXPECT_TRUE(TapAlt(false));
+    EXPECT_EQ(Text(), L"\u304B");
+    EXPECT_EQ(CompositionCount(), 0);
+    EXPECT_FALSE(Press('K', 0x25)) << "English mode must pass letters to the app";
+    EXPECT_EQ(Text(), L"\u304B");
+}
+
+// T-R03-1: a left Alt tap in English stays English.
+TEST_F(TypingTest, LeftAltTapInEnglishStaysEnglish)
+{
+    EXPECT_TRUE(TapAlt(false));
+    EXPECT_TRUE(TapAlt(false));
+    EXPECT_FALSE(Press('A', 0x1E));
+    EXPECT_EQ(Text(), L"");
+}
+
+// T-R03-2: a right Alt tap in English switches to Japanese.
+TEST_F(TypingTest, RightAltTapSwitchesToJapanese)
+{
+    EXPECT_TRUE(TapAlt(false));
+    EXPECT_TRUE(TapAlt(true));
+    TypeLetters("a");
+    EXPECT_EQ(Text(), L"\u3042");
+    EXPECT_EQ(CompositionCount(), 1);
+}
+
+// REG-05: after a right Alt tap every letter stays uncommitted Japanese.
+TEST_F(TypingTest, RightAltTapThenAllLettersStayJapanese)
+{
+    EXPECT_TRUE(TapAlt(false));
+    EXPECT_TRUE(TapAlt(true));
+    TypeLetters("abcdefghijklmnopqrstuvwxyz");
+    EXPECT_EQ(CompositionCount(), 1);
+    EXPECT_FALSE(Text().empty());
+    EXPECT_EQ(Text().find_first_of(L"aeiou"), std::wstring::npos) << "vowels must be converted to kana";
+}
+
+// Supplement to T-R03: a tap for the current mode keeps the mode and the uncommitted text.
+TEST_F(TypingTest, RightAltTapInJapaneseKeepsJapanese)
+{
+    TypeLetters("ka");
+    EXPECT_TRUE(TapAlt(true));
+    EXPECT_EQ(CompositionCount(), 1) << "switching to the current mode must not commit";
+    TypeLetters("a");
+    EXPECT_EQ(Text(), L"\u304B\u3042");
+}
+
+// T-R04-1, REG-05: Alt+key shortcuts reach the app and do not switch the mode.
+TEST_F(TypingTest, AltShortcutIsNotATap)
+{
+    SetModifierState(false, false, true);
+    EXPECT_FALSE(AltDown(false));
+    EXPECT_FALSE(SendKey('F', 0x21, false)) << "Alt+F must reach the app";
+    EXPECT_FALSE(SendKey('F', 0x21, true));
+    EXPECT_FALSE(AltUp(false)) << "Alt release after a shortcut must reach the app";
+    SetModifierState(false, false);
+    TypeLetters("a");
+    EXPECT_EQ(Text(), L"\u3042") << "still Japanese";
+}
+
+// T-R04-4: a lone Alt after an Alt shortcut is a tap again.
+TEST_F(TypingTest, AltTapAfterShortcutIsATap)
+{
+    SetModifierState(false, false, true);
+    EXPECT_FALSE(AltDown(false));
+    EXPECT_FALSE(SendKey('F', 0x21, false));
+    EXPECT_FALSE(AltUp(false));
+    SetModifierState(false, false);
+    EXPECT_TRUE(TapAlt(false));
+    EXPECT_FALSE(Press('A', 0x1E)) << "now English";
+}
+
+// T-R04-2: holding Alt longer than the limit (1 s) is not a tap.
+TEST_F(TypingTest, LongAltHoldIsNotATap)
+{
+    EXPECT_FALSE(AltDown(false));
+    Sleep(1100);
+    EXPECT_FALSE(AltUp(false));
+    TypeLetters("a");
+    EXPECT_EQ(Text(), L"\u3042");
+}
+
+// T-R04-3: pressing the other Alt while one is held is not a tap for either.
+TEST_F(TypingTest, BothAltKeysTogetherAreNotATap)
+{
+    EXPECT_FALSE(AltDown(false));
+    EXPECT_FALSE(AltDown(true));
+    EXPECT_FALSE(AltUp(true));
+    EXPECT_FALSE(AltUp(false));
+    TypeLetters("a");
+    EXPECT_EQ(Text(), L"\u3042");
 }
 
 } // namespace
