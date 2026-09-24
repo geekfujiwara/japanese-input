@@ -11,3 +11,5 @@ applyTo: "platform/windows/tip/**"
 - 結合テストはテスト用ホスト（独自の `ITextStoreACP`）で行い、キーは `ITfKeystrokeMgr::TestKeyDown` / `KeyDown` / `KeyUp` で渡す。メニュー起動は `SC_KEYMENU` の受信回数で判定する
 - 再発防止テスト（REG-01〜REG-07）は常に通ること
 - TIPの登録・解除は管理者権限が必要なため、スクリプトを用意してユーザーに実行してもらう
+- 登録を伴う結合テストは `ASTELIO_TIP_INTEGRATION=1` のときだけ動かす（CIは管理者で動くので常に実行）。手元では実行しない
+- DLLは静的CRTでリンクし、`new (std::nothrow)` を使う
