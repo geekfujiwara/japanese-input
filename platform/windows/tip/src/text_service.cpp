@@ -229,7 +229,9 @@ STDMETHODIMP TextService::OnTestKeyDown(ITfContext* context, WPARAM wparam, LPAR
         return E_INVALIDARG;
     }
     *eaten = FALSE;
+    ++Diagnostics().test_key_down;
     if (context == nullptr) {
+        ++Diagnostics().null_context;
         return S_OK;
     }
     try {
@@ -256,7 +258,9 @@ STDMETHODIMP TextService::OnKeyDown(ITfContext* context, WPARAM wparam, LPARAM l
         return E_INVALIDARG;
     }
     *eaten = FALSE;
+    ++Diagnostics().key_down;
     if (context == nullptr) {
+        ++Diagnostics().null_context;
         return S_OK;
     }
     try {
@@ -265,6 +269,7 @@ STDMETHODIMP TextService::OnKeyDown(ITfContext* context, WPARAM wparam, LPARAM l
             return S_OK;
         }
         *eaten = TRUE;
+        ++Diagnostics().eaten;
         SessionOutput output = session_.Handle(*key);
         if (output.composition_changed || !output.commit.empty()) {
             return RequestEdit(context, std::move(output.commit));

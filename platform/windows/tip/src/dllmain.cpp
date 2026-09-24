@@ -87,7 +87,25 @@ bool CanUnloadModule()
     return g_module_refs.load() == 0;
 }
 
+KeyDiagnostics& Diagnostics()
+{
+    static KeyDiagnostics diagnostics;
+    return diagnostics;
+}
+
 } // namespace astelio::tip
+
+extern "C" void WINAPI AstelioTipKeyDiagnostics(long* counters, int count)
+{
+    if (counters == nullptr || count < 4) {
+        return;
+    }
+    const astelio::tip::KeyDiagnostics& diagnostics = astelio::tip::Diagnostics();
+    counters[0] = diagnostics.test_key_down;
+    counters[1] = diagnostics.key_down;
+    counters[2] = diagnostics.null_context;
+    counters[3] = diagnostics.eaten;
+}
 
 BOOL WINAPI DllMain(HINSTANCE instance, DWORD reason, LPVOID /*reserved*/)
 {

@@ -12,6 +12,7 @@
 #include <cstdlib>
 #include <cwctype>
 #include <ios>
+#include <iostream>
 #include <iterator>
 #include <memory>
 #include <string>
@@ -410,6 +411,15 @@ TEST_F(TypingTest, KeyRouteReachesTheTextService)
     EXPECT_HRESULT_SUCCEEDED(key_hr) << "KeyDown hr=0x" << std::hex << static_cast<unsigned long>(key_hr);
     EXPECT_TRUE(eaten) << "KeyDown('A') was not eaten";
     EXPECT_EQ(Text(), L"\u3042");
+
+    using DiagnosticsFunction = void(WINAPI*)(long*, int);
+    const auto diagnostics = reinterpret_cast<DiagnosticsFunction>(
+        GetProcAddress(GetModuleHandleW(TipPath().c_str()), "AstelioTipKeyDiagnostics"));
+    ASSERT_NE(diagnostics, nullptr);
+    long counters[4] = {};
+    diagnostics(counters, 4);
+    std::cout << "[diagnostics] test_key_down=" << counters[0] << " key_down=" << counters[1]
+              << " null_context=" << counters[2] << " eaten=" << counters[3] << std::endl;
 }
 
 // T-R01-1, T-B01-1: romaji becomes uncommitted hiragana; Enter commits (T-B06-1).
