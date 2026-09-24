@@ -21,3 +21,5 @@ dictionary/runs/
 *.db-wal
 *.db-shm
 .env
+.env.*
+!.env.example
