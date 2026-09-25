@@ -1,0 +1,10 @@
+# SLM candidates for B-14 / 4.5.2 (plan 4.5.3). Licenses checked on 2026-09-26: commercial use and redistribution allowed.
+# name	repository	commit	file	sha256	bytes	license
+sarashina2.2-0.5b	mmnga/sarashina2.2-0.5b-instruct-v0.1-gguf	5c71186a7a57b8c0325dec70ba2f295303effcd8	sarashina2.2-0.5b-instruct-v0.1-Q8_0.gguf	3ba6922efda1f7c52c6acfb5659b5ed00128a2a8550447ce3850835cd0abfbcc	845363072	MIT
+sarashina2.2-1b	mmnga/sarashina2.2-1b-instruct-v0.1-gguf	cd8b02dcc14f38a5101171f304ab269d514fafd4	sarashina2.2-1b-instruct-v0.1-Q8_0.gguf	f26ea13b9a7b88aa08479c4abd4f52e94f450c0b6d2143ae5499e5e0e8c89935	1498333056	MIT
+qwen2.5-0.5b	Qwen/Qwen2.5-0.5B-Instruct-GGUF	9217f5db79a29953eb74d5343926648285ec7e67	qwen2.5-0.5b-instruct-q8_0.gguf	ca59ca7f13d0e15a8cfa77bd17e65d24f6844b554a7b6c12e07a5f89ff76844e	675710816	Apache-2.0
+qwen2.5-1.5b	Qwen/Qwen2.5-1.5B-Instruct-GGUF	91cad51170dc346986eccefdc2dd33a9da36ead9	qwen2.5-1.5b-instruct-q8_0.gguf	d7efb072e7724d25048a4fda0a3e10b04bdef5d06b1403a1c93bd9f1240a63c8	1894532128	Apache-2.0
+qwen3-0.6b	Qwen/Qwen3-0.6B-GGUF	23749fefcc72300e3a2ad315e1317431b06b590a	Qwen3-0.6B-Q8_0.gguf	9465e63a22add5354d9bb4b99e90117043c7124007664907259bd16d043bb031	639446688	Apache-2.0
+qwen3-1.7b	Qwen/Qwen3-1.7B-GGUF	90862c4b9d2787eaed51d12237eafdfe7c5f6077	Qwen3-1.7B-Q8_0.gguf	061b54daade076b5d3362dac252678d17da8c68f07560be70818cace6590cb1a	1834426016	Apache-2.0
+llm-jp-3-1.8b	mmnga/llm-jp-3-1.8b-instruct3-gguf	d908906be3bed7681e4d7269f5c441ea91d2fd56	llm-jp-3-1.8b-instruct3-Q8_0.gguf	791dc307b31b391377b9917a10f244aa5aa7f41d0aeeabdda194c571ae446a58	1987023136	Apache-2.0
+rakutenai-2.0-mini	mmnga/RakutenAI-2.0-mini-instruct-gguf	9bd2900dd7bff11c248fb510d4297b3a88817b76	RakutenAI-2.0-mini-instruct-Q8_0.gguf	809931dae76727f399313e783d959b060b81723df13efb246ecae50c47be176d	1631976352	Apache-2.0
