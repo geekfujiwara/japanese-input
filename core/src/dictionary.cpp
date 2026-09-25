@@ -184,40 +184,44 @@ void SystemDictionary::VisitEntries(std::size_t reading_index, std::size_t lengt
     }
 }
 
+void SystemDictionary::Narrow(std::size_t length, char16_t unit, std::size_t& low, std::size_t& high) const
+{
+    const auto at = [this, length](std::size_t index) -> int {
+        const std::u16string_view reading = Reading(index);
+        return reading.size() < length ? -1 : static_cast<int>(reading[length - 1]);
+    };
+    std::size_t first = low;
+    std::size_t count = high - low;
+    while (count > 0) {
+        const std::size_t step = count / 2;
+        if (at(first + step) < static_cast<int>(unit)) {
+            first += step + 1;
+            count -= step + 1;
+        } else {
+            count = step;
+        }
+    }
+    low = first;
+    count = high - low;
+    while (count > 0) {
+        const std::size_t step = count / 2;
+        if (at(first + step) == static_cast<int>(unit)) {
+            first += step + 1;
+            count -= step + 1;
+        } else {
+            count = step;
+        }
+    }
+    high = first;
+}
+
 void SystemDictionary::CommonPrefixSearch(std::u16string_view text, const Visitor& visit) const
 {
     // Invariant: readings in [low, high) all start with text[0, length - 1).
     std::size_t low = 0;
     std::size_t high = reading_count_;
     for (std::size_t length = 1; length <= text.size() && length <= fmt::kMaxTextLength; ++length) {
-        const char16_t unit = text[length - 1];
-        const auto at = [this, length](std::size_t index) -> int {
-            const std::u16string_view reading = Reading(index);
-            return reading.size() < length ? -1 : static_cast<int>(reading[length - 1]);
-        };
-        std::size_t first = low;
-        std::size_t count = high - low;
-        while (count > 0) {
-            const std::size_t step = count / 2;
-            if (at(first + step) < static_cast<int>(unit)) {
-                first += step + 1;
-                count -= step + 1;
-            } else {
-                count = step;
-            }
-        }
-        low = first;
-        count = high - low;
-        while (count > 0) {
-            const std::size_t step = count / 2;
-            if (at(first + step) == static_cast<int>(unit)) {
-                first += step + 1;
-                count -= step + 1;
-            } else {
-                count = step;
-            }
-        }
-        high = first;
+        Narrow(length, text[length - 1], low, high);
         if (low == high) {
             return;
         }
@@ -225,6 +229,49 @@ void SystemDictionary::CommonPrefixSearch(std::u16string_view text, const Visito
             VisitEntries(low, length, visit);
         }
     }
+}
+
+std::vector<SystemDictionary::Prediction> SystemDictionary::PredictiveSearch(std::u16string_view prefix,
+                                                                             std::size_t limit) const
+{
+    std::vector<Prediction> result;
+    if (prefix.empty() || prefix.size() > fmt::kMaxTextLength || limit == 0) {
+        return result;
+    }
+    std::size_t low = 0;
+    std::size_t high = reading_count_;
+    for (std::size_t length = 1; length <= prefix.size() && low < high; ++length) {
+        Narrow(length, prefix[length - 1], low, high);
+    }
+    // Bounded work per key: look at the cheapest few entries of at most this many readings.
+    constexpr std::size_t kMaxReadings = 20000;
+    constexpr std::size_t kEntriesPerReading = 3;
+    const auto costlier = [](const Prediction& a, const Prediction& b) { return a.entry.cost < b.entry.cost; };
+    for (std::size_t index = low; index < high && index - low < kMaxReadings; ++index) {
+        const ReadingRecord record = ReadReading(base_, readings_offset_, index);
+        const std::u16string_view reading = PoolText(record.text, record.length);
+        for (std::size_t i = 0; i < record.entry_count && i < kEntriesPerReading; ++i) {
+            const EntryRecord entry = ReadEntry(base_, entries_offset_, record.first_entry + i);
+            if (result.size() == limit && entry.cost >= result.front().entry.cost) {
+                break; // entries are cheapest first, so the rest of this reading cannot enter either
+            }
+            Prediction prediction;
+            prediction.reading = reading;
+            prediction.entry.surface = PoolText(entry.text, entry.length);
+            prediction.entry.left_id = entry.left;
+            prediction.entry.right_id = entry.right;
+            prediction.entry.cost = entry.cost;
+            if (result.size() == limit) {
+                std::pop_heap(result.begin(), result.end(), costlier);
+                result.back() = prediction;
+            } else {
+                result.push_back(prediction);
+            }
+            std::push_heap(result.begin(), result.end(), costlier);
+        }
+    }
+    std::sort_heap(result.begin(), result.end(), costlier);
+    return result;
 }
 
 std::vector<DictionaryEntry> SystemDictionary::Lookup(std::u16string_view reading) const

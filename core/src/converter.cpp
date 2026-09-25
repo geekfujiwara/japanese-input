@@ -69,6 +69,30 @@ std::u16string HiraganaToKatakana(std::u16string_view text)
     return result;
 }
 
+std::vector<std::u16string> Converter::Predict(std::u16string_view reading, std::size_t limit) const
+{
+    std::vector<std::u16string> predictions;
+    if (reading.empty() || limit == 0) {
+        return predictions;
+    }
+    std::u16string best;
+    for (const ConvertedSegment& segment : Convert(reading)) {
+        best += segment.candidates.front();
+    }
+    if (best != reading) {
+        predictions.push_back(std::move(best));
+    }
+    for (const SystemDictionary::Prediction& found : dictionary_.PredictiveSearch(reading, limit * 2)) {
+        if (predictions.size() >= limit) {
+            break;
+        }
+        if (found.reading.size() > reading.size()) {
+            AddUnique(predictions, std::u16string(found.entry.surface));
+        }
+    }
+    return predictions;
+}
+
 std::vector<ConvertedSegment> Converter::Convert(std::u16string_view reading,
                                                  std::span<const std::size_t> fixed_lengths) const
 {

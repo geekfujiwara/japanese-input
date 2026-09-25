@@ -28,9 +28,12 @@ public:
     CandidateWindow& operator=(const CandidateWindow&) = delete;
 
     // `anchor`: screen rectangle of the focused segment. The list opens below it, or above near the screen bottom.
+    // `selected` == kNoSelection shows predictions while typing (nothing highlighted, Tab hint in the footer).
     void Show(const std::vector<std::u16string>& candidates, std::size_t selected, const RECT& anchor);
     void Hide();
     HWND window() const { return window_; }
+
+    static constexpr std::size_t kNoSelection = static_cast<std::size_t>(-1);
 
 private:
     static LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lparam);
@@ -44,6 +47,7 @@ private:
     bool dark_ = false;
     std::vector<std::u16string> candidates_;
     std::size_t selected_ = 0;
+    bool has_selection_ = false;
     std::size_t page_begin_ = 0;
     std::size_t page_end_ = 0;
     Microsoft::WRL::ComPtr<ID2D1DCRenderTarget> target_;

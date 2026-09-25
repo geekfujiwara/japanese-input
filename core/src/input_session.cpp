@@ -22,6 +22,7 @@ SessionOutput InputSession::SetJapaneseMode(bool enabled)
         output.composition_changed = true;
     }
     japanese_mode_ = enabled;
+    predictions_.clear();
     return output;
 }
 
@@ -29,6 +30,7 @@ void InputSession::AbandonComposition()
 {
     composer_.Clear();
     EndConversion();
+    predictions_.clear();
 }
 
 std::u16string InputSession::CompositionText() const
@@ -60,6 +62,7 @@ bool InputSession::WillHandle(const KeyEvent& key) const
     case KeyKind::Down:
     case KeyKind::PageUp:
     case KeyKind::PageDown:
+    case KeyKind::Tab:
         return Composing();
     }
     return false;
@@ -67,13 +70,51 @@ bool InputSession::WillHandle(const KeyEvent& key) const
 
 SessionOutput InputSession::Handle(const KeyEvent& key)
 {
-    SessionOutput output;
     if (!WillHandle(key)) {
-        return output;
+        return {};
     }
-    if (converting_) {
-        return HandleConversion(key);
+    SessionOutput output = converting_ ? HandleConversion(key) : HandleComposition(key);
+    UpdatePredictions();
+    return output;
+}
+
+void InputSession::UpdatePredictions()
+{
+    predictions_.clear();
+    if (converting_ || converter_ == nullptr || composer_.Empty()) {
+        return;
     }
+    // Romaji still being typed ("arig") is not part of the reading yet.
+    std::u16string reading = composer_.Text();
+    while (!reading.empty() && reading.back() >= u'a' && reading.back() <= u'z') {
+        reading.pop_back();
+    }
+    if (reading.size() >= kMinPredictionLength) {
+        predictions_ = converter_->Predict(reading, kCandidatePageSize);
+    }
+}
+
+void InputSession::StartPrediction()
+{
+    ConvertedSegment segment;
+    segment.candidates = predictions_;
+    reading_ = composer_.Commit();
+    segment.reading = reading_;
+    for (std::u16string form : {reading_, HiraganaToKatakana(reading_)}) {
+        if (std::find(segment.candidates.begin(), segment.candidates.end(), form) == segment.candidates.end()) {
+            segment.candidates.push_back(std::move(form));
+        }
+    }
+    segments_ = {std::move(segment)};
+    selected_ = {0};
+    focus_ = 0;
+    converting_ = true;
+    candidate_list_visible_ = true;
+}
+
+SessionOutput InputSession::HandleComposition(const KeyEvent& key)
+{
+    SessionOutput output;
     output.composition_changed = true;
     switch (key.kind) {
     case KeyKind::Character:
@@ -109,10 +150,17 @@ SessionOutput InputSession::Handle(const KeyEvent& key)
         composer_.MoveRight();
         break;
     case KeyKind::Up:
-    case KeyKind::Down:
     case KeyKind::PageUp:
     case KeyKind::PageDown:
         output.composition_changed = false;
+        break;
+    case KeyKind::Down:
+    case KeyKind::Tab:
+        if (predictions_.empty()) {
+            output.composition_changed = false;
+        } else {
+            StartPrediction();
+        }
         break;
     }
     return output;
@@ -129,6 +177,9 @@ bool InputSession::HandleCandidateList(const KeyEvent& key)
         break;
     case KeyKind::Up:
         selected = (selected + count - 1) % count;
+        break;
+    case KeyKind::Tab:
+        selected = key.shift ? (selected + count - 1) % count : (selected + 1) % count;
         break;
     case KeyKind::PageDown:
         selected = std::min(selected + kCandidatePageSize, count - 1);
@@ -170,6 +221,7 @@ SessionOutput InputSession::HandleConversion(const KeyEvent& key)
     case KeyKind::Up:
     case KeyKind::PageUp:
     case KeyKind::PageDown:
+    case KeyKind::Tab:
         break;
     case KeyKind::Left:
     case KeyKind::Right: {

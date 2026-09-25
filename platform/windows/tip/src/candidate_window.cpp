@@ -289,7 +289,8 @@ void CandidateWindow::Show(const std::vector<std::u16string>& candidates, std::s
         return;
     }
     candidates_ = candidates;
-    selected_ = std::min(selected, candidates_.size() - 1);
+    has_selection_ = selected != kNoSelection;
+    selected_ = has_selection_ ? std::min(selected, candidates_.size() - 1) : 0;
     constexpr std::size_t kPage = 9;
     page_begin_ = selected_ / kPage * kPage;
     page_end_ = std::min(page_begin_ + kPage, candidates_.size());
@@ -349,7 +350,7 @@ void CandidateWindow::Paint()
         if (brush) {
             for (std::size_t i = page_begin_; i < page_end_; ++i) {
                 const float top = kPadding + static_cast<float>(i - page_begin_) * kRowHeight;
-                const bool selected = i == selected_;
+                const bool selected = has_selection_ && i == selected_;
                 if (selected) {
                     brush->SetColor(palette.highlight);
                     target_->FillRoundedRectangle(
@@ -366,7 +367,9 @@ void CandidateWindow::Paint()
                                    D2D1::RectF(kTextLeft, top, width - kRightPadding / 2, top + kRowHeight),
                                    brush.Get(), D2D1_DRAW_TEXT_OPTIONS_CLIP);
             }
-            const std::wstring footer = std::to_wstring(selected_ + 1) + L" / " + std::to_wstring(candidates_.size());
+            const std::wstring footer =
+                has_selection_ ? std::to_wstring(selected_ + 1) + L" / " + std::to_wstring(candidates_.size())
+                               : std::wstring(L"Tab \u2192 \u9078\u629E");
             const float footer_top = kPadding + static_cast<float>(page_end_ - page_begin_) * kRowHeight;
             brush->SetColor(palette.secondary);
             small_format_->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_TRAILING);
