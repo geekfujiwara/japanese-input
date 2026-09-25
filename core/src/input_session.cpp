@@ -8,12 +8,13 @@
 namespace astelio {
 
 InputSession::InputSession(const RomajiTable& table, CharacterSettings settings)
-    : composer_(table, settings), settings_(settings), table_(&table)
+    : composer_(table, settings), settings_(settings), table_(&table), emoji_search_(table, settings)
 {
 }
 
 SessionOutput InputSession::SetJapaneseMode(bool enabled)
 {
+    CloseEmojiPalette();
     SessionOutput output;
     if (!enabled && converting_) {
         output.commit = ConvertedText();
@@ -30,6 +31,7 @@ SessionOutput InputSession::SetJapaneseMode(bool enabled)
 
 void InputSession::AbandonComposition()
 {
+    CloseEmojiPalette();
     composer_.Clear();
     EndConversion();
     predictions_.clear();
@@ -79,6 +81,15 @@ SessionOutput InputSession::Handle(const KeyEvent& key)
 {
     if (!WillHandle(key)) {
         return {};
+    }
+    if (emoji_active_) {
+        SessionOutput output = HandleEmojiPalette(key);
+        if (!Composing()) {
+            typed_keys_.clear();
+            typed_keys_valid_ = true;
+        }
+        UpdatePredictions();
+        return output;
     }
     const bool was_converting = converting_;
     SessionOutput output = converting_ ? HandleConversion(key) : HandleComposition(key);
@@ -136,7 +147,7 @@ void InputSession::ConvertToForm(KeyKind key)
 void InputSession::UpdatePredictions()
 {
     predictions_.clear();
-    if (converting_ || converter_ == nullptr || composer_.Empty()) {
+    if (converting_ || emoji_active_ || converter_ == nullptr || composer_.Empty()) {
         return;
     }
     // Romaji still being typed ("arig") is not part of the reading yet.
@@ -211,7 +222,9 @@ SessionOutput InputSession::HandleComposition(const KeyEvent& key)
         break;
     case KeyKind::Down:
     case KeyKind::Tab:
-        if (predictions_.empty()) {
+        if (EmojiPaletteOffered()) {
+            OpenEmojiPalette();
+        } else if (predictions_.empty()) {
             output.composition_changed = false;
         } else {
             StartPrediction();
@@ -387,6 +400,220 @@ void InputSession::EndConversion()
     selected_.clear();
     focus_ = 0;
     candidate_list_visible_ = false;
+}
+
+const EmojiCatalog* InputSession::Catalog() const
+{
+    return emoji_provider_ ? emoji_provider_() : nullptr;
+}
+
+void InputSession::SetRecentEmoji(std::vector<std::u16string> recent)
+{
+    if (recent.size() > kMaxRecentEmoji) {
+        recent.resize(kMaxRecentEmoji);
+    }
+    recent_emoji_ = std::move(recent);
+    if (emoji_active_) {
+        RefreshEmojiItems();
+    }
+}
+
+bool InputSession::EmojiPaletteOffered() const
+{
+    return japanese_mode_ && !converting_ && !emoji_active_ && composer_.Text() == u"えもじ" && Catalog() != nullptr;
+}
+
+EmojiPaletteView InputSession::EmojiPalette() const
+{
+    EmojiPaletteView view;
+    if (emoji_active_) {
+        view.active = true;
+        view.category = emoji_category_;
+        view.query = emoji_search_.Text();
+        view.items = emoji_items_;
+        view.selected = emoji_items_.empty() ? kNoEmojiSelection : emoji_selected_;
+        return view;
+    }
+    if (!EmojiPaletteOffered()) {
+        return view;
+    }
+    view.category = recent_emoji_.empty() ? EmojiCategory::Smileys : EmojiCategory::Recent;
+    if (view.category == EmojiCategory::Recent) {
+        view.items = recent_emoji_;
+    } else if (const EmojiCatalog* catalog = Catalog()) {
+        for (std::size_t index : catalog->InCategory(view.category)) {
+            view.items.push_back(catalog->at(index).text);
+        }
+    }
+    view.selected = kNoEmojiSelection;
+    return view;
+}
+
+void InputSession::OpenEmojiPalette()
+{
+    emoji_active_ = true;
+    emoji_category_ = recent_emoji_.empty() ? EmojiCategory::Smileys : EmojiCategory::Recent;
+    emoji_search_.Clear();
+    predictions_.clear();
+    RefreshEmojiItems();
+}
+
+void InputSession::CloseEmojiPalette()
+{
+    emoji_active_ = false;
+    emoji_search_.Clear();
+    emoji_items_.clear();
+    emoji_selected_ = 0;
+}
+
+void InputSession::RefreshEmojiItems()
+{
+    emoji_items_.clear();
+    emoji_selected_ = 0;
+    const EmojiCatalog* catalog = Catalog();
+    // Romaji still being typed ("in") is not part of the query yet.
+    std::u16string query = emoji_search_.Text();
+    while (!query.empty() && query.back() >= u'a' && query.back() <= u'z') {
+        query.pop_back();
+    }
+    if (!emoji_search_.Empty()) {
+        if (catalog != nullptr && !query.empty()) {
+            for (std::size_t index : catalog->Search(query, kMaxEmojiSearchResults)) {
+                emoji_items_.push_back(catalog->at(index).text);
+            }
+        }
+        return;
+    }
+    if (emoji_category_ == EmojiCategory::Recent) {
+        emoji_items_ = recent_emoji_;
+    } else if (catalog != nullptr) {
+        for (std::size_t index : catalog->InCategory(emoji_category_)) {
+            emoji_items_.push_back(catalog->at(index).text);
+        }
+    }
+}
+
+SessionOutput InputSession::CommitEmoji(std::size_t index)
+{
+    SessionOutput output;
+    if (index >= emoji_items_.size()) {
+        return output;
+    }
+    std::u16string emoji = emoji_items_[index];
+    output.commit = emoji;
+    output.composition_changed = true;
+    output.recent_emoji_changed = true;
+    std::erase(recent_emoji_, emoji);
+    recent_emoji_.insert(recent_emoji_.begin(), std::move(emoji));
+    if (recent_emoji_.size() > kMaxRecentEmoji) {
+        recent_emoji_.resize(kMaxRecentEmoji);
+    }
+    CloseEmojiPalette();
+    composer_.Clear();
+    typed_keys_.clear();
+    typed_keys_valid_ = true;
+    return output;
+}
+
+SessionOutput InputSession::PickEmoji(std::size_t index)
+{
+    if (EmojiPaletteOffered()) {
+        OpenEmojiPalette();
+    }
+    if (!emoji_active_) {
+        return {};
+    }
+    return CommitEmoji(index);
+}
+
+bool InputSession::SelectEmojiCategory(EmojiCategory category)
+{
+    if (EmojiPaletteOffered()) {
+        OpenEmojiPalette();
+    }
+    if (!emoji_active_) {
+        return false;
+    }
+    emoji_category_ = category;
+    emoji_search_.Clear();
+    RefreshEmojiItems();
+    return true;
+}
+
+SessionOutput InputSession::HandleEmojiPalette(const KeyEvent& key)
+{
+    SessionOutput output;
+    output.composition_changed = true;
+    const std::size_t count = emoji_items_.size();
+    const std::size_t last = count == 0 ? 0 : count - 1;
+    constexpr std::size_t page = kEmojiColumns * kEmojiRows;
+    switch (key.kind) {
+    case KeyKind::Character:
+        emoji_search_.InsertKey(key.character);
+        RefreshEmojiItems();
+        break;
+    case KeyKind::Backspace:
+        if (emoji_search_.Empty()) {
+            CloseEmojiPalette();
+        } else {
+            emoji_search_.Backspace();
+            RefreshEmojiItems();
+        }
+        break;
+    case KeyKind::Escape:
+        CloseEmojiPalette(); // back to えもじ
+        break;
+    case KeyKind::Enter:
+        if (count == 0) {
+            output.composition_changed = false;
+        } else {
+            output = CommitEmoji(emoji_selected_);
+        }
+        break;
+    case KeyKind::Right:
+    case KeyKind::Space:
+        emoji_selected_ = std::min(emoji_selected_ + 1, last);
+        break;
+    case KeyKind::Left:
+        emoji_selected_ = emoji_selected_ > 0 ? emoji_selected_ - 1 : 0;
+        break;
+    case KeyKind::Down:
+        if (emoji_selected_ + kEmojiColumns <= last) {
+            emoji_selected_ += kEmojiColumns;
+        } else if (emoji_selected_ / kEmojiColumns < last / kEmojiColumns) {
+            emoji_selected_ = last; // the last row is shorter
+        }
+        break;
+    case KeyKind::Up:
+        if (emoji_selected_ >= kEmojiColumns) {
+            emoji_selected_ -= kEmojiColumns;
+        }
+        break;
+    case KeyKind::PageDown:
+        emoji_selected_ = std::min(emoji_selected_ + page, last);
+        break;
+    case KeyKind::PageUp:
+        emoji_selected_ = emoji_selected_ >= page ? emoji_selected_ - page : 0;
+        break;
+    case KeyKind::Tab: {
+        const std::size_t current = static_cast<std::size_t>(emoji_category_);
+        const std::size_t next = key.shift ? (current + kEmojiCategoryCount - 1) % kEmojiCategoryCount
+                                           : (current + 1) % kEmojiCategoryCount;
+        emoji_category_ = static_cast<EmojiCategory>(next);
+        emoji_search_.Clear();
+        RefreshEmojiItems();
+        break;
+    }
+    case KeyKind::Delete:
+    case KeyKind::F6:
+    case KeyKind::F7:
+    case KeyKind::F8:
+    case KeyKind::F9:
+    case KeyKind::F10:
+        output.composition_changed = false;
+        break;
+    }
+    return output;
 }
 
 } // namespace astelio

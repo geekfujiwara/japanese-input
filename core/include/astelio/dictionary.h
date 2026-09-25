@@ -63,6 +63,9 @@ public:
     // The `limit` cheapest entries whose reading starts with `prefix` (for predictive input).
     std::vector<Prediction> PredictiveSearch(std::u16string_view prefix, std::size_t limit) const;
 
+    // Visits every entry with its reading, in reading order.
+    void ForEachEntry(const std::function<void(std::u16string_view reading, const DictionaryEntry& entry)>& visit) const;
+
     std::int16_t ConnectionCost(std::uint16_t previous_right_id, std::uint16_t next_left_id) const;
     WordType word_type(std::uint16_t id) const;
     std::uint16_t unknown_id() const { return unknown_id_; }

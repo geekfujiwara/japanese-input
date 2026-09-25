@@ -4,6 +4,7 @@ add_executable(astelio_core_tests
     composer_test.cpp
     converter_test.cpp
     dictionary_test.cpp
+    emoji_test.cpp
     input_session_test.cpp
     kana_forms_test.cpp
     modifier_tap_tracker_test.cpp

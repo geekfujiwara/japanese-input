@@ -231,6 +231,24 @@ void SystemDictionary::CommonPrefixSearch(std::u16string_view text, const Visito
     }
 }
 
+void SystemDictionary::ForEachEntry(
+    const std::function<void(std::u16string_view reading, const DictionaryEntry& entry)>& visit) const
+{
+    for (std::size_t index = 0; index < reading_count_; ++index) {
+        const ReadingRecord record = ReadReading(base_, readings_offset_, index);
+        const std::u16string_view reading = PoolText(record.text, record.length);
+        for (std::size_t i = 0; i < record.entry_count; ++i) {
+            const EntryRecord entry = ReadEntry(base_, entries_offset_, record.first_entry + i);
+            DictionaryEntry found;
+            found.surface = PoolText(entry.text, entry.length);
+            found.left_id = entry.left;
+            found.right_id = entry.right;
+            found.cost = entry.cost;
+            visit(reading, found);
+        }
+    }
+}
+
 std::vector<SystemDictionary::Prediction> SystemDictionary::PredictiveSearch(std::u16string_view prefix,
                                                                              std::size_t limit) const
 {

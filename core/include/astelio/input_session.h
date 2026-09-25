@@ -3,11 +3,14 @@
 #include "astelio/character_rules.h"
 #include "astelio/composer.h"
 #include "astelio/converter.h"
+#include "astelio/emoji.h"
 #include "astelio/romaji_table.h"
 
 #include <cstddef>
 #include <cstdint>
+#include <functional>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace astelio {
@@ -42,7 +45,18 @@ struct KeyEvent {
 struct SessionOutput {
     std::u16string commit;
     bool composition_changed = false;
+    bool recent_emoji_changed = false; // save RecentEmoji()
 };
+
+// B-13: what the emoji palette shows.
+struct EmojiPaletteView {
+    EmojiCategory category = EmojiCategory::Smileys;
+    std::u16string query;               // search text typed inside the palette
+    std::vector<std::u16string> items;  // search results, or the emoji of the category
+    std::size_t selected = 0;           // index into items; kNoEmojiSelection while only offered
+    bool active = false;                // false: offered (the kana is えもじ), Tab or Down opens it
+};
+inline constexpr std::size_t kNoEmojiSelection = static_cast<std::size_t>(-1);
 
 // Platform-independent key handling for one input context.
 class InputSession {
@@ -82,7 +96,28 @@ public:
     const std::vector<std::u16string>& Predictions() const { return predictions_; }
     static constexpr std::size_t kMinPredictionLength = 2;
 
+    // B-13: the emoji palette, offered when the kana is えもじ. The catalog is built on first use.
+    void SetEmojiCatalog(std::function<const EmojiCatalog*()> provider) { emoji_provider_ = std::move(provider); }
+    void SetRecentEmoji(std::vector<std::u16string> recent);
+    const std::vector<std::u16string>& RecentEmoji() const { return recent_emoji_; }
+    bool EmojiPaletteOffered() const;
+    bool EmojiPaletteActive() const { return emoji_active_; }
+    EmojiPaletteView EmojiPalette() const;
+    // Mouse: commit items[index] / show a category (opens the palette when it is offered).
+    SessionOutput PickEmoji(std::size_t index);
+    bool SelectEmojiCategory(EmojiCategory category);
+    static constexpr std::size_t kEmojiColumns = 8;
+    static constexpr std::size_t kEmojiRows = 5;
+    static constexpr std::size_t kMaxRecentEmoji = 32;
+    static constexpr std::size_t kMaxEmojiSearchResults = 200;
+
 private:
+    SessionOutput HandleEmojiPalette(const KeyEvent& key);
+    void OpenEmojiPalette();
+    void CloseEmojiPalette();
+    void RefreshEmojiItems();
+    SessionOutput CommitEmoji(std::size_t index);
+    const EmojiCatalog* Catalog() const;
     SessionOutput HandleComposition(const KeyEvent& key);
     SessionOutput HandleConversion(const KeyEvent& key);
     bool HandleCandidateList(const KeyEvent& key);
@@ -108,6 +143,13 @@ private:
     // Keys typed for the current composition, for F9/F10; cleared when the text is edited in the middle.
     std::u16string typed_keys_;
     bool typed_keys_valid_ = true;
+    std::function<const EmojiCatalog*()> emoji_provider_;
+    std::vector<std::u16string> recent_emoji_;
+    bool emoji_active_ = false;
+    EmojiCategory emoji_category_ = EmojiCategory::Smileys;
+    Composer emoji_search_;
+    std::vector<std::u16string> emoji_items_;
+    std::size_t emoji_selected_ = 0;
 };
 
 } // namespace astelio
