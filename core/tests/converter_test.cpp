@@ -169,6 +169,15 @@ TEST_F(ConverterTest, SegmentsAlwaysCoverTheWholeReading)
     }
 }
 
+// B-04: predictions start with the conversion of what was typed, then longer words.
+TEST_F(ConverterTest, PredictsFromThePrefix)
+{
+    const std::vector<std::u16string> predictions = astelio::Converter(*dictionary_).Predict(u"わた", 9);
+    EXPECT_EQ(predictions, (std::vector<std::u16string>{u"綿", u"私", u"渡し"}));
+    EXPECT_EQ(astelio::Converter(*dictionary_).Predict(u"わた", 1).size(), 1u);
+    EXPECT_TRUE(astelio::Converter(*dictionary_).Predict(u"ぬ", 9).empty());
+}
+
 TEST(HiraganaToKatakana, ConvertsOnlyHiragana)
 {
     EXPECT_EQ(astelio::HiraganaToKatakana(u"ゔぁいおりんーゝA漢"), u"ヴァイオリンーヽA漢");

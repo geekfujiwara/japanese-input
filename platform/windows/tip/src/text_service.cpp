@@ -576,20 +576,29 @@ void TextService::HideCandidateWindow()
     }
 }
 
-// Shows the candidates of the focused segment under it (needs the edit cookie to measure the text).
+// Shows the candidates of the focused segment under it, or the predictions under the text being typed
+// (needs the edit cookie to measure the text).
 void TextService::UpdateCandidateWindow(TfEditCookie cookie, ITfContext* context)
 {
-    if (!session_.CandidateListVisible() || !composition_) {
+    const bool predicting = !session_.Converting() && !session_.Predictions().empty();
+    if ((!session_.CandidateListVisible() && !predicting) || !composition_) {
         HideCandidateWindow();
         return;
     }
-    const std::vector<ConvertedSegment>& segments = session_.Segments();
-    const std::size_t focus = session_.FocusedSegment();
     LONG offset = 0;
-    for (std::size_t i = 0; i < focus; ++i) {
-        offset += Length(segments[i].candidates[session_.SelectedCandidate(i)]);
+    LONG length = Length(session_.CompositionText());
+    const std::vector<std::u16string>* candidates = &session_.Predictions();
+    std::size_t selected = CandidateWindow::kNoSelection;
+    if (!predicting) {
+        const std::vector<ConvertedSegment>& segments = session_.Segments();
+        const std::size_t focus = session_.FocusedSegment();
+        for (std::size_t i = 0; i < focus; ++i) {
+            offset += Length(segments[i].candidates[session_.SelectedCandidate(i)]);
+        }
+        length = Length(segments[focus].candidates[session_.SelectedCandidate(focus)]);
+        candidates = &segments[focus].candidates;
+        selected = session_.SelectedCandidate(focus);
     }
-    const LONG length = Length(segments[focus].candidates[session_.SelectedCandidate(focus)]);
 
     RECT anchor{};
     ComPtr<ITfRange> range;
@@ -612,7 +621,7 @@ void TextService::UpdateCandidateWindow(TfEditCookie cookie, ITfContext* context
         candidate_window_.reset(new (std::nothrow) CandidateWindow());
     }
     if (candidate_window_) {
-        candidate_window_->Show(segments[focus].candidates, session_.SelectedCandidate(focus), anchor);
+        candidate_window_->Show(*candidates, selected, anchor);
     }
 }
 

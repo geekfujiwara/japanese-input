@@ -60,6 +60,8 @@ TEST(KeyTranslation, EditingKeys)
     EXPECT_EQ(TranslateKey(VK_DOWN, LParam(0x50, true), {})->kind, KeyKind::Down);
     EXPECT_EQ(TranslateKey(VK_NEXT, LParam(0x51, true), {})->kind, KeyKind::PageDown);
     EXPECT_EQ(TranslateKey(VK_PRIOR, LParam(0x49, true), {})->kind, KeyKind::PageUp);
+    EXPECT_EQ(TranslateKey(VK_TAB, LParam(0x0F), {})->kind, KeyKind::Tab);
+    EXPECT_TRUE(TranslateKey(VK_TAB, LParam(0x0F), {.shift = true})->shift);
 }
 
 TEST(KeyTranslation, ShortcutsAndOtherKeysAreNotHandled)

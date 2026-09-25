@@ -91,6 +91,22 @@ TEST(SystemDictionary, CommonPrefixSearchVisitsEveryPrefixShortestFirst)
     EXPECT_EQ(found, (std::vector<std::pair<std::size_t, std::u16string>>{{1, u"は"}}));
 }
 
+TEST(SystemDictionary, PredictiveSearchReturnsTheCheapestEntriesStartingWithThePrefix)
+{
+    const std::vector<std::byte> bytes = BuildSample();
+    const std::optional<SystemDictionary> dictionary = SystemDictionary::Open(bytes);
+    ASSERT_TRUE(dictionary);
+    const auto found = dictionary->PredictiveSearch(u"わた", 3);
+    ASSERT_EQ(found.size(), 3u);
+    EXPECT_EQ(found[0].entry.surface, u"私");
+    EXPECT_EQ(found[0].reading, u"わたし");
+    EXPECT_EQ(found[1].entry.surface, u"わたし");
+    EXPECT_EQ(found[2].entry.surface, u"綿");
+    EXPECT_EQ(dictionary->PredictiveSearch(u"わた", 10).size(), 5u);
+    EXPECT_TRUE(dictionary->PredictiveSearch(u"ん", 10).empty());
+    EXPECT_TRUE(dictionary->PredictiveSearch(u"", 10).empty());
+}
+
 TEST(SystemDictionary, ConnectionCostsComeFromTheMatrix)
 {
     const std::vector<std::byte> bytes = BuildSample();

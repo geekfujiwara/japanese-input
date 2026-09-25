@@ -153,6 +153,8 @@ protected:
         builder.Add({u"は", u"は", 2, 2, 0, 50});
         builder.Add({u"にほんご", u"日本語", 1, 1, 0, 400});
         builder.Add({u"です", u"です", 4, 4, 0, 100});
+        builder.Add({u"ありがとう", u"ありがとう", 1, 1, 0, 400});
+        builder.Add({u"ありがたい", u"有り難い", 1, 1, 0, 800});
         bytes_ = builder.Build();
         dictionary_ = SystemDictionary::Open(bytes_);
         ASSERT_TRUE(dictionary_);
@@ -316,6 +318,48 @@ TEST_F(ConversionTest, CandidateListKeys)
     session_.Handle(Char(u'9'));
     EXPECT_EQ(session_.SelectedCandidate(0), session_.Segments()[0].candidates.size() - 1)
         << "a number past the end keeps the choice";
+}
+
+// T-B04-1: predictions appear while typing; Tab selects them and Enter commits.
+TEST_F(ConversionTest, PredictionsWhileTypingAndTabSelects)
+{
+    Type(session_, u"a");
+    EXPECT_TRUE(session_.Predictions().empty()) << "one kana is too short";
+    Type(session_, u"rig");
+    ASSERT_FALSE(session_.Predictions().empty()) << "pending romaji is ignored";
+    EXPECT_EQ(session_.Predictions().front(), u"ありがとう");
+    EXPECT_EQ(session_.Predictions().at(1), u"有り難い");
+
+    session_.Handle(Key(KeyKind::Tab));
+    ASSERT_TRUE(session_.Converting());
+    EXPECT_TRUE(session_.CandidateListVisible());
+    EXPECT_TRUE(session_.Predictions().empty());
+    EXPECT_EQ(session_.CompositionText(), u"ありがとう");
+    session_.Handle(Key(KeyKind::Tab));
+    EXPECT_EQ(session_.CompositionText(), u"有り難い");
+    session_.Handle(KeyEvent{KeyKind::Tab, 0, true});
+    EXPECT_EQ(session_.Handle(Key(KeyKind::Enter)).commit, u"ありがとう");
+    EXPECT_FALSE(session_.Composing());
+}
+
+TEST_F(ConversionTest, EscapeFromPredictionsReturnsToTheKana)
+{
+    Type(session_, u"ari");
+    session_.Handle(Arrow(KeyKind::Down));
+    ASSERT_TRUE(session_.Converting());
+    session_.Handle(Key(KeyKind::Escape));
+    EXPECT_EQ(session_.CompositionText(), u"あり");
+    EXPECT_FALSE(session_.Predictions().empty());
+    EXPECT_FALSE(session_.Handle(Key(KeyKind::Tab)).commit.size() > 0);
+}
+
+TEST_F(ConversionTest, TabWithoutPredictionsDoesNothing)
+{
+    Type(session_, u"nu");
+    EXPECT_TRUE(session_.Predictions().empty());
+    EXPECT_TRUE(session_.WillHandle(Key(KeyKind::Tab)));
+    EXPECT_FALSE(session_.Handle(Key(KeyKind::Tab)).composition_changed);
+    EXPECT_FALSE(session_.Converting());
 }
 
 TEST_F(ConversionTest, ArrowKeysWhileComposingDoNotReachTheApp)

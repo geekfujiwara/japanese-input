@@ -56,6 +56,13 @@ public:
     void CommonPrefixSearch(std::u16string_view text, const Visitor& visit) const;
     std::vector<DictionaryEntry> Lookup(std::u16string_view reading) const;
 
+    struct Prediction {
+        std::u16string_view reading;
+        DictionaryEntry entry;
+    };
+    // The `limit` cheapest entries whose reading starts with `prefix` (for predictive input).
+    std::vector<Prediction> PredictiveSearch(std::u16string_view prefix, std::size_t limit) const;
+
     std::int16_t ConnectionCost(std::uint16_t previous_right_id, std::uint16_t next_left_id) const;
     WordType word_type(std::uint16_t id) const;
     std::uint16_t unknown_id() const { return unknown_id_; }
@@ -65,6 +72,8 @@ private:
     SystemDictionary() = default;
 
     std::u16string_view Reading(std::size_t index) const;
+    // Narrows [low, high) to the readings whose code unit at `length - 1` equals `unit`.
+    void Narrow(std::size_t length, char16_t unit, std::size_t& low, std::size_t& high) const;
     void VisitEntries(std::size_t reading_index, std::size_t length, const Visitor& visit) const;
     std::u16string_view PoolText(std::uint32_t offset, std::uint16_t length) const;
 

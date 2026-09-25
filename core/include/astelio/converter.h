@@ -27,6 +27,9 @@ public:
     std::vector<ConvertedSegment> Convert(std::u16string_view reading,
                                           std::span<const std::size_t> fixed_lengths = {}) const;
 
+    // Predictive candidates while typing: the conversion of `reading`, then words whose reading starts with it.
+    std::vector<std::u16string> Predict(std::u16string_view reading, std::size_t limit) const;
+
 private:
     const SystemDictionary& dictionary_;
 };

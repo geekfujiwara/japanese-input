@@ -25,6 +25,7 @@ enum class KeyKind : std::uint8_t {
     Down,
     PageUp,
     PageDown,
+    Tab,
 };
 
 struct KeyEvent {
@@ -72,9 +73,16 @@ public:
     bool CandidateListVisible() const { return candidate_list_visible_; }
     static constexpr std::size_t kCandidatePageSize = 9;
 
+    // B-04: candidates predicted from the kana typed so far (shown while typing; Tab or Down selects them).
+    const std::vector<std::u16string>& Predictions() const { return predictions_; }
+    static constexpr std::size_t kMinPredictionLength = 2;
+
 private:
+    SessionOutput HandleComposition(const KeyEvent& key);
     SessionOutput HandleConversion(const KeyEvent& key);
     bool HandleCandidateList(const KeyEvent& key);
+    void StartPrediction();
+    void UpdatePredictions();
     void Convert(std::vector<std::size_t> fixed_lengths);
     std::u16string ConvertedText() const;
     void EndConversion();
@@ -89,6 +97,7 @@ private:
     std::vector<std::size_t> selected_;
     std::size_t focus_ = 0;
     bool candidate_list_visible_ = false;
+    std::vector<std::u16string> predictions_;
 };
 
 } // namespace astelio

@@ -864,7 +864,7 @@ TEST_F(TypingTest, SpaceConvertsWithTheDictionary)
     EXPECT_TRUE(IsWindowVisible(window));
 
     EXPECT_TRUE(Press(VK_ESCAPE, 0x01));
-    EXPECT_FALSE(IsWindowVisible(window));
+    EXPECT_TRUE(IsWindowVisible(window)) << "back in the kana, the window shows predictions again";
     EXPECT_EQ(Text(), L"\u308F\u305F\u3057\u306F");
     EXPECT_EQ(CompositionCount(), 1);
 
@@ -873,6 +873,33 @@ TEST_F(TypingTest, SpaceConvertsWithTheDictionary)
     EXPECT_EQ(Text(), L"\u79C1\u306F");
     EXPECT_EQ(CompositionCount(), 0);
     EXPECT_EQ(store_->SelectionEnd(), 2);
+}
+
+// T-B04-1 (TIP): predictions are shown while typing; Tab selects them.
+TEST_F(TypingTest, PredictionsShowWhileTypingAndTabSelects)
+{
+    const std::wstring path = WriteTestDictionary();
+    ASSERT_FALSE(path.empty());
+    ASSERT_HRESULT_SUCCEEDED(use_dictionary_(path.c_str()));
+    using CandidateWindowFunction = HWND(WINAPI*)();
+    const auto candidate_window = reinterpret_cast<CandidateWindowFunction>(
+        GetProcAddress(GetModuleHandleW(TipPath().c_str()), "AstelioTipTestCandidateWindow"));
+    ASSERT_NE(candidate_window, nullptr);
+
+    TypeLetters("wata");
+    EXPECT_EQ(Text(), L"\u308F\u305F");
+    const HWND window = candidate_window();
+    ASSERT_NE(window, nullptr);
+    EXPECT_TRUE(IsWindowVisible(window)) << "predictions are shown while typing";
+    UpdateWindow(window);
+
+    EXPECT_TRUE(Press(VK_TAB, 0x0F));
+    EXPECT_EQ(Text(), L"\u79C1");
+    EXPECT_TRUE(IsWindowVisible(window));
+    EXPECT_TRUE(Press(VK_RETURN, 0x1C));
+    EXPECT_EQ(Text(), L"\u79C1");
+    EXPECT_EQ(CompositionCount(), 0);
+    EXPECT_FALSE(IsWindowVisible(window));
 }
 
 // Without an installed dictionary typing still works and Space keeps the kana.
