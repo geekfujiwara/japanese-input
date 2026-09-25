@@ -12,7 +12,10 @@ add_library(astelio_tip SHARED
     src/dictionary_loader.cpp
     src/display_attributes.cpp
     src/dllmain.cpp
+    src/emoji_history.cpp
+    src/emoji_window.cpp
     src/lang_bar_button.cpp
+    src/popup_window.cpp
     src/registration.cpp
     src/text_service.cpp
 )

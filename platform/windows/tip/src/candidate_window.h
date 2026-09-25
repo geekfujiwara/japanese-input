@@ -1,10 +1,6 @@
 #pragma once
 
-#include <windows.h>
-
-#include <d2d1.h>
-#include <dwrite.h>
-#include <wrl/client.h>
+#include "popup_window.h"
 
 #include <cstddef>
 #include <string>
@@ -12,45 +8,28 @@
 
 namespace astelio::tip {
 
-// Candidate list popup. On Windows 11 the background is the DWM acrylic backdrop (frosted glass);
-// with transparency effects off, in high contrast, or on Windows 10 it is opaque.
-class CandidateWindow {
+// Candidate list popup (frosted glass, see PopupWindow).
+class CandidateWindow final : public PopupWindow {
 public:
-    enum class Backdrop : unsigned char {
-        Opaque,
-        Acrylic,        // blur that also works while the window is inactive
-        SystemBackdrop, // Windows 11 DWM backdrop (solid when inactive)
-    };
-
     CandidateWindow() = default;
-    ~CandidateWindow();
-    CandidateWindow(const CandidateWindow&) = delete;
-    CandidateWindow& operator=(const CandidateWindow&) = delete;
 
     // `anchor`: screen rectangle of the focused segment. The list opens below it, or above near the screen bottom.
     // `selected` == kNoSelection shows predictions while typing (nothing highlighted, Tab hint in the footer).
     void Show(const std::vector<std::u16string>& candidates, std::size_t selected, const RECT& anchor);
-    void Hide();
-    HWND window() const { return window_; }
 
     static constexpr std::size_t kNoSelection = static_cast<std::size_t>(-1);
 
 private:
-    static LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lparam);
-    bool EnsureWindow();
-    void ApplyBackdrop();
+    bool EnsureFormats();
     SIZE MeasureDips();
-    void Paint();
+    void Render(ID2D1RenderTarget* target, ID2D1SolidColorBrush* brush, const Palette& palette,
+                float width) override;
 
-    HWND window_ = nullptr;
-    Backdrop backdrop_ = Backdrop::Opaque;
-    bool dark_ = false;
     std::vector<std::u16string> candidates_;
     std::size_t selected_ = 0;
     bool has_selection_ = false;
     std::size_t page_begin_ = 0;
     std::size_t page_end_ = 0;
-    Microsoft::WRL::ComPtr<ID2D1DCRenderTarget> target_;
     Microsoft::WRL::ComPtr<IDWriteTextFormat> text_format_;
     Microsoft::WRL::ComPtr<IDWriteTextFormat> small_format_;
 };

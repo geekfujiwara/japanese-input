@@ -20,6 +20,7 @@ public:
     ~MappedDictionary()
     {
         converter_.reset();
+        emoji_.reset();
         dictionary_.reset();
         if (view_ != nullptr) {
             UnmapViewOfFile(view_);
@@ -61,12 +62,21 @@ public:
 
     const Converter* converter() const { return converter_ ? &*converter_ : nullptr; }
 
+    const EmojiCatalog* emoji()
+    {
+        if (!emoji_ && dictionary_) {
+            emoji_ = EmojiCatalog::FromDictionary(*dictionary_);
+        }
+        return emoji_ ? &*emoji_ : nullptr;
+    }
+
 private:
     HANDLE file_ = INVALID_HANDLE_VALUE;
     HANDLE mapping_ = nullptr;
     void* view_ = nullptr;
     std::optional<SystemDictionary> dictionary_;
     std::optional<Converter> converter_;
+    std::optional<EmojiCatalog> emoji_;
 };
 
 std::mutex g_mutex;
@@ -141,6 +151,24 @@ const Converter* UseDictionaryFile(const wchar_t* path)
     } catch (...) {
         return nullptr;
     }
+}
+
+const EmojiCatalog* EmojiCatalogFor(const Converter* converter)
+{
+    if (converter == nullptr) {
+        return nullptr;
+    }
+    try {
+        const std::lock_guard lock(g_mutex);
+        for (const std::unique_ptr<MappedDictionary>& dictionary : g_dictionaries) {
+            if (dictionary->converter() == converter) {
+                return dictionary->emoji();
+            }
+        }
+    } catch (...) {
+        // Out of memory: no palette.
+    }
+    return nullptr;
 }
 
 void ReleaseDictionaries()

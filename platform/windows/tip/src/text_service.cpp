@@ -2,6 +2,8 @@
 
 #include "candidate_window.h"
 #include "display_attributes.h"
+#include "emoji_history.h"
+#include "emoji_window.h"
 #include "key_translation.h"
 #include "dictionary_loader.h"
 #include "lang_bar_button.h"
@@ -228,7 +230,8 @@ STDMETHODIMP TextService::ActivateEx(ITfThreadMgr* thread_mgr, TfClientId client
     }
     key_sink_advised_ = true;
     g_active_service = this;
-    session_.SetConverter(SharedConverter());
+    UseConverter(SharedConverter());
+    session_.SetRecentEmoji(LoadRecentEmoji());
     ComPtr<ITfCategoryMgr> categories;
     if (SUCCEEDED(CoCreateInstance(CLSID_TF_CategoryMgr, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&categories)))) {
         for (int index = 0; index < kDisplayAttributeCount; ++index) {
@@ -251,6 +254,7 @@ STDMETHODIMP TextService::Deactivate()
     }
     StopModeIndicators();
     candidate_window_.reset();
+    emoji_window_.reset();
     if (key_sink_advised_ && thread_mgr_) {
         Microsoft::WRL::ComPtr<ITfKeystrokeMgr> keystroke_mgr;
         if (SUCCEEDED(thread_mgr_.As(&keystroke_mgr))) {
@@ -338,11 +342,12 @@ STDMETHODIMP TextService::OnKeyDown(ITfContext* context, WPARAM wparam, LPARAM l
         }
         *eaten = TRUE;
         ++Diagnostics().eaten;
+        const bool offered = session_.EmojiPaletteOffered();
         SessionOutput output = session_.Handle(*key);
-        if (output.composition_changed || !output.commit.empty()) {
-            return RequestEdit(context, std::move(output.commit));
+        if (!offered && session_.EmojiPaletteOffered()) {
+            session_.SetRecentEmoji(LoadRecentEmoji()); // other apps may have used emoji since
         }
-        return S_OK;
+        return Deliver(context, std::move(output));
     } catch (...) {
         return E_UNEXPECTED;
     }
@@ -638,12 +643,98 @@ void TextService::HideCandidateWindow()
     if (candidate_window_) {
         candidate_window_->Hide();
     }
+    if (emoji_window_) {
+        emoji_window_->Hide();
+    }
 }
 
-// Shows the candidates of the focused segment under it, or the predictions under the text being typed
-// (needs the edit cookie to measure the text).
+void TextService::UseConverter(const Converter* converter)
+{
+    session_.SetConverter(converter);
+    if (converter != nullptr) {
+        session_.SetEmojiCatalog([converter] { return EmojiCatalogFor(converter); });
+    } else {
+        session_.SetEmojiCatalog(nullptr);
+    }
+}
+
+HRESULT TextService::Deliver(ITfContext* context, SessionOutput output)
+{
+    if (output.recent_emoji_changed && !session_.RecentEmoji().empty()) {
+        // Merge with what other apps saved since this one loaded the file.
+        std::vector<std::u16string> recent = LoadRecentEmoji();
+        const std::u16string newest = session_.RecentEmoji().front();
+        std::erase(recent, newest);
+        recent.insert(recent.begin(), newest);
+        session_.SetRecentEmoji(std::move(recent));
+        SaveRecentEmoji(session_.RecentEmoji());
+    }
+    if (context != nullptr && (output.composition_changed || !output.commit.empty())) {
+        return RequestEdit(context, std::move(output.commit));
+    }
+    return S_OK;
+}
+
+void TextService::OnEmojiClick(bool category, std::size_t index)
+{
+    const ComPtr<ITfContext> context = FocusedContext();
+    if (!context) {
+        return;
+    }
+    SessionOutput output;
+    if (category) {
+        output.composition_changed = session_.SelectEmojiCategory(static_cast<EmojiCategory>(index));
+    } else {
+        output = session_.PickEmoji(index);
+    }
+    Deliver(context.Get(), std::move(output));
+}
+
+// Screen rectangle of [offset, offset + length) in the composition (needs the edit cookie to measure the text).
+bool TextService::CompositionRect(TfEditCookie cookie, ITfContext* context, LONG offset, LONG length,
+                                  RECT* rect) const
+{
+    ComPtr<ITfRange> range;
+    ComPtr<ITfRange> segment;
+    ComPtr<ITfContextView> view;
+    LONG shifted = 0;
+    BOOL clipped = FALSE;
+    const bool measured = composition_ && SUCCEEDED(composition_->GetRange(&range)) &&
+                          SUCCEEDED(range->Clone(&segment)) && SUCCEEDED(segment->Collapse(cookie, TF_ANCHOR_START)) &&
+                          SUCCEEDED(segment->ShiftEnd(cookie, offset + length, &shifted, nullptr)) &&
+                          SUCCEEDED(segment->ShiftStart(cookie, offset, &shifted, nullptr)) &&
+                          SUCCEEDED(context->GetActiveView(&view)) &&
+                          SUCCEEDED(view->GetTextExt(cookie, segment.Get(), rect, &clipped));
+    if (!measured) {
+        POINT caret{};
+        GetCaretPos(&caret);
+        *rect = RECT{caret.x, caret.y, caret.x, caret.y + 20};
+    }
+    return measured;
+}
+
+// Shows the emoji palette, the candidates of the focused segment under it, or the predictions under the text
+// being typed.
 void TextService::UpdateCandidateWindow(TfEditCookie cookie, ITfContext* context)
 {
+    if (composition_ && (session_.EmojiPaletteActive() || session_.EmojiPaletteOffered())) {
+        if (candidate_window_) {
+            candidate_window_->Hide();
+        }
+        RECT anchor{};
+        CompositionRect(cookie, context, 0, Length(session_.CompositionText()), &anchor);
+        if (!emoji_window_) {
+            emoji_window_.reset(new (std::nothrow) EmojiWindow(
+                [this](EmojiWindow::Click click) { OnEmojiClick(click.category, click.index); }));
+        }
+        if (emoji_window_) {
+            emoji_window_->Show(session_.EmojiPalette(), anchor);
+        }
+        return;
+    }
+    if (emoji_window_) {
+        emoji_window_->Hide();
+    }
     const bool predicting = !session_.Converting() && !session_.Predictions().empty();
     if ((!session_.CandidateListVisible() && !predicting) || !composition_) {
         HideCandidateWindow();
@@ -665,22 +756,7 @@ void TextService::UpdateCandidateWindow(TfEditCookie cookie, ITfContext* context
     }
 
     RECT anchor{};
-    ComPtr<ITfRange> range;
-    ComPtr<ITfRange> segment;
-    ComPtr<ITfContextView> view;
-    LONG shifted = 0;
-    BOOL clipped = FALSE;
-    const bool measured = SUCCEEDED(composition_->GetRange(&range)) && SUCCEEDED(range->Clone(&segment)) &&
-                          SUCCEEDED(segment->Collapse(cookie, TF_ANCHOR_START)) &&
-                          SUCCEEDED(segment->ShiftEnd(cookie, offset + length, &shifted, nullptr)) &&
-                          SUCCEEDED(segment->ShiftStart(cookie, offset, &shifted, nullptr)) &&
-                          SUCCEEDED(context->GetActiveView(&view)) &&
-                          SUCCEEDED(view->GetTextExt(cookie, segment.Get(), &anchor, &clipped));
-    if (!measured) {
-        POINT caret{};
-        GetCaretPos(&caret);
-        anchor = RECT{caret.x, caret.y, caret.x, caret.y + 20};
-    }
+    CompositionRect(cookie, context, offset, length, &anchor);
     if (!candidate_window_) {
         candidate_window_.reset(new (std::nothrow) CandidateWindow());
     }
@@ -793,7 +869,7 @@ HRESULT TextService::TestUseDictionary(const wchar_t* path)
         return E_UNEXPECTED;
     }
     const Converter* converter = UseDictionaryFile(path);
-    service->session_.SetConverter(converter);
+    service->UseConverter(converter);
     return converter != nullptr || path == nullptr ? S_OK : E_FAIL;
 }
 
@@ -801,6 +877,12 @@ HWND TextService::TestCandidateWindow()
 {
     TextService* service = g_active_service;
     return service != nullptr && service->candidate_window_ ? service->candidate_window_->window() : nullptr;
+}
+
+HWND TextService::TestEmojiWindow()
+{
+    TextService* service = g_active_service;
+    return service != nullptr && service->emoji_window_ ? service->emoji_window_->window() : nullptr;
 }
 
 } // namespace astelio::tip
@@ -822,4 +904,16 @@ extern "C" HRESULT WINAPI AstelioTipTestUseDictionary(const wchar_t* path)
 extern "C" HWND WINAPI AstelioTipTestCandidateWindow()
 {
     return astelio::tip::TextService::TestCandidateWindow();
+}
+
+// Test entry point: the emoji palette window of the active text service, or nullptr.
+extern "C" HWND WINAPI AstelioTipTestEmojiWindow()
+{
+    return astelio::tip::TextService::TestEmojiWindow();
+}
+
+// Test entry point: keeps the emoji history in `path` instead of the user's profile (nullptr restores it).
+extern "C" void WINAPI AstelioTipTestUseEmojiHistory(const wchar_t* path)
+{
+    astelio::tip::UseRecentEmojiFile(path);
 }
