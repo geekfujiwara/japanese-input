@@ -8,11 +8,13 @@
 #include <msctf.h>
 #include <wrl/client.h>
 
+#include <memory>
 #include <optional>
 #include <string>
 
 namespace astelio::tip {
 
+class CandidateWindow;
 class LangBarButton;
 
 class TextService final : public ITfTextInputProcessorEx,
@@ -55,10 +57,15 @@ public:
 
     static HRESULT TestKey(ITfContext* context, WPARAM wparam, LPARAM lparam, BOOL key_up, BOOL* eaten);
     static HRESULT TestUseDictionary(const wchar_t* path);
+    static HWND TestCandidateWindow();
 
 private:
     TextService();
     ~TextService();
+
+    HRESULT ApplyText(TfEditCookie cookie, ITfContext* context, const std::u16string& commit);
+    void UpdateCandidateWindow(TfEditCookie cookie, ITfContext* context);
+    void HideCandidateWindow();
 
     HRESULT RequestEdit(ITfContext* context, std::u16string commit);
     HRESULT StartComposition(TfEditCookie cookie, ITfContext* context);
@@ -82,6 +89,7 @@ private:
     DWORD compartment_cookie_ = TF_INVALID_COOKIE;
     LangBarButton* mode_button_ = nullptr;
     bool mode_button_added_ = false;
+    std::unique_ptr<CandidateWindow> candidate_window_;
 };
 
 } // namespace astelio::tip

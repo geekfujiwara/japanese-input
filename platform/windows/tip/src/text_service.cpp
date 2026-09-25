@@ -1,5 +1,6 @@
 #include "text_service.h"
 
+#include "candidate_window.h"
 #include "key_translation.h"
 #include "dictionary_loader.h"
 #include "lang_bar_button.h"
@@ -239,6 +240,7 @@ STDMETHODIMP TextService::Deactivate()
         g_active_service = nullptr;
     }
     StopModeIndicators();
+    candidate_window_.reset();
     if (key_sink_advised_ && thread_mgr_) {
         Microsoft::WRL::ComPtr<ITfKeystrokeMgr> keystroke_mgr;
         if (SUCCEEDED(thread_mgr_.As(&keystroke_mgr))) {
@@ -376,6 +378,7 @@ STDMETHODIMP TextService::OnCompositionTerminated(TfEditCookie /*cookie*/, ITfCo
 {
     composition_.Reset();
     session_.AbandonComposition();
+    HideCandidateWindow();
     return S_OK;
 }
 
@@ -421,6 +424,9 @@ HRESULT TextService::SetMode(bool japanese, ITfContext* context)
     HRESULT hr = S_OK;
     if (context != nullptr && (output.composition_changed || !output.commit.empty())) {
         hr = RequestEdit(context, std::move(output.commit));
+    }
+    if (!session_.CandidateListVisible()) {
+        HideCandidateWindow();
     }
     PublishMode();
     return hr;
@@ -558,6 +564,60 @@ HRESULT TextService::EndComposition(TfEditCookie cookie)
 
 HRESULT TextService::ApplyToDocument(TfEditCookie cookie, ITfContext* context, const std::u16string& commit)
 {
+    const HRESULT hr = ApplyText(cookie, context, commit);
+    UpdateCandidateWindow(cookie, context);
+    return hr;
+}
+
+void TextService::HideCandidateWindow()
+{
+    if (candidate_window_) {
+        candidate_window_->Hide();
+    }
+}
+
+// Shows the candidates of the focused segment under it (needs the edit cookie to measure the text).
+void TextService::UpdateCandidateWindow(TfEditCookie cookie, ITfContext* context)
+{
+    if (!session_.CandidateListVisible() || !composition_) {
+        HideCandidateWindow();
+        return;
+    }
+    const std::vector<ConvertedSegment>& segments = session_.Segments();
+    const std::size_t focus = session_.FocusedSegment();
+    LONG offset = 0;
+    for (std::size_t i = 0; i < focus; ++i) {
+        offset += Length(segments[i].candidates[session_.SelectedCandidate(i)]);
+    }
+    const LONG length = Length(segments[focus].candidates[session_.SelectedCandidate(focus)]);
+
+    RECT anchor{};
+    ComPtr<ITfRange> range;
+    ComPtr<ITfRange> segment;
+    ComPtr<ITfContextView> view;
+    LONG shifted = 0;
+    BOOL clipped = FALSE;
+    const bool measured = SUCCEEDED(composition_->GetRange(&range)) && SUCCEEDED(range->Clone(&segment)) &&
+                          SUCCEEDED(segment->Collapse(cookie, TF_ANCHOR_START)) &&
+                          SUCCEEDED(segment->ShiftEnd(cookie, offset + length, &shifted, nullptr)) &&
+                          SUCCEEDED(segment->ShiftStart(cookie, offset, &shifted, nullptr)) &&
+                          SUCCEEDED(context->GetActiveView(&view)) &&
+                          SUCCEEDED(view->GetTextExt(cookie, segment.Get(), &anchor, &clipped));
+    if (!measured) {
+        POINT caret{};
+        GetCaretPos(&caret);
+        anchor = RECT{caret.x, caret.y, caret.x, caret.y + 20};
+    }
+    if (!candidate_window_) {
+        candidate_window_.reset(new (std::nothrow) CandidateWindow());
+    }
+    if (candidate_window_) {
+        candidate_window_->Show(segments[focus].candidates, session_.SelectedCandidate(focus), anchor);
+    }
+}
+
+HRESULT TextService::ApplyText(TfEditCookie cookie, ITfContext* context, const std::u16string& commit)
+{
     HRESULT hr = S_OK;
     if (!commit.empty()) {
         ComPtr<ITfRange> range;
@@ -660,6 +720,12 @@ HRESULT TextService::TestUseDictionary(const wchar_t* path)
     return converter != nullptr || path == nullptr ? S_OK : E_FAIL;
 }
 
+HWND TextService::TestCandidateWindow()
+{
+    TextService* service = g_active_service;
+    return service != nullptr && service->candidate_window_ ? service->candidate_window_->window() : nullptr;
+}
+
 } // namespace astelio::tip
 
 // Test entry point: sends a key to the TSF-activated text service without OS keyboard focus.
@@ -673,4 +739,10 @@ extern "C" HRESULT WINAPI AstelioTipTestKey(ITfContext* context, WPARAM wparam, 
 extern "C" HRESULT WINAPI AstelioTipTestUseDictionary(const wchar_t* path)
 {
     return astelio::tip::TextService::TestUseDictionary(path);
+}
+
+// Test entry point: the candidate window of the active text service, or nullptr.
+extern "C" HWND WINAPI AstelioTipTestCandidateWindow()
+{
+    return astelio::tip::TextService::TestCandidateWindow();
 }

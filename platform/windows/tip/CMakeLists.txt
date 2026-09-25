@@ -8,6 +8,7 @@ target_compile_options(astelio_tip_keys PRIVATE /W4 /WX /utf-8 /permissive- /EHs
 
 add_library(astelio_tip SHARED
     src/astelio_tip.def
+    src/candidate_window.cpp
     src/dictionary_loader.cpp
     src/dllmain.cpp
     src/lang_bar_button.cpp
@@ -16,7 +17,7 @@ add_library(astelio_tip SHARED
 )
 
 target_include_directories(astelio_tip PUBLIC include PRIVATE src)
-target_link_libraries(astelio_tip PRIVATE astelio_tip_keys)
+target_link_libraries(astelio_tip PRIVATE astelio_tip_keys d2d1 dwrite dwmapi)
 target_compile_options(astelio_tip PRIVATE /W4 /WX /utf-8 /permissive- /EHsc)
 
 if(ASTELIO_BUILD_TESTS)

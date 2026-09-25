@@ -846,8 +846,25 @@ TEST_F(TypingTest, SpaceConvertsWithTheDictionary)
     EXPECT_EQ(CompositionCount(), 1) << "the conversion stays uncommitted";
     EXPECT_TRUE(Press(VK_SPACE, 0x39));
     EXPECT_EQ(Text(), L"\u6E21\u3057\u306F");
+
+    // T-B03-1: the second Space opens the candidate window.
+    using CandidateWindowFunction = HWND(WINAPI*)();
+    const auto candidate_window = reinterpret_cast<CandidateWindowFunction>(
+        GetProcAddress(GetModuleHandleW(TipPath().c_str()), "AstelioTipTestCandidateWindow"));
+    ASSERT_NE(candidate_window, nullptr);
+    const HWND window = candidate_window();
+    ASSERT_NE(window, nullptr);
+    EXPECT_TRUE(IsWindowVisible(window));
+    RECT bounds{};
+    GetWindowRect(window, &bounds);
+    EXPECT_GT(bounds.right - bounds.left, 0);
+    EXPECT_GT(bounds.bottom - bounds.top, 0);
+    UpdateWindow(window); // paints with Direct2D
     EXPECT_TRUE(Press(VK_DOWN, 0x50, false, true));
+    EXPECT_TRUE(IsWindowVisible(window));
+
     EXPECT_TRUE(Press(VK_ESCAPE, 0x01));
+    EXPECT_FALSE(IsWindowVisible(window));
     EXPECT_EQ(Text(), L"\u308F\u305F\u3057\u306F");
     EXPECT_EQ(CompositionCount(), 1);
 
