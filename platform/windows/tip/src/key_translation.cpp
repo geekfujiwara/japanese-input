@@ -66,6 +66,11 @@ std::optional<KeyEvent> TranslateKey(std::uint32_t virtual_key, std::uint32_t lp
     case VK_PRIOR: return KeyEvent{KeyKind::PageUp, 0, modifiers.shift};
     case VK_NEXT: return KeyEvent{KeyKind::PageDown, 0, modifiers.shift};
     case VK_TAB: return KeyEvent{KeyKind::Tab, 0, modifiers.shift};
+    case VK_F6: return KeyEvent{KeyKind::F6, 0};
+    case VK_F7: return KeyEvent{KeyKind::F7, 0};
+    case VK_F8: return KeyEvent{KeyKind::F8, 0};
+    case VK_F9: return KeyEvent{KeyKind::F9, 0};
+    case VK_F10: return KeyEvent{KeyKind::F10, 0};
     default: break;
     }
 
