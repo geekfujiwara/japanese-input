@@ -33,8 +33,10 @@ constexpr float kMinWidth = 140.0f;
 constexpr float kMaxTextWidth = 480.0f;
 constexpr float kGap = 4.0f;
 
-ComPtr<ID2D1Factory> g_d2d;
-ComPtr<IDWriteFactory> g_dwrite;
+// Raw pointers on purpose: releasing them from static destructors at process exit runs after d2d1/dwrite
+// have shut down. They are released only when the DLL is unloaded (ReleaseSharedResources).
+ID2D1Factory* g_d2d = nullptr;
+IDWriteFactory* g_dwrite = nullptr;
 bool g_class_registered = false;
 
 bool ReadUserFlag(const wchar_t* name, bool fallback)
@@ -104,11 +106,11 @@ Palette MakePalette(bool glass, bool dark)
 
 bool EnsureFactories()
 {
-    if (!g_d2d && FAILED(D2D1CreateFactory(D2D1_FACTORY_TYPE_MULTI_THREADED, g_d2d.GetAddressOf()))) {
+    if (g_d2d == nullptr && FAILED(D2D1CreateFactory(D2D1_FACTORY_TYPE_MULTI_THREADED, &g_d2d))) {
         return false;
     }
-    if (!g_dwrite && FAILED(DWriteCreateFactory(DWRITE_FACTORY_TYPE_SHARED, __uuidof(IDWriteFactory),
-                                                reinterpret_cast<IUnknown**>(g_dwrite.GetAddressOf())))) {
+    if (g_dwrite == nullptr && FAILED(DWriteCreateFactory(DWRITE_FACTORY_TYPE_SHARED, __uuidof(IDWriteFactory),
+                                                          reinterpret_cast<IUnknown**>(&g_dwrite)))) {
         return false;
     }
     return true;
@@ -140,8 +142,14 @@ void CandidateWindow::ReleaseSharedResources()
         UnregisterClassW(kClassName, ModuleHandle());
         g_class_registered = false;
     }
-    g_dwrite.Reset();
-    g_d2d.Reset();
+    if (g_dwrite != nullptr) {
+        g_dwrite->Release();
+        g_dwrite = nullptr;
+    }
+    if (g_d2d != nullptr) {
+        g_d2d->Release();
+        g_d2d = nullptr;
+    }
 }
 
 bool CandidateWindow::EnsureWindow()
