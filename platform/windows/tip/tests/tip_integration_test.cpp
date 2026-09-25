@@ -350,6 +350,7 @@ protected:
 
     void TearDown() override
     {
+        std::cout << "[teardown] start" << std::endl;
         SetModifierState(false, false);
         if (use_dictionary_ != nullptr && thread_mgr_active_) {
             use_dictionary_(nullptr);
@@ -361,11 +362,13 @@ protected:
         if (document_) {
             document_->Pop(TF_POPF_ALL);
         }
+        std::cout << "[teardown] popped" << std::endl;
         context_.Reset();
         document_.Reset();
         if (thread_mgr_active_) {
             thread_mgr_->Deactivate();
         }
+        std::cout << "[teardown] deactivated" << std::endl;
         thread_mgr_.Reset();
         if (window_ != nullptr) {
             DestroyWindow(window_);
@@ -377,6 +380,7 @@ protected:
         profiles_.Reset();
         store_.Reset();
         tip_.reset();
+        std::cout << "[teardown] done" << std::endl;
     }
 
     static HWND CreateFocusedWindow()
@@ -865,6 +869,7 @@ TEST_F(TypingTest, SpaceConvertsWithTheDictionary)
 
     EXPECT_TRUE(Press(VK_ESCAPE, 0x01));
     EXPECT_FALSE(IsWindowVisible(window));
+    std::cout << "[step] escape" << std::endl;
     EXPECT_EQ(Text(), L"\u308F\u305F\u3057\u306F");
     EXPECT_EQ(CompositionCount(), 1);
 

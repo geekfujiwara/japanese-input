@@ -33,11 +33,13 @@ constexpr float kMinWidth = 140.0f;
 constexpr float kMaxTextWidth = 480.0f;
 constexpr float kGap = 4.0f;
 
-// Raw pointers on purpose: releasing them from static destructors at process exit runs after d2d1/dwrite
-// have shut down. They are released only when the DLL is unloaded (ReleaseSharedResources).
+// Shared by the windows of all threads; released with the last window, never from DllMain or static
+// destructors (d2d1/dwrite must not be called under the loader lock or after they shut down).
 ID2D1Factory* g_d2d = nullptr;
 IDWriteFactory* g_dwrite = nullptr;
 bool g_class_registered = false;
+long g_window_count = 0;
+SRWLOCK g_lock = SRWLOCK_INIT;
 
 bool ReadUserFlag(const wchar_t* name, bool fallback)
 {
@@ -130,26 +132,30 @@ const wchar_t* Wide(const std::u16string& text)
 
 CandidateWindow::~CandidateWindow()
 {
-    if (window_ != nullptr) {
-        SetWindowLongPtrW(window_, GWLP_USERDATA, 0);
-        DestroyWindow(window_);
+    if (window_ == nullptr) {
+        return;
     }
-}
-
-void CandidateWindow::ReleaseSharedResources()
-{
-    if (g_class_registered) {
-        UnregisterClassW(kClassName, ModuleHandle());
-        g_class_registered = false;
+    SetWindowLongPtrW(window_, GWLP_USERDATA, 0);
+    DestroyWindow(window_);
+    target_.Reset();
+    text_format_.Reset();
+    small_format_.Reset();
+    AcquireSRWLockExclusive(&g_lock);
+    if (--g_window_count == 0) {
+        if (g_class_registered) {
+            UnregisterClassW(kClassName, ModuleHandle());
+            g_class_registered = false;
+        }
+        if (g_dwrite != nullptr) {
+            g_dwrite->Release();
+            g_dwrite = nullptr;
+        }
+        if (g_d2d != nullptr) {
+            g_d2d->Release();
+            g_d2d = nullptr;
+        }
     }
-    if (g_dwrite != nullptr) {
-        g_dwrite->Release();
-        g_dwrite = nullptr;
-    }
-    if (g_d2d != nullptr) {
-        g_d2d->Release();
-        g_d2d = nullptr;
-    }
+    ReleaseSRWLockExclusive(&g_lock);
 }
 
 bool CandidateWindow::EnsureWindow()
@@ -157,22 +163,25 @@ bool CandidateWindow::EnsureWindow()
     if (window_ != nullptr) {
         return true;
     }
-    if (!EnsureFactories()) {
-        return false;
-    }
-    if (!g_class_registered) {
+    AcquireSRWLockExclusive(&g_lock);
+    bool ready = EnsureFactories();
+    if (ready && !g_class_registered) {
         WNDCLASSEXW window_class{sizeof(window_class)};
         window_class.lpfnWndProc = WindowProc;
         window_class.hInstance = ModuleHandle();
         window_class.hCursor = LoadCursorW(nullptr, IDC_ARROW);
         window_class.lpszClassName = kClassName;
-        if (RegisterClassExW(&window_class) == 0 && GetLastError() != ERROR_CLASS_ALREADY_EXISTS) {
-            return false;
-        }
-        g_class_registered = true;
+        ready = RegisterClassExW(&window_class) != 0 || GetLastError() == ERROR_CLASS_ALREADY_EXISTS;
+        g_class_registered = ready;
     }
-    window_ = CreateWindowExW(WS_EX_TOPMOST | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE, kClassName, L"", WS_POPUP, 0, 0,
-                              1, 1, nullptr, nullptr, ModuleHandle(), this);
+    if (ready) {
+        window_ = CreateWindowExW(WS_EX_TOPMOST | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE, kClassName, L"", WS_POPUP, 0,
+                                  0, 1, 1, nullptr, nullptr, ModuleHandle(), this);
+        if (window_ != nullptr) {
+            ++g_window_count;
+        }
+    }
+    ReleaseSRWLockExclusive(&g_lock);
     if (window_ == nullptr) {
         return false;
     }
@@ -229,7 +238,7 @@ SIZE CandidateWindow::MeasureDips()
 
 void CandidateWindow::Show(const std::vector<std::u16string>& candidates, std::size_t selected, const RECT& anchor)
 {
-    if (candidates.empty() || !EnsureWindow()) {
+    if (candidates.empty() || !EnsureWindow() || !text_format_ || !small_format_) {
         Hide();
         return;
     }

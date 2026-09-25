@@ -26,9 +26,6 @@ public:
     void Hide();
     HWND window() const { return window_; }
 
-    // Called when the DLL is unloaded.
-    static void ReleaseSharedResources();
-
 private:
     static LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lparam);
     bool EnsureWindow();
