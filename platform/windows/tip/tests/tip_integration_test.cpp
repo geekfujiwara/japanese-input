@@ -864,7 +864,7 @@ TEST_F(TypingTest, SpaceConvertsWithTheDictionary)
     EXPECT_TRUE(IsWindowVisible(window));
 
     EXPECT_TRUE(Press(VK_ESCAPE, 0x01));
-    EXPECT_FALSE(IsWindowVisible(window));
+    EXPECT_TRUE(IsWindowVisible(window)) << "back in the kana, the window shows predictions again";
     EXPECT_EQ(Text(), L"\u308F\u305F\u3057\u306F");
     EXPECT_EQ(CompositionCount(), 1);
 
