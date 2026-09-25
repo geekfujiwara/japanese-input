@@ -1,0 +1,48 @@
+# T-S06: typos in romaji input and correct readings, with the text typed before them.
+# 状態: 下書き（AIが作成）。人の確認が済んだら、この行を「確認済み」に書き換える
+# 種類（typo: 打ち間違い、correct: 正しい読み）	前の文脈	打った読み	意図した表記	打ち間違い（ローマ字）
+typo	管理画面で	ゆーあー	ユーザー	yu-za- → yu-a-（zの抜け）
+typo	新しい	ぷろぐらう	プログラム	puroguramu → purogurau（mの抜け）
+typo	新しい	こんぴゅーらー	コンピューター	konpyu-ta- → konpyu-ra-（隣のキー）
+typo	三階の	かいぎしる	会議室	kaigisitu → kaigisiru（隣のキー）
+typo	手伝ってくれて	ありがろう	ありがとう	arigatou → arigarou（隣のキー）
+typo	画面の	せってう	設定	settei → setteu（隣のキー）
+typo	顧客の	でーたねーす	データベース	de-tabe-su → de-tane-su（隣のキー）
+typo	月末に	ほうこくあよ	報告書	houkokusyo → houkokuayo（隣のキー）
+typo	今後とも	よろすく	よろしく	yorosiku → yorosuku（隣のキー）
+typo	確認を	おねがいしなす	お願いします	onegaisimasu → onegaisinasu（隣のキー）
+typo	会議の	しちょう	資料	siryou → sityou（隣のキー）
+typo	先ほど	めーり	メール	me-ru → me-ri（隣のキー）
+typo	新しい	ぱそきん	パソコン	pasokon → pasokin（隣のキー）
+typo	自宅の	いんたーねっろ	インターネット	inta-netto → inta-nerro（隣のキー）
+typo	無線の	きーぼーふぉ	キーボード	ki-bo-do → ki-bo-fo（隣のキー）
+typo	新しい	すまーとほん	スマートフォン	suma-tofon → suma-tohon（fとh）
+typo	来月から	ぷろいぇくと	プロジェクト	purojekuto → puroyekuto（隣のキー）
+typo	会議の	ひかん	時間	jikan → hikan（隣のキー）
+typo	今日はいい	れんき	天気	tenki → renki（隣のキー）
+typo	学生時代の	ともだり	友達	tomodati → tomodari（隣のキー）
+typo	近くの	がっきう	学校	gakkou → gakkiu（隣のキー）
+typo	事故で	だんしゃ	電車	densya → dansya（隣のキー）
+typo	今日の	しごろ	仕事	sigoto → sigoro（隣のキー）
+typo	新しい	けいたう	携帯	keitai → keitau（隣のキー）
+typo	あとで	れんらこ	連絡	renraku → renrako（隣のキー）
+typo	内容を	かくのん	確認	kakunin → kakunon（隣のキー）
+typo	朝の	みーちんぐ	ミーティング	mi-thingu → mi-tingu（hの抜け）
+typo	スマホの	あぷりけーしおん	アプリケーション	apurike-syon → apurike-sion（yの抜け）
+typo	温かい	こーじー	コーヒー	ko-hi- → ko-ji-（隣のキー）
+typo	駅で	まちあわぜ	待ち合わせ	matiawase → matiawaze（隣のキー）
+correct		わたしはがくせいです	私は学生です	
+correct		きょうはいいてんきですね	今日はいい天気ですね	
+correct	来週の	かいぎのしりょうをおくります	会議の資料を送ります	
+correct	近くの	ゆうびんきょく	郵便局	
+correct		ちょっとまってね	ちょっと待ってね	
+correct	寝る前に	ほんをよむ	本を読む	
+correct	新しい	ぱそこん	パソコン	
+correct		とうきょうえきでまちあわせ	東京駅で待ち合わせ	
+correct		しゅうまつのよてい	週末の予定	
+correct	手伝ってくれて	ありがとうございます	ありがとうございます	
+correct	会議の	じかん	時間	
+correct	管理画面で	ゆーざー	ユーザー	
+correct	今日はいい	てんき	天気	
+correct	顧客の	でーたべーす	データベース	
+correct	内容を	かくにん	確認	
