@@ -1,3 +1,4 @@
+#include "candidate_window.h"
 #include "dictionary_loader.h"
 #include "module.h"
 #include "text_service.h"
@@ -116,6 +117,7 @@ BOOL WINAPI DllMain(HINSTANCE instance, DWORD reason, LPVOID reserved)
     } else if (reason == DLL_PROCESS_DETACH && reserved == nullptr) {
         // FreeLibrary (not process exit): unmap the dictionary.
         astelio::tip::ReleaseDictionaries();
+        astelio::tip::CandidateWindow::ReleaseSharedResources();
     }
     return TRUE;
 }

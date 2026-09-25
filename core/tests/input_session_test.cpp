@@ -274,6 +274,50 @@ TEST_F(ConversionTest, LeavingJapaneseModeCommitsTheConversion)
     EXPECT_FALSE(session_.Composing());
 }
 
+// T-B03-1: the second Space opens the candidate list; moving the focus closes it.
+TEST_F(ConversionTest, SecondSpaceOpensTheCandidateList)
+{
+    Type(session_, u"watasihanihongodesu");
+    session_.Handle(Key(KeyKind::Space));
+    EXPECT_FALSE(session_.CandidateListVisible());
+    session_.Handle(Key(KeyKind::Space));
+    EXPECT_TRUE(session_.CandidateListVisible());
+    session_.Handle(Arrow(KeyKind::Right));
+    EXPECT_FALSE(session_.CandidateListVisible());
+    session_.Handle(Arrow(KeyKind::Down));
+    EXPECT_TRUE(session_.CandidateListVisible());
+    session_.Handle(Key(KeyKind::Enter));
+    EXPECT_FALSE(session_.CandidateListVisible());
+}
+
+// T-B03-2: number keys pick from the page, PageDown / PageUp move by a page.
+TEST_F(ConversionTest, CandidateListKeys)
+{
+    Type(session_, u"watasiha");
+    session_.Handle(Key(KeyKind::Space));
+    EXPECT_FALSE(session_.Handle(Char(u'3')).commit.empty()) << "digits commit while the list is closed";
+    session_.Handle(Key(KeyKind::Escape));
+
+    Type(session_, u"watasiha");
+    session_.Handle(Key(KeyKind::Space));
+    session_.Handle(Key(KeyKind::Space));
+    const SessionOutput picked = session_.Handle(Char(u'3'));
+    EXPECT_TRUE(picked.commit.empty());
+    EXPECT_EQ(session_.SelectedCandidate(0), 2u);
+    EXPECT_EQ(session_.CompositionText(), u"わたしは");
+    EXPECT_FALSE(session_.CandidateListVisible());
+    EXPECT_TRUE(session_.Converting());
+
+    session_.Handle(Key(KeyKind::PageUp));
+    EXPECT_EQ(session_.SelectedCandidate(0), 0u);
+    EXPECT_TRUE(session_.CandidateListVisible());
+    session_.Handle(Key(KeyKind::PageDown));
+    EXPECT_EQ(session_.SelectedCandidate(0), session_.Segments()[0].candidates.size() - 1);
+    session_.Handle(Char(u'9'));
+    EXPECT_EQ(session_.SelectedCandidate(0), session_.Segments()[0].candidates.size() - 1)
+        << "a number past the end keeps the choice";
+}
+
 TEST_F(ConversionTest, ArrowKeysWhileComposingDoNotReachTheApp)
 {
     EXPECT_FALSE(session_.WillHandle(Arrow(KeyKind::Down)));

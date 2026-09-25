@@ -1,6 +1,7 @@
 LIBRARY astelio_tip
 EXPORTS
     AstelioTipKeyDiagnostics PRIVATE
+    AstelioTipTestCandidateWindow PRIVATE
     AstelioTipTestKey PRIVATE
     AstelioTipTestUseDictionary PRIVATE
     DllCanUnloadNow PRIVATE

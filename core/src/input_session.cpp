@@ -1,5 +1,6 @@
 #include "astelio/input_session.h"
 
+#include <algorithm>
 #include <utility>
 
 namespace astelio {
@@ -57,6 +58,8 @@ bool InputSession::WillHandle(const KeyEvent& key) const
     case KeyKind::Right:
     case KeyKind::Up:
     case KeyKind::Down:
+    case KeyKind::PageUp:
+    case KeyKind::PageDown:
         return Composing();
     }
     return false;
@@ -107,24 +110,66 @@ SessionOutput InputSession::Handle(const KeyEvent& key)
         break;
     case KeyKind::Up:
     case KeyKind::Down:
+    case KeyKind::PageUp:
+    case KeyKind::PageDown:
         output.composition_changed = false;
         break;
     }
     return output;
 }
 
+bool InputSession::HandleCandidateList(const KeyEvent& key)
+{
+    const std::size_t count = segments_[focus_].candidates.size();
+    std::size_t& selected = selected_[focus_];
+    switch (key.kind) {
+    case KeyKind::Space:
+    case KeyKind::Down:
+        selected = (selected + 1) % count;
+        break;
+    case KeyKind::Up:
+        selected = (selected + count - 1) % count;
+        break;
+    case KeyKind::PageDown:
+        selected = std::min(selected + kCandidatePageSize, count - 1);
+        break;
+    case KeyKind::PageUp:
+        selected = selected >= kCandidatePageSize ? selected - kCandidatePageSize : 0;
+        break;
+    case KeyKind::Character: {
+        // 1-9 pick from the current page and close the list.
+        if (!candidate_list_visible_ || key.character < u'1' || key.character > u'9') {
+            return false;
+        }
+        const std::size_t index =
+            selected / kCandidatePageSize * kCandidatePageSize + static_cast<std::size_t>(key.character - u'1');
+        if (index < count) {
+            selected = index;
+        }
+        candidate_list_visible_ = false;
+        return true;
+    }
+    default:
+        return false;
+    }
+    candidate_list_visible_ = true;
+    return true;
+}
+
 SessionOutput InputSession::HandleConversion(const KeyEvent& key)
 {
     SessionOutput output;
     output.composition_changed = true;
-    const std::size_t count = segments_[focus_].candidates.size();
+    if (HandleCandidateList(key)) {
+        return output;
+    }
+    candidate_list_visible_ = false;
     switch (key.kind) {
     case KeyKind::Space:
     case KeyKind::Down:
-        selected_[focus_] = (selected_[focus_] + 1) % count;
-        break;
     case KeyKind::Up:
-        selected_[focus_] = (selected_[focus_] + count - 1) % count;
+    case KeyKind::PageUp:
+    case KeyKind::PageDown:
         break;
     case KeyKind::Left:
     case KeyKind::Right: {
@@ -220,6 +265,7 @@ void InputSession::EndConversion()
     segments_.clear();
     selected_.clear();
     focus_ = 0;
+    candidate_list_visible_ = false;
 }
 
 } // namespace astelio

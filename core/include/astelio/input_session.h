@@ -23,6 +23,8 @@ enum class KeyKind : std::uint8_t {
     Right,
     Up,
     Down,
+    PageUp,
+    PageDown,
 };
 
 struct KeyEvent {
@@ -66,9 +68,13 @@ public:
     const std::vector<ConvertedSegment>& Segments() const { return segments_; }
     std::size_t FocusedSegment() const { return focus_; }
     std::size_t SelectedCandidate(std::size_t segment) const { return selected_.at(segment); }
+    // A second Space (or an arrow / page key) while converting opens the candidate list of the focused segment.
+    bool CandidateListVisible() const { return candidate_list_visible_; }
+    static constexpr std::size_t kCandidatePageSize = 9;
 
 private:
     SessionOutput HandleConversion(const KeyEvent& key);
+    bool HandleCandidateList(const KeyEvent& key);
     void Convert(std::vector<std::size_t> fixed_lengths);
     std::u16string ConvertedText() const;
     void EndConversion();
@@ -82,6 +88,7 @@ private:
     std::vector<ConvertedSegment> segments_;
     std::vector<std::size_t> selected_;
     std::size_t focus_ = 0;
+    bool candidate_list_visible_ = false;
 };
 
 } // namespace astelio
