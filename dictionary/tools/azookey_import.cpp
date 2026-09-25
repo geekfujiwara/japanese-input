@@ -105,6 +105,19 @@ std::optional<std::vector<std::pair<std::int32_t, float>>> ParseConnectionRow(st
     return row;
 }
 
+std::optional<std::vector<float>> ParseMeaningMatrix(std::span<const std::byte> bytes)
+{
+    constexpr std::size_t kCells = std::size_t{kMeaningCount} * kMeaningCount;
+    if (bytes.size() < kCells * 4) {
+        return std::nullopt;
+    }
+    std::vector<float> values(kCells);
+    for (std::size_t i = 0; i < kCells; ++i) {
+        values[i] = Read<float>(bytes, i * 4);
+    }
+    return values;
+}
+
 std::u16string KatakanaToHiragana(std::u16string_view text)
 {
     std::u16string result(text);
@@ -130,6 +143,11 @@ WordType WordTypeOf(std::uint16_t id)
         return WordType::Content;
     }
     return WordType::Suffix;
+}
+
+bool GivesMeaning(std::uint16_t id)
+{
+    return (id >= 895 && id <= 1280) || (id >= 1297 && id <= 1305);
 }
 
 std::int16_t ToCost(float value)

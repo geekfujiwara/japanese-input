@@ -233,4 +233,62 @@ TEST(HiraganaToKatakana, ConvertsOnlyHiragana)
     EXPECT_EQ(astelio::HiraganaToKatakana(u"ゔぁいおりんーゝA漢"), u"ヴァイオリンーヽA漢");
 }
 
+std::vector<std::byte> BuildHomophoneDictionary(bool with_meanings)
+{
+    constexpr std::uint16_t kAdjective = 3;
+    astelio::ConnectionMatrix matrix;
+    matrix.size = 4;
+    matrix.costs.assign(16, 100);
+    matrix.word_types = {WordType::Edge, WordType::Content, WordType::Suffix, WordType::Content};
+    matrix.unknown_id = kNoun;
+    matrix.unknown_cost = 5000;
+    matrix.costs[kEdge * 4 + kNoun] = 0;
+    matrix.costs[kNoun * 4 + kParticle] = 0;
+    matrix.costs[kParticle * 4 + kAdjective] = 0;
+    matrix.costs[kAdjective * 4 + kEdge] = 0;
+    // Meanings: 0 neutral, 1 お茶, 2 今日, 3 暑い, 4 熱い, 5 厚い.
+    if (with_meanings) {
+        matrix.meaning_count = 6;
+        matrix.neutral_meaning = 0;
+        matrix.meaning_costs.assign(36, 0);
+        matrix.meaning_costs[1 * 6 + 4] = -500;
+        matrix.meaning_costs[2 * 6 + 3] = -300;
+    }
+    astelio::DictionaryBuilder builder(std::move(matrix));
+    builder.Add({u"おちゃ", u"お茶", kNoun, kNoun, 1, 300});
+    builder.Add({u"きょう", u"今日", kNoun, kNoun, 2, 300});
+    builder.Add({u"が", u"が", kParticle, kParticle, 0, 50});
+    builder.Add({u"は", u"は", kParticle, kParticle, 0, 50});
+    builder.Add({u"あつい", u"暑い", kAdjective, kAdjective, 3, 300});
+    builder.Add({u"あつい", u"熱い", kAdjective, kAdjective, 4, 400});
+    builder.Add({u"あつい", u"厚い", kAdjective, kAdjective, 5, 500});
+    return builder.Build();
+}
+
+// T-B02-5: the meanings of neighbouring segments choose among homophones.
+TEST(ContextConversion, NeighbouringMeaningsPickTheHomophone)
+{
+    const std::vector<std::byte> bytes = BuildHomophoneDictionary(true);
+    const std::optional<astelio::SystemDictionary> dictionary = astelio::SystemDictionary::Open(bytes);
+    ASSERT_TRUE(dictionary);
+    const astelio::Converter converter(*dictionary);
+
+    const std::vector<ConvertedSegment> tea = converter.Convert(u"おちゃがあつい");
+    ASSERT_EQ(tea.size(), 2u);
+    EXPECT_EQ(tea[0].candidates.front(), u"お茶が");
+    ASSERT_GE(tea[1].candidates.size(), 3u);
+    EXPECT_EQ(tea[1].candidates[0], u"熱い");
+    EXPECT_EQ(tea[1].candidates[1], u"暑い") << "the word's own best stays next";
+    EXPECT_EQ(converter.Convert(u"きょうはあつい")[1].candidates.front(), u"暑い");
+    EXPECT_EQ(converter.Convert(u"あつい").front().candidates.front(), u"暑い") << "no neighbour, no change";
+}
+
+TEST(ContextConversion, WithoutAMeaningModelTheWordCostsDecide)
+{
+    const std::vector<std::byte> bytes = BuildHomophoneDictionary(false);
+    const std::optional<astelio::SystemDictionary> dictionary = astelio::SystemDictionary::Open(bytes);
+    ASSERT_TRUE(dictionary);
+    EXPECT_EQ(astelio::Converter(*dictionary).Convert(u"おちゃがあつい")[1].candidates.front(), u"暑い");
+}
+
 } // namespace

@@ -6,6 +6,7 @@
 #include <cstdint>
 #include <cstring>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 namespace {
@@ -20,9 +21,12 @@ void Check(bool condition)
 const std::vector<std::byte>& ValidDictionary()
 {
     static const std::vector<std::byte> bytes = [] {
-        astelio::DictionaryBuilder builder(astelio::ConnectionMatrix{3, 0, 2, std::vector<std::int16_t>(9, 10)});
-        builder.Add({u"\u308F\u305F\u3057", u"\u79C1", 1, 1, 0, 100});
-        builder.Add({u"\u308F", u"\u8F2A", 1, 1, 0, 200});
+        astelio::ConnectionMatrix matrix{3, 0, 2, std::vector<std::int16_t>(9, 10)};
+        matrix.meaning_count = 3;
+        matrix.meaning_costs.assign(9, -5);
+        astelio::DictionaryBuilder builder(std::move(matrix));
+        builder.Add({u"\u308F\u305F\u3057", u"\u79C1", 1, 1, 1, 100});
+        builder.Add({u"\u308F", u"\u8F2A", 1, 1, 2, 200});
         builder.Add({u"\u306F", u"\u306F", 1, 1, 0, 50});
         return builder.Build();
     }();
@@ -37,6 +41,11 @@ void Exercise(const astelio::SystemDictionary& dictionary, std::u16string_view q
     });
     Check(dictionary.Lookup(query).size() <= dictionary.entry_count());
     static_cast<void>(dictionary.ConnectionCost(dictionary.bos_id(), dictionary.eos_id()));
+    for (const astelio::DictionaryEntry& entry : dictionary.Lookup(query)) {
+        static_cast<void>(dictionary.MeaningCost(entry.meaning_id, dictionary.neutral_meaning()));
+        static_cast<void>(dictionary.MeaningCost(static_cast<std::uint16_t>(dictionary.neutral_meaning() + 1), entry.meaning_id));
+        static_cast<void>(dictionary.gives_meaning(entry.left_id));
+    }
 }
 
 } // namespace

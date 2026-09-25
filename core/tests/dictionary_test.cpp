@@ -212,6 +212,37 @@ TEST(DictionarySource, ParsesTheConnectionMatrixWithRowDefaults)
     EXPECT_EQ(dictionary->unknown_cost(), 700);
 }
 
+// B-02: the meaning model (costs between neighbouring segments' meanings) survives the build.
+TEST(DictionarySource, ParsesTheMeaningModel)
+{
+    SourceError error;
+    std::optional<ConnectionMatrix> matrix = astelio::ParseConnectionSource(
+        "size\t3\t0\t0\ntype\t0\tedge\ntype\t2\tsuffix\nmeaning\t4\t0\nmm\t1\t2\t-30\nmeaningful\t2\n", &error);
+    ASSERT_TRUE(matrix) << error.line << ": " << error.message;
+    EXPECT_EQ(matrix->meaning_count, 4);
+    DictionaryBuilder builder(*matrix);
+    EXPECT_TRUE(builder.Add({u"あめ", u"雨", 1, 1, 3, 100}));
+    EXPECT_FALSE(builder.Add({u"あめ", u"飴", 1, 1, 4, 100})) << "meaning id out of range";
+    const std::vector<std::byte> bytes = builder.Build();
+    const std::optional<SystemDictionary> dictionary = SystemDictionary::Open(bytes);
+    ASSERT_TRUE(dictionary);
+    EXPECT_EQ(dictionary->meaning_count(), 4);
+    EXPECT_EQ(dictionary->MeaningCost(1, 2), -30);
+    EXPECT_EQ(dictionary->MeaningCost(2, 1), 0);
+    EXPECT_EQ(dictionary->MeaningCost(0, 2), 0) << "neutral";
+    EXPECT_EQ(dictionary->MeaningCost(9, 2), 0) << "out of range";
+    EXPECT_TRUE(dictionary->gives_meaning(1)) << "content words";
+    EXPECT_TRUE(dictionary->gives_meaning(2)) << "listed as meaningful";
+    EXPECT_FALSE(dictionary->gives_meaning(0));
+    ASSERT_EQ(dictionary->Lookup(u"あめ").size(), 1u);
+    EXPECT_EQ(dictionary->Lookup(u"あめ")[0].meaning_id, 3);
+
+    EXPECT_FALSE(astelio::ParseConnectionSource("size\t3\t0\t0\nmm\t1\t2\t-30\n", &error)) << "mm before meaning";
+    EXPECT_FALSE(astelio::ParseConnectionSource("size\t3\t0\t0\nmeaning\t0\t0\n", &error));
+    EXPECT_FALSE(astelio::ParseConnectionSource("size\t3\t0\t0\nmeaning\t4\t4\n", &error));
+    EXPECT_FALSE(astelio::ParseConnectionSource("size\t3\t0\t0\nmeaningful\t3\n", &error));
+}
+
 TEST(DictionarySource, ReportsTheLineOfABadConnectionSource)
 {
     SourceError error;

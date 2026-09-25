@@ -31,6 +31,7 @@ struct EntryRecord {
     std::uint16_t left = 0;
     std::uint16_t right = 0;
     std::int16_t cost = 0;
+    std::uint16_t meaning = 0;
 };
 
 ReadingRecord ReadReading(const std::byte* base, std::uint32_t section, std::size_t index)
@@ -53,7 +54,19 @@ EntryRecord ReadEntry(const std::byte* base, std::uint32_t section, std::size_t 
     record.left = Read<std::uint16_t>(base, offset + 6);
     record.right = Read<std::uint16_t>(base, offset + 8);
     record.cost = Read<std::int16_t>(base, offset + 10);
+    record.meaning = Read<std::uint16_t>(base, offset + 12);
     return record;
+}
+
+DictionaryEntry ToEntry(const EntryRecord& record, std::u16string_view surface)
+{
+    DictionaryEntry entry;
+    entry.surface = surface;
+    entry.left_id = record.left;
+    entry.right_id = record.right;
+    entry.cost = record.cost;
+    entry.meaning_id = record.meaning;
+    return entry;
 }
 
 bool SectionFits(std::uint64_t offset, std::uint64_t size, std::uint64_t file_size, std::uint64_t alignment)
@@ -105,15 +118,22 @@ std::optional<SystemDictionary> SystemDictionary::Open(std::span<const std::byte
     const std::uint32_t matrix_offset = Read<std::uint32_t>(base, fmt::header::kMatrixOffset);
     const std::uint32_t word_types_offset = Read<std::uint32_t>(base, fmt::header::kWordTypesOffset);
     const std::uint16_t unknown_id = Read<std::uint16_t>(base, fmt::header::kUnknownId);
+    const std::uint32_t meaning_count = Read<std::uint32_t>(base, fmt::header::kMeaningCount);
+    const std::uint32_t meaning_matrix_offset = Read<std::uint32_t>(base, fmt::header::kMeaningMatrixOffset);
+    const std::uint32_t meaning_flags_offset = Read<std::uint32_t>(base, fmt::header::kMeaningFlagsOffset);
+    const std::uint16_t neutral_meaning = Read<std::uint16_t>(base, fmt::header::kNeutralMeaning);
     if (Read<std::uint32_t>(base, fmt::header::kFileSize) != file_size || id_count == 0 || id_count > UINT16_MAX ||
-        bos_id >= id_count || eos_id >= id_count || unknown_id >= id_count) {
+        bos_id >= id_count || eos_id >= id_count || unknown_id >= id_count || meaning_count > fmt::kMaxMeanings ||
+        (meaning_count > 0 && neutral_meaning >= meaning_count)) {
         return Fail(error, DictionaryError::BadHeader);
     }
     if (!SectionFits(readings_offset, std::uint64_t{reading_count} * fmt::kReadingRecordSize, file_size, 4) ||
         !SectionFits(entries_offset, std::uint64_t{entry_count} * fmt::kEntryRecordSize, file_size, 4) ||
         !SectionFits(pool_offset, std::uint64_t{pool_units} * 2, file_size, 2) ||
         !SectionFits(matrix_offset, std::uint64_t{id_count} * id_count * 2, file_size, 2) ||
-        !SectionFits(word_types_offset, id_count, file_size, 1)) {
+        !SectionFits(word_types_offset, id_count, file_size, 1) ||
+        !SectionFits(meaning_matrix_offset, std::uint64_t{meaning_count} * meaning_count * 2, file_size, 2) ||
+        !SectionFits(meaning_flags_offset, id_count, file_size, 1)) {
         return Fail(error, DictionaryError::OutOfBounds);
     }
     for (std::uint32_t id = 0; id < id_count; ++id) {
@@ -136,6 +156,10 @@ std::optional<SystemDictionary> SystemDictionary::Open(std::span<const std::byte
     dictionary.word_types_offset_ = word_types_offset;
     dictionary.unknown_id_ = unknown_id;
     dictionary.unknown_cost_ = Read<std::int16_t>(base, fmt::header::kUnknownCost);
+    dictionary.meaning_count_ = static_cast<std::uint16_t>(meaning_count);
+    dictionary.neutral_meaning_ = neutral_meaning;
+    dictionary.meaning_matrix_offset_ = meaning_matrix_offset;
+    dictionary.meaning_flags_offset_ = meaning_flags_offset;
 
     std::u16string_view previous;
     for (std::size_t i = 0; i < reading_count; ++i) {
@@ -152,7 +176,8 @@ std::optional<SystemDictionary> SystemDictionary::Open(std::span<const std::byte
     }
     for (std::size_t i = 0; i < entry_count; ++i) {
         const EntryRecord record = ReadEntry(base, entries_offset, i);
-        if (!TextFits(record.text, record.length, pool_units) || record.left >= id_count || record.right >= id_count) {
+        if (!TextFits(record.text, record.length, pool_units) || record.left >= id_count || record.right >= id_count ||
+            (meaning_count > 0 && record.meaning >= meaning_count)) {
             return Fail(error, DictionaryError::BadEntry);
         }
     }
@@ -175,12 +200,7 @@ void SystemDictionary::VisitEntries(std::size_t reading_index, std::size_t lengt
     const ReadingRecord reading = ReadReading(base_, readings_offset_, reading_index);
     for (std::size_t i = 0; i < reading.entry_count; ++i) {
         const EntryRecord record = ReadEntry(base_, entries_offset_, reading.first_entry + i);
-        DictionaryEntry entry;
-        entry.surface = PoolText(record.text, record.length);
-        entry.left_id = record.left;
-        entry.right_id = record.right;
-        entry.cost = record.cost;
-        visit(length, entry);
+        visit(length, ToEntry(record, PoolText(record.text, record.length)));
     }
 }
 
@@ -239,12 +259,7 @@ void SystemDictionary::ForEachEntry(
         const std::u16string_view reading = PoolText(record.text, record.length);
         for (std::size_t i = 0; i < record.entry_count; ++i) {
             const EntryRecord entry = ReadEntry(base_, entries_offset_, record.first_entry + i);
-            DictionaryEntry found;
-            found.surface = PoolText(entry.text, entry.length);
-            found.left_id = entry.left;
-            found.right_id = entry.right;
-            found.cost = entry.cost;
-            visit(reading, found);
+            visit(reading, ToEntry(entry, PoolText(entry.text, entry.length)));
         }
     }
 }
@@ -275,10 +290,7 @@ std::vector<SystemDictionary::Prediction> SystemDictionary::PredictiveSearch(std
             }
             Prediction prediction;
             prediction.reading = reading;
-            prediction.entry.surface = PoolText(entry.text, entry.length);
-            prediction.entry.left_id = entry.left;
-            prediction.entry.right_id = entry.right;
-            prediction.entry.cost = entry.cost;
+            prediction.entry = ToEntry(entry, PoolText(entry.text, entry.length));
             if (result.size() == limit) {
                 std::pop_heap(result.begin(), result.end(), costlier);
                 result.back() = prediction;
@@ -318,6 +330,21 @@ WordType SystemDictionary::word_type(std::uint16_t id) const
         return WordType::Content;
     }
     return static_cast<WordType>(std::to_integer<std::uint8_t>(base_[word_types_offset_ + id]));
+}
+
+std::int16_t SystemDictionary::MeaningCost(std::uint16_t earlier, std::uint16_t later) const
+{
+    if (earlier >= meaning_count_ || later >= meaning_count_ || earlier == neutral_meaning_ ||
+        later == neutral_meaning_) {
+        return 0;
+    }
+    const std::size_t index = std::size_t{earlier} * meaning_count_ + later;
+    return Read<std::int16_t>(base_, meaning_matrix_offset_ + index * 2);
+}
+
+bool SystemDictionary::gives_meaning(std::uint16_t id) const
+{
+    return id < id_count_ && std::to_integer<std::uint8_t>(base_[meaning_flags_offset_ + id]) != 0;
 }
 
 } // namespace astelio

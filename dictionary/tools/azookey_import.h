@@ -24,9 +24,14 @@ inline constexpr float kMissingRowValue = -25.0f;
 // Text not in the dictionary is treated as a proper noun, about as likely as the rarest dictionary words.
 inline constexpr std::uint16_t kUnknownId = 1288;
 inline constexpr std::int16_t kUnknownCost = 3000;
+// Meaning ids (mid); 500 is BOS/EOS and connects to everything at 0.
+inline constexpr std::uint16_t kMeaningCount = 502;
+inline constexpr std::uint16_t kNeutralMeaning = 500;
 
 // Segment role of an azooKey part-of-speech id (same classes as azooKey's clause detection).
 WordType WordTypeOf(std::uint16_t id);
+// Non-content ids whose words still set their segment's meaning (dependent verbs and nouns).
+bool GivesMeaning(std::uint16_t id);
 
 struct Entry {
     std::u16string reading; // katakana, as stored by azooKey
@@ -44,6 +49,9 @@ bool ParseLoudsText(std::span<const std::byte> bytes, std::vector<Entry>& out);
 
 // cb/<id>.binary: pairs of (i32 left id, f32 value); the first pair has id -1 and holds the row default.
 std::optional<std::vector<std::pair<std::int32_t, float>>> ParseConnectionRow(std::span<const std::byte> bytes);
+
+// mm.binary: f32[kMeaningCount * kMeaningCount] log probabilities, row = the earlier segment's meaning.
+std::optional<std::vector<float>> ParseMeaningMatrix(std::span<const std::byte> bytes);
 
 std::u16string KatakanaToHiragana(std::u16string_view text);
 

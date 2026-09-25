@@ -110,6 +110,41 @@ std::optional<ConnectionMatrix> ParseConnectionSource(std::string_view utf8, Sou
             matrix->eos_id = eos;
             matrix->costs.assign(std::size_t{size} * size, 0);
             matrix->word_types.assign(size, WordType::Content);
+            matrix->gives_meaning.assign(size, false);
+            return;
+        }
+        if (fields.size() == 3 && fields[0] == "meaning") {
+            std::uint16_t count = 0;
+            std::uint16_t neutral = 0;
+            if (!ParseInteger(fields[1], count) || !ParseInteger(fields[2], neutral) || count == 0 ||
+                count > fmt::kMaxMeanings || neutral >= count || matrix->meaning_count != 0) {
+                fail(number, "expected meaning<TAB>count<TAB>neutral_id (once)");
+                return;
+            }
+            matrix->meaning_count = count;
+            matrix->neutral_meaning = neutral;
+            matrix->meaning_costs.assign(std::size_t{count} * count, 0);
+            return;
+        }
+        if (fields.size() == 4 && fields[0] == "mm") {
+            std::uint16_t earlier = 0;
+            std::uint16_t later = 0;
+            std::int16_t cost = 0;
+            if (!ParseInteger(fields[1], earlier) || !ParseInteger(fields[2], later) || !ParseInteger(fields[3], cost) ||
+                earlier >= matrix->meaning_count || later >= matrix->meaning_count) {
+                fail(number, "expected mm<TAB>earlier<TAB>later<TAB>cost after the meaning line");
+                return;
+            }
+            matrix->meaning_costs[std::size_t{earlier} * matrix->meaning_count + later] = cost;
+            return;
+        }
+        if (fields.size() == 2 && fields[0] == "meaningful") {
+            std::uint16_t id = 0;
+            if (!ParseInteger(fields[1], id) || id >= matrix->size) {
+                fail(number, "expected meaningful<TAB>id");
+                return;
+            }
+            matrix->gives_meaning[id] = true;
             return;
         }
         if (fields.size() == 3 && fields[0] == "type") {
@@ -204,7 +239,7 @@ DictionaryBuilder::DictionaryBuilder(ConnectionMatrix matrix) : matrix_(std::mov
 bool DictionaryBuilder::Add(DictionarySourceEntry entry)
 {
     if (!ValidText(entry.reading) || !ValidText(entry.surface) || entry.left_id >= matrix_.size ||
-        entry.right_id >= matrix_.size) {
+        entry.right_id >= matrix_.size || (matrix_.meaning_count > 0 && entry.meaning_id >= matrix_.meaning_count)) {
         return false;
     }
     entries_.push_back(std::move(entry));
@@ -214,7 +249,10 @@ bool DictionaryBuilder::Add(DictionarySourceEntry entry)
 std::vector<std::byte> DictionaryBuilder::Build() const
 {
     if (matrix_.size == 0 || matrix_.costs.size() != std::size_t{matrix_.size} * matrix_.size ||
-        matrix_.unknown_id >= matrix_.size || matrix_.word_types.size() > matrix_.size) {
+        matrix_.unknown_id >= matrix_.size || matrix_.word_types.size() > matrix_.size ||
+        matrix_.gives_meaning.size() > matrix_.size || matrix_.meaning_count > fmt::kMaxMeanings ||
+        matrix_.meaning_costs.size() != std::size_t{matrix_.meaning_count} * matrix_.meaning_count ||
+        (matrix_.meaning_count > 0 && matrix_.neutral_meaning >= matrix_.meaning_count)) {
         return {};
     }
     std::vector<const DictionarySourceEntry*> sorted;
@@ -274,7 +312,9 @@ std::vector<std::byte> DictionaryBuilder::Build() const
     const std::size_t pool_offset = entries_offset + kept * fmt::kEntryRecordSize;
     const std::size_t matrix_offset = pool_offset + pool.size() * 2;
     const std::size_t word_types_offset = matrix_offset + matrix_.costs.size() * 2;
-    const std::size_t file_size = word_types_offset + matrix_.size;
+    const std::size_t meaning_flags_offset = word_types_offset + matrix_.size;
+    const std::size_t meaning_matrix_offset = (meaning_flags_offset + matrix_.size + 1) / 2 * 2;
+    const std::size_t file_size = meaning_matrix_offset + matrix_.meaning_costs.size() * 2;
     if (file_size > std::numeric_limits<std::uint32_t>::max()) {
         return {};
     }
@@ -296,6 +336,10 @@ std::vector<std::byte> DictionaryBuilder::Build() const
     Write<std::uint32_t>(out, fmt::header::kWordTypesOffset, static_cast<std::uint32_t>(word_types_offset));
     Write<std::uint16_t>(out, fmt::header::kUnknownId, matrix_.unknown_id);
     Write<std::int16_t>(out, fmt::header::kUnknownCost, matrix_.unknown_cost);
+    Write<std::uint32_t>(out, fmt::header::kMeaningCount, matrix_.meaning_count);
+    Write<std::uint32_t>(out, fmt::header::kMeaningMatrixOffset, static_cast<std::uint32_t>(meaning_matrix_offset));
+    Write<std::uint32_t>(out, fmt::header::kMeaningFlagsOffset, static_cast<std::uint32_t>(meaning_flags_offset));
+    Write<std::uint16_t>(out, fmt::header::kNeutralMeaning, matrix_.neutral_meaning);
 
     std::size_t entry_index = 0;
     for (std::size_t g = 0; g < groups.size(); ++g) {
@@ -312,6 +356,7 @@ std::vector<std::byte> DictionaryBuilder::Build() const
             Write<std::uint16_t>(out, at + 6, entry.left_id);
             Write<std::uint16_t>(out, at + 8, entry.right_id);
             Write<std::int16_t>(out, at + 10, entry.cost);
+            Write<std::uint16_t>(out, at + 12, entry.meaning_id);
         }
     }
     if (!pool.empty()) {
@@ -321,6 +366,12 @@ std::vector<std::byte> DictionaryBuilder::Build() const
     for (std::size_t id = 0; id < matrix_.size; ++id) {
         const WordType type = id < matrix_.word_types.size() ? matrix_.word_types[id] : WordType::Content;
         out[word_types_offset + id] = static_cast<std::byte>(type);
+        const bool meaningful =
+            type == WordType::Content || (id < matrix_.gives_meaning.size() && matrix_.gives_meaning[id]);
+        out[meaning_flags_offset + id] = static_cast<std::byte>(meaningful ? 1 : 0);
+    }
+    if (!matrix_.meaning_costs.empty()) {
+        std::memcpy(out.data() + meaning_matrix_offset, matrix_.meaning_costs.data(), matrix_.meaning_costs.size() * 2);
     }
     return out;
 }

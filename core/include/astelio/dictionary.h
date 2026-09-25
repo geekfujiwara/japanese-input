@@ -15,6 +15,7 @@ struct DictionaryEntry {
     std::uint16_t left_id = 0;
     std::uint16_t right_id = 0;
     std::int16_t cost = 0; // lower is more likely
+    std::uint16_t meaning_id = 0;
 };
 
 // Role of a part-of-speech id in a segment (bunsetsu): a segment is prefixes, content words, then suffixes
@@ -71,6 +72,13 @@ public:
     std::uint16_t unknown_id() const { return unknown_id_; }
     std::int16_t unknown_cost() const { return unknown_cost_; }
 
+    // Meaning model (co-occurrence of segments' meanings); cost 0 without one or for the neutral meaning.
+    std::uint16_t meaning_count() const { return meaning_count_; }
+    std::uint16_t neutral_meaning() const { return neutral_meaning_; }
+    std::int16_t MeaningCost(std::uint16_t earlier, std::uint16_t later) const;
+    // Whether a word of this part-of-speech id sets the meaning of its segment (content words, dependent verbs).
+    bool gives_meaning(std::uint16_t id) const;
+
 private:
     SystemDictionary() = default;
 
@@ -93,6 +101,10 @@ private:
     std::uint32_t word_types_offset_ = 0;
     std::uint16_t unknown_id_ = 0;
     std::int16_t unknown_cost_ = 0;
+    std::uint16_t meaning_count_ = 0;
+    std::uint16_t neutral_meaning_ = 0;
+    std::uint32_t meaning_matrix_offset_ = 0;
+    std::uint32_t meaning_flags_offset_ = 0;
 };
 
 } // namespace astelio

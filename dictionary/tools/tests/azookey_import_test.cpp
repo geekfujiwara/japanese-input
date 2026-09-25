@@ -121,4 +121,23 @@ TEST(AzooKeyImport, ConvertsReadingsAndCosts)
     EXPECT_EQ(astelio::azookey::ToCost(1000.0f), INT16_MIN);
 }
 
+TEST(AzooKeyImport, ParsesTheMeaningMatrix)
+{
+    constexpr std::size_t kCells = std::size_t{astelio::azookey::kMeaningCount} * astelio::azookey::kMeaningCount;
+    std::vector<std::byte> file;
+    for (std::size_t i = 0; i < kCells; ++i) {
+        Append(file, i == 3 ? -1.5f : 0.0f);
+    }
+    Append(file, 7.0f); // trailing data is ignored
+    const auto parsed = astelio::azookey::ParseMeaningMatrix(file);
+    ASSERT_TRUE(parsed);
+    ASSERT_EQ(parsed->size(), kCells);
+    EXPECT_EQ((*parsed)[3], -1.5f);
+    EXPECT_FALSE(astelio::azookey::ParseMeaningMatrix(std::span<const std::byte>(file.data(), kCells * 4 - 4)));
+
+    EXPECT_TRUE(astelio::azookey::GivesMeaning(900)) << "dependent verb";
+    EXPECT_TRUE(astelio::azookey::GivesMeaning(1300)) << "dependent noun";
+    EXPECT_FALSE(astelio::azookey::GivesMeaning(200)) << "particle";
+}
+
 } // namespace

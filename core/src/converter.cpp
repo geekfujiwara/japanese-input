@@ -13,6 +13,8 @@ constexpr std::size_t kMaxCandidates = 50;
 constexpr std::int32_t kInfinity = std::numeric_limits<std::int32_t>::max() / 2;
 // Added to words found only after fixing a typo, so exact readings win when both make sense.
 constexpr std::int32_t kTypoPenalty = 400;
+// Head alternatives per segment weighed against the neighbouring segments' meanings.
+constexpr std::size_t kContextAlternatives = 4;
 
 struct Node {
     std::size_t begin = 0;
@@ -21,6 +23,7 @@ struct Node {
     std::uint16_t left = 0;
     std::uint16_t right = 0;
     std::int32_t cost = 0;
+    std::uint16_t meaning = 0;
     std::int32_t best = kInfinity;
     std::int32_t previous = -1; // -1: beginning of sentence
 };
@@ -31,7 +34,7 @@ bool IsAsciiGraphic(char16_t c)
 }
 
 Node MakeNode(std::size_t begin, std::size_t end, std::u16string_view surface, std::uint16_t left,
-              std::uint16_t right, std::int32_t cost)
+              std::uint16_t right, std::int32_t cost, std::uint16_t meaning = 0)
 {
     Node node;
     node.begin = begin;
@@ -40,7 +43,75 @@ Node MakeNode(std::size_t begin, std::size_t end, std::u16string_view surface, s
     node.left = left;
     node.right = right;
     node.cost = cost;
+    node.meaning = meaning;
     return node;
+}
+
+// A segment's meaning is that of its last word that carries one (content words, dependent verbs),
+// else of its first word with a non-neutral meaning.
+class SegmentMeaning {
+public:
+    explicit SegmentMeaning(const SystemDictionary& dictionary)
+        : dictionary_(dictionary), meaning_(dictionary.neutral_meaning())
+    {
+    }
+
+    void Add(std::uint16_t meaning, std::uint16_t left, std::uint16_t right)
+    {
+        if ((meaning_ == dictionary_.neutral_meaning() && meaning != dictionary_.neutral_meaning()) ||
+            dictionary_.gives_meaning(left) || dictionary_.gives_meaning(right)) {
+            meaning_ = meaning;
+        }
+    }
+
+    std::uint16_t value() const { return meaning_; }
+
+private:
+    const SystemDictionary& dictionary_;
+    std::uint16_t meaning_;
+};
+
+struct ContextOption {
+    std::int32_t cost = 0;
+    std::u16string text;
+    std::uint16_t meaning = 0;
+};
+
+// Picks one option per segment minimising option costs plus the meaning costs between neighbours.
+std::vector<std::size_t> ChooseInContext(const SystemDictionary& dictionary,
+                                         const std::vector<std::vector<ContextOption>>& options)
+{
+    std::vector<std::vector<std::int32_t>> total(options.size());
+    std::vector<std::vector<std::size_t>> from(options.size());
+    for (std::size_t s = 0; s < options.size(); ++s) {
+        total[s].assign(options[s].size(), kInfinity);
+        from[s].assign(options[s].size(), 0);
+        for (std::size_t k = 0; k < options[s].size(); ++k) {
+            if (s == 0) {
+                total[s][k] = options[s][k].cost;
+                continue;
+            }
+            for (std::size_t j = 0; j < options[s - 1].size(); ++j) {
+                const std::int32_t value = total[s - 1][j] +
+                                           dictionary.MeaningCost(options[s - 1][j].meaning, options[s][k].meaning) +
+                                           options[s][k].cost;
+                if (value < total[s][k]) {
+                    total[s][k] = value;
+                    from[s][k] = j;
+                }
+            }
+        }
+    }
+    std::vector<std::size_t> chosen(options.size(), 0);
+    if (options.empty()) {
+        return chosen;
+    }
+    const std::vector<std::int32_t>& last = total.back();
+    chosen.back() = static_cast<std::size_t>(std::min_element(last.begin(), last.end()) - last.begin());
+    for (std::size_t s = options.size() - 1; s > 0; --s) {
+        chosen[s - 1] = from[s][chosen[s]];
+    }
+    return chosen;
 }
 
 bool IsSegmentBoundary(WordType former, WordType latter)
@@ -175,8 +246,8 @@ std::vector<ConvertedSegment> Converter::Convert(std::u16string_view reading,
                 count = 0;
             }
             if (count++ < kMaxEntriesPerReading) {
-                nodes.push_back(
-                    MakeNode(begin, begin + length, entry.surface, entry.left_id, entry.right_id, entry.cost));
+                nodes.push_back(MakeNode(begin, begin + length, entry.surface, entry.left_id, entry.right_id,
+                                         entry.cost, entry.meaning_id));
             }
         });
         if (has_typos && corrected_at[begin] != SIZE_MAX) {
@@ -187,7 +258,7 @@ std::vector<ConvertedSegment> Converter::Convert(std::u16string_view reading,
                     const std::size_t end = correction.origin[from + length];
                     if (end - begin != length && end <= limit[begin]) {
                         nodes.push_back(MakeNode(begin, end, entry.surface, entry.left_id, entry.right_id,
-                                                 entry.cost + kTypoPenalty));
+                                                 entry.cost + kTypoPenalty, entry.meaning_id));
                     }
                 });
         }
@@ -199,7 +270,7 @@ std::vector<ConvertedSegment> Converter::Convert(std::u16string_view reading,
             }
         }
         nodes.push_back(MakeNode(begin, begin + length, rest.substr(0, length), dictionary_.unknown_id(),
-                                 dictionary_.unknown_id(), dictionary_.unknown_cost()));
+                                 dictionary_.unknown_id(), dictionary_.unknown_cost(), dictionary_.neutral_meaning()));
     }
 
     // Viterbi over nodes in order of their start; predecessors of a node end where it begins.
@@ -266,7 +337,10 @@ std::vector<ConvertedSegment> Converter::Convert(std::u16string_view reading,
     }
 
     std::vector<ConvertedSegment> segments;
-    for (const auto& [first, end] : groups) {
+    std::vector<std::vector<ContextOption>> context(groups.size());
+    for (std::size_t g = 0; g < groups.size(); ++g) {
+        const std::size_t first = groups[g].first;
+        const std::size_t end = groups[g].second;
         const std::size_t begin = path[first]->begin;
         const std::size_t finish = path[end - 1]->end;
         ConvertedSegment segment;
@@ -290,13 +364,23 @@ std::vector<ConvertedSegment> Converter::Convert(std::u16string_view reading,
         const std::uint16_t after_head = tail < end ? path[tail]->left : after_segment;
 
         std::vector<std::pair<std::int32_t, std::u16string>> scored;
+        std::vector<ContextOption> alternatives; // same tail, another head
         const auto score = [&](const DictionaryEntry& entry, std::uint16_t next_left) {
             return dictionary_.ConnectionCost(previous_right, entry.left_id) + entry.cost +
                    dictionary_.ConnectionCost(entry.right_id, next_left);
         };
+        const auto with_tail = [&](const DictionaryEntry& entry) {
+            SegmentMeaning meaning(dictionary_);
+            meaning.Add(entry.meaning_id, entry.left_id, entry.right_id);
+            for (std::size_t k = tail; k < end; ++k) {
+                meaning.Add(path[k]->meaning, path[k]->left, path[k]->right);
+            }
+            return meaning.value();
+        };
         const std::size_t head_end = path[tail - 1]->end;
         for (const DictionaryEntry& entry : dictionary_.Lookup(reading.substr(begin, head_end - begin))) {
             scored.emplace_back(score(entry, after_head), std::u16string(entry.surface) + tail_text);
+            alternatives.push_back({scored.back().first, scored.back().second, with_tail(entry)});
         }
         if (has_typos && corrected_at[begin] != SIZE_MAX && corrected_at[head_end] != SIZE_MAX) {
             const std::u16string_view fixed = std::u16string_view(correction.text)
@@ -316,6 +400,30 @@ std::vector<ConvertedSegment> Converter::Convert(std::u16string_view reading,
         std::stable_sort(scored.begin(), scored.end(),
                          [](const auto& a, const auto& b) { return a.first < b.first; });
 
+        // The best text and, when its head is one word (so the costs compare), the cheapest other heads.
+        SegmentMeaning best_meaning(dictionary_);
+        for (std::size_t k = first; k < end; ++k) {
+            best_meaning.Add(path[k]->meaning, path[k]->left, path[k]->right);
+        }
+        const bool single_head = tail == first + 1;
+        const std::int32_t best_cost =
+            single_head ? dictionary_.ConnectionCost(previous_right, path[first]->left) + path[first]->cost +
+                              dictionary_.ConnectionCost(path[first]->right, after_head)
+                        : 0;
+        context[g].push_back({best_cost, best, best_meaning.value()});
+        if (single_head) {
+            std::stable_sort(alternatives.begin(), alternatives.end(),
+                             [](const ContextOption& a, const ContextOption& b) { return a.cost < b.cost; });
+            for (ContextOption& option : alternatives) {
+                if (context[g].size() > kContextAlternatives) {
+                    break;
+                }
+                if (option.text != best) {
+                    context[g].push_back(std::move(option));
+                }
+            }
+        }
+
         AddUnique(segment.candidates, std::move(best));
         const std::u16string_view head_reading = reading.substr(begin, head_end - begin);
         std::vector<std::u16string> special = NumberForms(head_reading);
@@ -334,6 +442,21 @@ std::vector<ConvertedSegment> Converter::Convert(std::u16string_view reading,
         AddUnique(segment.candidates, segment.reading);
         AddUnique(segment.candidates, HiraganaToKatakana(segment.reading));
         segments.push_back(std::move(segment));
+    }
+
+    // Homophones: the meanings of neighbouring segments pick among the heads (お茶があつい -> 熱い).
+    if (dictionary_.meaning_count() > 0 && segments.size() > 1) {
+        const std::vector<std::size_t> chosen = ChooseInContext(dictionary_, context);
+        for (std::size_t g = 0; g < segments.size(); ++g) {
+            if (chosen[g] == 0) {
+                continue;
+            }
+            std::vector<std::u16string>& candidates = segments[g].candidates;
+            const auto found = std::find(candidates.begin(), candidates.end(), context[g][chosen[g]].text);
+            if (found != candidates.end()) {
+                std::rotate(candidates.begin(), found, found + 1);
+            }
+        }
     }
     return segments;
 }

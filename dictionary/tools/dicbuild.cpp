@@ -118,12 +118,34 @@ int ImportAzooKey(const fs::path& root, const fs::path& words_path, const fs::pa
             }
         }
     }
+    const std::optional<std::vector<std::byte>> meaning_bytes = ReadFile(root / "mm.binary");
+    const std::optional<std::vector<float>> meanings =
+        meaning_bytes ? astelio::azookey::ParseMeaningMatrix(*meaning_bytes) : std::nullopt;
+    if (!meanings) {
+        std::cerr << "missing or malformed mm.binary\n";
+        return 1;
+    }
+    connection << "meaning\t" << astelio::azookey::kMeaningCount << '\t' << astelio::azookey::kNeutralMeaning << '\n';
+    std::size_t meaning_cells = 0;
+    for (std::size_t i = 0; i < meanings->size(); ++i) {
+        const std::int16_t cost = astelio::azookey::ToCost((*meanings)[i]);
+        if (cost != 0) {
+            connection << "mm\t" << i / astelio::azookey::kMeaningCount << '\t' << i % astelio::azookey::kMeaningCount
+                       << '\t' << cost << '\n';
+            ++meaning_cells;
+        }
+    }
+    for (std::uint16_t id = 0; id < astelio::azookey::kIdCount; ++id) {
+        if (astelio::azookey::GivesMeaning(id)) {
+            connection << "meaningful\t" << id << '\n';
+        }
+    }
     if (!words || !connection) {
         std::cerr << "failed to write the sources\n";
         return 1;
     }
     std::cout << "files=" << files.size() << " entries=" << written << " skipped=" << skipped
-              << " missing_rows=" << missing_rows << '\n';
+              << " missing_rows=" << missing_rows << " meaning_cells=" << meaning_cells << '\n';
     return 0;
 }
 
