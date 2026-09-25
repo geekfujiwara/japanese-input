@@ -67,7 +67,7 @@ TEST(KeyTranslation, ShortcutsAndOtherKeysAreNotHandled)
     EXPECT_FALSE(TranslateKey('R', LParam(0x13), {.windows = true}).has_value());
     EXPECT_FALSE(TranslateKey(VK_F5, LParam(0x3F), {}).has_value());
     EXPECT_FALSE(TranslateKey(VK_SHIFT, LParam(0x2A), {}).has_value());
-    EXPECT_FALSE(TranslateKey(VK_UP, LParam(0x48, true), {}).has_value());
+    EXPECT_FALSE(TranslateKey(VK_HOME, LParam(0x47, true), {}).has_value());
 }
 
 } // namespace
