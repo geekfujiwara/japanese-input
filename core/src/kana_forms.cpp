@@ -89,6 +89,11 @@ int SpellingScore(std::u16string_view input)
     if (input.find(u'\'') != std::u16string_view::npos) {
         score += 50;
     }
+    if ((input.front() == u'c' || input.front() == u'q') && !PreferredSpelling(input)) {
+        score += 20; // "ca", "qa": accepted when typed, but "ka" is the usual spelling
+    } else if (input.front() == u'c' || input.front() == u'q') {
+        score += 1; // "ca" / "qa" lose to "ka" / "kwa"
+    }
     if (PreferredSpelling(input)) {
         score -= 10;
     }
