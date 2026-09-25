@@ -1,48 +1,48 @@
 # T-S06: typos in romaji input and correct readings, with the text typed before them.
 # 状態: 下書き（AIが作成）。人の確認が済んだら、この行を「確認済み」に書き換える
-# 種類（typo: 打ち間違い、correct: 正しい読み）	前の文脈	打った読み	意図した表記	打ち間違い（ローマ字）
-typo	管理画面で	ゆーあー	ユーザー	yu-za- → yu-a-（zの抜け）
-typo	新しい	ぷろぐらう	プログラム	puroguramu → purogurau（mの抜け）
-typo	新しい	こんぴゅーらー	コンピューター	konpyu-ta- → konpyu-ra-（隣のキー）
-typo	三階の	かいぎしる	会議室	kaigisitu → kaigisiru（隣のキー）
-typo	手伝ってくれて	ありがろう	ありがとう	arigatou → arigarou（隣のキー）
-typo	画面の	せってう	設定	settei → setteu（隣のキー）
-typo	顧客の	でーたねーす	データベース	de-tabe-su → de-tane-su（隣のキー）
-typo	月末に	ほうこくあよ	報告書	houkokusyo → houkokuayo（隣のキー）
-typo	今後とも	よろすく	よろしく	yorosiku → yorosuku（隣のキー）
-typo	確認を	おねがいしなす	お願いします	onegaisimasu → onegaisinasu（隣のキー）
-typo	会議の	しちょう	資料	siryou → sityou（隣のキー）
-typo	先ほど	めーり	メール	me-ru → me-ri（隣のキー）
-typo	新しい	ぱそきん	パソコン	pasokon → pasokin（隣のキー）
-typo	自宅の	いんたーねっろ	インターネット	inta-netto → inta-nerro（隣のキー）
-typo	無線の	きーぼーふぉ	キーボード	ki-bo-do → ki-bo-fo（隣のキー）
-typo	新しい	すまーとほん	スマートフォン	suma-tofon → suma-tohon（fとh）
-typo	来月から	ぷろいぇくと	プロジェクト	purojekuto → puroyekuto（隣のキー）
-typo	会議の	ひかん	時間	jikan → hikan（隣のキー）
-typo	今日はいい	れんき	天気	tenki → renki（隣のキー）
-typo	学生時代の	ともだり	友達	tomodati → tomodari（隣のキー）
-typo	近くの	がっきう	学校	gakkou → gakkiu（隣のキー）
-typo	事故で	だんしゃ	電車	densya → dansya（隣のキー）
-typo	今日の	しごろ	仕事	sigoto → sigoro（隣のキー）
-typo	新しい	けいたう	携帯	keitai → keitau（隣のキー）
-typo	あとで	れんらこ	連絡	renraku → renrako（隣のキー）
-typo	内容を	かくのん	確認	kakunin → kakunon（隣のキー）
-typo	朝の	みーちんぐ	ミーティング	mi-thingu → mi-tingu（hの抜け）
-typo	スマホの	あぷりけーしおん	アプリケーション	apurike-syon → apurike-sion（yの抜け）
-typo	温かい	こーじー	コーヒー	ko-hi- → ko-ji-（隣のキー）
-typo	駅で	まちあわぜ	待ち合わせ	matiawase → matiawaze（隣のキー）
-correct		わたしはがくせいです	私は学生です	
-correct		きょうはいいてんきですね	今日はいい天気ですね	
-correct	来週の	かいぎのしりょうをおくります	会議の資料を送ります	
-correct	近くの	ゆうびんきょく	郵便局	
-correct		ちょっとまってね	ちょっと待ってね	
-correct	寝る前に	ほんをよむ	本を読む	
-correct	新しい	ぱそこん	パソコン	
-correct		とうきょうえきでまちあわせ	東京駅で待ち合わせ	
-correct		しゅうまつのよてい	週末の予定	
-correct	手伝ってくれて	ありがとうございます	ありがとうございます	
-correct	会議の	じかん	時間	
-correct	管理画面で	ゆーざー	ユーザー	
-correct	今日はいい	てんき	天気	
-correct	顧客の	でーたべーす	データベース	
-correct	内容を	かくにん	確認	
+# 種類（typo: 打ち間違い、correct: 正しい読み）	前の文脈	打ったキー（空なら読みから作る）	打った読み	意図した表記	メモ
+typo	管理画面で	yu-a-	ゆーあー	ユーザー	zの抜け
+typo	新しい	purogurau	ぷろぐらう	プログラム	mの抜け
+typo	新しい	konpyu-ra-	こんぴゅーらー	コンピューター	tとr
+typo	三階の	kaigisiru	かいぎしる	会議室	tとr
+typo	手伝ってくれて	arigarou	ありがろう	ありがとう	tとr
+typo	画面の	setteu	せってう	設定	iとu
+typo	顧客の	de-tane-su	でーたねーす	データベース	bとn
+typo	月末に	houkokuayo	ほうこくあよ	報告書	sとa
+typo	今後とも	yorosuku	よろすく	よろしく	iとu
+typo	確認を	onegaisinasu	おねがいしなす	お願いします	mとn
+typo	会議の	sityou	しちょう	資料	rとt（打った読みも語になる）
+typo	先ほど	me-ri	めーり	メール	uとi
+typo	新しい	pasokin	ぱそきん	パソコン	oとi
+typo	自宅の	inta-nerro	いんたーねっろ	インターネット	tとr
+typo	無線の	ki-bo-fo	きーぼーふぉ	キーボード	dとf
+typo	新しい	suma-tohon	すまーとほん	スマートフォン	fとh（隣ではない）
+typo	来月から	puroyekuto	ぷろいぇくと	プロジェクト	jとy
+typo	会議の	hikan	ひかん	時間	jとh（打った読みも語になる）
+typo	今日はいい	renki	れんき	天気	tとr
+typo	学生時代の	tomodari	ともだり	友達	tとr
+typo	近くの	gakkiu	がっきう	学校	oとi
+typo	事故で	dansya	だんしゃ	電車	eとa
+typo	今日の	sigoro	しごろ	仕事	tとr
+typo	新しい	keitau	けいたう	携帯	iとu
+typo	あとで	renrako	れんらこ	連絡	uとo
+typo	内容を	kakunon	かくのん	確認	iとo
+typo	朝の	mi-tingu	みーちんぐ	ミーティング	hの抜け
+typo	スマホの	apurike-sion	あぷりけーしおん	アプリケーション	yの抜け
+typo	温かい	ko-ji-	こーじー	コーヒー	hとj
+typo	駅で	matiawaze	まちあわぜ	待ち合わせ	sとz
+correct			わたしはがくせいです	私は学生です	
+correct			きょうはいいてんきですね	今日はいい天気ですね	
+correct	来週の		かいぎのしりょうをおくります	会議の資料を送ります	
+correct	近くの		ゆうびんきょく	郵便局	
+correct			ちょっとまってね	ちょっと待ってね	
+correct	寝る前に		ほんをよむ	本を読む	
+correct	新しい		ぱそこん	パソコン	
+correct			とうきょうえきでまちあわせ	東京駅で待ち合わせ	
+correct			しゅうまつのよてい	週末の予定	
+correct	手伝ってくれて		ありがとうございます	ありがとうございます	
+correct	会議の		じかん	時間	
+correct	管理画面で		ゆーざー	ユーザー	
+correct	今日はいい		てんき	天気	
+correct	顧客の		でーたべーす	データベース	
+correct	内容を		かくにん	確認	
