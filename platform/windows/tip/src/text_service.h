@@ -20,7 +20,8 @@ class LangBarButton;
 class TextService final : public ITfTextInputProcessorEx,
                           public ITfKeyEventSink,
                           public ITfCompositionSink,
-                          public ITfCompartmentEventSink {
+                          public ITfCompartmentEventSink,
+                          public ITfDisplayAttributeProvider {
 public:
     static HRESULT Create(REFIID riid, void** object);
 
@@ -48,6 +49,10 @@ public:
     // ITfCompartmentEventSink
     STDMETHODIMP OnChange(REFGUID compartment) override;
 
+    // ITfDisplayAttributeProvider
+    STDMETHODIMP EnumDisplayAttributeInfo(IEnumTfDisplayAttributeInfo** attributes) override;
+    STDMETHODIMP GetDisplayAttributeInfo(REFGUID guid, ITfDisplayAttributeInfo** attribute) override;
+
     bool JapaneseMode() const { return session_.JapaneseMode(); }
     // Mode button click: switches the mode in the focused document.
     HRESULT ToggleMode();
@@ -66,6 +71,9 @@ private:
     HRESULT ApplyText(TfEditCookie cookie, ITfContext* context, const std::u16string& commit);
     void UpdateCandidateWindow(TfEditCookie cookie, ITfContext* context);
     void HideCandidateWindow();
+    // Underlines the composition: dotted while typing, solid per segment (bold for the focused one) while converting.
+    void ApplyDisplayAttributes(TfEditCookie cookie, ITfContext* context, ITfRange* composition);
+    void ClearDisplayAttributes(TfEditCookie cookie, ITfContext* context, ITfRange* range);
 
     HRESULT RequestEdit(ITfContext* context, std::u16string commit);
     HRESULT StartComposition(TfEditCookie cookie, ITfContext* context);
@@ -90,6 +98,7 @@ private:
     LangBarButton* mode_button_ = nullptr;
     bool mode_button_added_ = false;
     std::unique_ptr<CandidateWindow> candidate_window_;
+    TfGuidAtom attribute_atoms_[3] = {TF_INVALID_GUIDATOM, TF_INVALID_GUIDATOM, TF_INVALID_GUIDATOM};
 };
 
 } // namespace astelio::tip

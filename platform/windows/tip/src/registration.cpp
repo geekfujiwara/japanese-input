@@ -15,6 +15,7 @@ constexpr wchar_t kDescription[] = L"Astelio IME";
 
 const GUID* const kCategories[] = {
     &GUID_TFCAT_TIP_KEYBOARD,
+    &GUID_TFCAT_DISPLAYATTRIBUTEPROVIDER,
     &GUID_TFCAT_TIPCAP_IMMERSIVESUPPORT,
     &GUID_TFCAT_TIPCAP_SYSTRAYSUPPORT,
 };

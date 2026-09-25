@@ -14,6 +14,7 @@
 #include <cstdlib>
 #include <cwctype>
 #include <fstream>
+#include <functional>
 #include <ios>
 #include <iostream>
 #include <iterator>
@@ -278,6 +279,7 @@ std::wstring WriteTestDictionary()
     builder.Add({u"わたし", u"私", 1, 1, 0, 300});
     builder.Add({u"わたし", u"渡し", 3, 3, 0, 900});
     builder.Add({u"は", u"は", 2, 2, 0, 50});
+    builder.Add({u"にほんご", u"日本語", 1, 1, 0, 400});
     const std::vector<std::byte> bytes = builder.Build();
 
     wchar_t directory[MAX_PATH] = {};
@@ -287,6 +289,41 @@ std::wstring WriteTestDictionary()
     file.write(reinterpret_cast<const char*>(bytes.data()), static_cast<std::streamsize>(bytes.size()));
     return file ? path : std::wstring();
 }
+
+// Runs `body` inside a read-only edit session of the test document.
+class ReadSession final : public ITfEditSession {
+public:
+    explicit ReadSession(std::function<void(TfEditCookie)> body) : body_(std::move(body)) {}
+
+    STDMETHODIMP QueryInterface(REFIID riid, void** object) override
+    {
+        if (riid == IID_IUnknown || riid == IID_ITfEditSession) {
+            *object = static_cast<ITfEditSession*>(this);
+            AddRef();
+            return S_OK;
+        }
+        *object = nullptr;
+        return E_NOINTERFACE;
+    }
+    STDMETHODIMP_(ULONG) AddRef() override { return ++ref_count_; }
+    STDMETHODIMP_(ULONG) Release() override
+    {
+        const ULONG count = --ref_count_;
+        if (count == 0) {
+            delete this;
+        }
+        return count;
+    }
+    STDMETHODIMP DoEditSession(TfEditCookie cookie) override
+    {
+        body_(cookie);
+        return S_OK;
+    }
+
+private:
+    ULONG ref_count_ = 1;
+    std::function<void(TfEditCookie)> body_;
+};
 
 // Types into an in-memory document through real TSF with Astelio active.
 class TypingTest : public ::testing::Test {
@@ -492,6 +529,37 @@ protected:
     }
 
     const std::wstring& Text() const { return store_->Text(); }
+
+    // The display attribute GUID of the character at `position`, or GUID_NULL.
+    GUID AttributeAt(LONG position)
+    {
+        GUID result = GUID_NULL;
+        ComPtr<ITfCategoryMgr> categories;
+        EXPECT_HRESULT_SUCCEEDED(
+            CoCreateInstance(CLSID_TF_CategoryMgr, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&categories)));
+        auto* session = new ReadSession([&](TfEditCookie cookie) {
+            ComPtr<ITfProperty> property;
+            ComPtr<ITfRange> range;
+            LONG shifted = 0;
+            if (FAILED(context_->GetProperty(GUID_PROP_ATTRIBUTE, &property)) ||
+                FAILED(context_->GetStart(cookie, &range)) ||
+                FAILED(range->ShiftEnd(cookie, position + 1, &shifted, nullptr)) ||
+                FAILED(range->ShiftStart(cookie, position, &shifted, nullptr))) {
+                return;
+            }
+            VARIANT value;
+            VariantInit(&value);
+            if (SUCCEEDED(property->GetValue(cookie, range.Get(), &value)) && value.vt == VT_I4 && categories) {
+                categories->GetGUID(static_cast<TfGuidAtom>(value.lVal), &result);
+            }
+            VariantClear(&value);
+        });
+        HRESULT session_result = S_OK;
+        EXPECT_HRESULT_SUCCEEDED(
+            context_->RequestEditSession(client_id_, session, TF_ES_SYNC | TF_ES_READ, &session_result));
+        session->Release();
+        return result;
+    }
 
     ComPtr<ITfCompartment> OpenClose()
     {
@@ -900,6 +968,29 @@ TEST_F(TypingTest, PredictionsShowWhileTypingAndTabSelects)
     EXPECT_EQ(Text(), L"\u79C1");
     EXPECT_EQ(CompositionCount(), 0);
     EXPECT_FALSE(IsWindowVisible(window));
+}
+
+// B-02: typed kana are dotted; converted segments are underlined and the focused one is bold.
+TEST_F(TypingTest, DisplayAttributesMarkTheFocusedSegment)
+{
+    const std::wstring path = WriteTestDictionary();
+    ASSERT_FALSE(path.empty());
+    ASSERT_HRESULT_SUCCEEDED(use_dictionary_(path.c_str()));
+
+    TypeLetters("wata");
+    EXPECT_TRUE(IsEqualGUID(AttributeAt(0), astelio::tip::kInputAttributeGuid));
+    TypeLetters("sihanihongo");
+    EXPECT_TRUE(Press(VK_SPACE, 0x39));
+    ASSERT_EQ(Text(), L"\u79C1\u306F\u65E5\u672C\u8A9E");
+    EXPECT_TRUE(IsEqualGUID(AttributeAt(0), astelio::tip::kFocusedAttributeGuid));
+    EXPECT_TRUE(IsEqualGUID(AttributeAt(2), astelio::tip::kConvertedAttributeGuid));
+
+    EXPECT_TRUE(Press(VK_RIGHT, 0x4D, false, true));
+    EXPECT_TRUE(IsEqualGUID(AttributeAt(0), astelio::tip::kConvertedAttributeGuid));
+    EXPECT_TRUE(IsEqualGUID(AttributeAt(2), astelio::tip::kFocusedAttributeGuid));
+
+    EXPECT_TRUE(Press(VK_RETURN, 0x1C));
+    EXPECT_TRUE(IsEqualGUID(AttributeAt(0), GUID_NULL)) << "committed text has no attribute";
 }
 
 // Without an installed dictionary typing still works and Space keeps the kana.
