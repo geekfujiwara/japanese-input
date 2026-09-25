@@ -63,6 +63,7 @@ protected:
         add(u"お", u"お", kPrefix, 200);
         add(u"ちゃ", u"茶", kNoun, 300);
         add(u"きょう", u"今日", kNoun, 300);
+        add(u"たっせい", u"達成", kNoun, 500);
         bytes_ = builder.Build();
         dictionary_ = astelio::SystemDictionary::Open(bytes_);
         ASSERT_TRUE(dictionary_);
@@ -145,7 +146,7 @@ TEST_F(ConverterTest, UnknownTextIsKept)
 
 TEST_F(ConverterTest, SegmentsAlwaysCoverTheWholeReading)
 {
-    const std::u16string alphabet = u"わたしはにほんごですおちゃぬaB1-";
+    const std::u16string alphabet = u"わたしはにほんごですおちゃぬaB1-っっんんー";
     std::mt19937 random(20260925);
     for (int round = 0; round < 300; ++round) {
         std::u16string reading;
@@ -200,6 +201,31 @@ TEST_F(ConverterTest, NumbersAndDatesGetSpecialCandidates)
     EXPECT_EQ(dates[0], u"今日は");
     EXPECT_NE(std::find(dates.begin(), dates.end(), u"2026/09/25は"), dates.end()) << "the particle is kept";
     EXPECT_NE(std::find(dates.begin(), dates.end(), u"9月25日(金)は"), dates.end());
+}
+
+TEST(TypoCorrection, CollapsesDoubledSmallKanaAndKeepsTheMapping)
+{
+    const astelio::TypoCorrection fixed = astelio::CorrectTypos(u"たっっせい");
+    EXPECT_EQ(fixed.text, u"たっせい");
+    EXPECT_EQ(fixed.origin, (std::vector<std::size_t>{0, 1, 3, 4, 5}));
+    EXPECT_EQ(astelio::CorrectTypos(u"こんんにちは").text, u"こんにちは");
+    EXPECT_EQ(astelio::CorrectTypos(u"らーーめん").text, u"らーめん");
+    EXPECT_EQ(astelio::CorrectTypos(u"かかし").text, u"かかし") << "ordinary repeats stay";
+}
+
+// The likely word for a typo (たっっせい) is offered first; the segment still covers what was typed.
+TEST_F(ConverterTest, TypoCorrectionOffersTheLikelyWord)
+{
+    const std::vector<ConvertedSegment> segments = Convert(u"たっっせい");
+    ASSERT_EQ(segments.size(), 1u);
+    EXPECT_EQ(segments[0].candidates.front(), u"達成");
+    EXPECT_EQ(segments[0].reading, u"たっっせい");
+    EXPECT_NE(std::find(segments[0].candidates.begin(), segments[0].candidates.end(), u"たっっせい"),
+              segments[0].candidates.end());
+    EXPECT_EQ(Best(Convert(u"たっせい")), u"達成");
+
+    const std::vector<std::u16string> predictions = astelio::Converter(*dictionary_).Predict(u"たっっせ", 9);
+    EXPECT_NE(std::find(predictions.begin(), predictions.end(), u"達成"), predictions.end());
 }
 
 TEST(HiraganaToKatakana, ConvertsOnlyHiragana)
