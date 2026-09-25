@@ -19,7 +19,38 @@ constexpr DWORD kUseImmersiveDarkMode = 20;
 constexpr DWORD kWindowCornerPreference = 33;
 constexpr DWORD kSystemBackdropType = 38;
 constexpr int kCornerRound = 2;
-constexpr int kBackdropTransientWindow = 3; // acrylic
+constexpr int kBackdropNone = 1;
+constexpr int kBackdropTransientWindow = 3; // acrylic, but solid while the window is inactive
+
+// SetWindowCompositionAttribute (user32, undocumented but stable since Windows 10): the only way to get an
+// acrylic blur on a window that is never activated. Looked up at run time; missing means no blur.
+struct AccentPolicy {
+    int state;
+    int flags;
+    DWORD gradient_color; // AABBGGRR tint over the blur
+    int animation_id;
+};
+struct CompositionAttributeData {
+    int attribute;
+    void* data;
+    SIZE_T size;
+};
+using SetWindowCompositionAttributeFunction = BOOL(WINAPI*)(HWND, CompositionAttributeData*);
+constexpr int kAccentPolicyAttribute = 19;
+constexpr int kAccentDisabled = 0;
+constexpr int kAccentAcrylicBlurBehind = 4;
+
+bool SetAccent(HWND window, int state, DWORD gradient_color)
+{
+    static const auto set_attribute = reinterpret_cast<SetWindowCompositionAttributeFunction>(
+        GetProcAddress(GetModuleHandleW(L"user32.dll"), "SetWindowCompositionAttribute"));
+    if (set_attribute == nullptr) {
+        return false;
+    }
+    AccentPolicy policy{state, 0, gradient_color, 0};
+    CompositionAttributeData data{kAccentPolicyAttribute, &policy, sizeof(policy)};
+    return set_attribute(window, &data) != FALSE;
+}
 
 // Layout in device-independent pixels.
 constexpr float kPadding = 6.0f;
@@ -88,7 +119,7 @@ struct Palette {
     D2D1_COLOR_F highlight_text;
 };
 
-Palette MakePalette(bool glass, bool dark)
+Palette MakePalette(CandidateWindow::Backdrop backdrop, bool dark)
 {
     if (HighContrast()) {
         return {SystemColor(COLOR_WINDOW), SystemColor(COLOR_WINDOWTEXT), SystemColor(COLOR_WINDOWTEXT),
@@ -97,11 +128,17 @@ Palette MakePalette(bool glass, bool dark)
     const D2D1_COLOR_F text = dark ? Color(1.0f, 1.0f, 1.0f, 0.95f) : Color(0.0f, 0.0f, 0.0f, 0.9f);
     const D2D1_COLOR_F secondary = dark ? Color(1.0f, 1.0f, 1.0f, 0.6f) : Color(0.0f, 0.0f, 0.0f, 0.55f);
     D2D1_COLOR_F background;
-    if (glass) {
-        // A light tint over the blurred backdrop keeps the text readable.
+    switch (backdrop) {
+    case CandidateWindow::Backdrop::Acrylic:
+        background = Color(0.0f, 0.0f, 0.0f, 0.0f); // the accent tint is part of the blur
+        break;
+    case CandidateWindow::Backdrop::SystemBackdrop:
         background = dark ? Color(0.08f, 0.08f, 0.08f, 0.35f) : Color(1.0f, 1.0f, 1.0f, 0.4f);
-    } else {
+        break;
+    case CandidateWindow::Backdrop::Opaque:
+    default:
         background = dark ? Color(0.17f, 0.17f, 0.17f, 1.0f) : Color(0.98f, 0.98f, 0.98f, 1.0f);
+        break;
     }
     return {background, text, secondary, Accent(dark ? 0.5f : 0.3f), text};
 }
@@ -208,12 +245,21 @@ void CandidateWindow::ApplyBackdrop()
     const int corner = kCornerRound;
     DwmSetWindowAttribute(window_, kWindowCornerPreference, &corner, sizeof(corner));
 
-    glass_ = false;
-    if (ReadUserFlag(L"EnableTransparency", true) && !HighContrast()) {
-        const int backdrop = kBackdropTransientWindow;
-        glass_ = SUCCEEDED(DwmSetWindowAttribute(window_, kSystemBackdropType, &backdrop, sizeof(backdrop)));
+    backdrop_ = Backdrop::Opaque;
+    const bool transparency = ReadUserFlag(L"EnableTransparency", true) && !HighContrast();
+    // Semi-transparent tint (AABBGGRR) so the blurred background shows through.
+    const DWORD tint = dark_ ? 0x88202020 : 0x88F3F3F3;
+    if (transparency && SetAccent(window_, kAccentAcrylicBlurBehind, tint)) {
+        backdrop_ = Backdrop::Acrylic;
+    } else {
+        SetAccent(window_, kAccentDisabled, 0);
+        const int backdrop = transparency ? kBackdropTransientWindow : kBackdropNone;
+        if (SUCCEEDED(DwmSetWindowAttribute(window_, kSystemBackdropType, &backdrop, sizeof(backdrop))) &&
+            transparency) {
+            backdrop_ = Backdrop::SystemBackdrop;
+        }
     }
-    const MARGINS margins = glass_ ? MARGINS{-1, -1, -1, -1} : MARGINS{0, 0, 0, 0};
+    const MARGINS margins = backdrop_ != Backdrop::Opaque ? MARGINS{-1, -1, -1, -1} : MARGINS{0, 0, 0, 0};
     DwmExtendFrameIntoClientArea(window_, &margins);
 }
 
@@ -293,7 +339,7 @@ void CandidateWindow::Paint()
         const UINT dpi = GetDpiForWindow(window_) != 0 ? GetDpiForWindow(window_) : 96;
         target_->SetDpi(static_cast<float>(dpi), static_cast<float>(dpi));
         target_->SetTextAntialiasMode(D2D1_TEXT_ANTIALIAS_MODE_GRAYSCALE);
-        const Palette palette = MakePalette(glass_, dark_);
+        const Palette palette = MakePalette(backdrop_, dark_);
         const float width = static_cast<float>(client.right) * 96.0f / static_cast<float>(dpi);
 
         target_->BeginDraw();

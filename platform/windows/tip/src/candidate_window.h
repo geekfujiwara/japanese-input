@@ -16,6 +16,12 @@ namespace astelio::tip {
 // with transparency effects off, in high contrast, or on Windows 10 it is opaque.
 class CandidateWindow {
 public:
+    enum class Backdrop : unsigned char {
+        Opaque,
+        Acrylic,        // blur that also works while the window is inactive
+        SystemBackdrop, // Windows 11 DWM backdrop (solid when inactive)
+    };
+
     CandidateWindow() = default;
     ~CandidateWindow();
     CandidateWindow(const CandidateWindow&) = delete;
@@ -34,7 +40,7 @@ private:
     void Paint();
 
     HWND window_ = nullptr;
-    bool glass_ = false;
+    Backdrop backdrop_ = Backdrop::Opaque;
     bool dark_ = false;
     std::vector<std::u16string> candidates_;
     std::size_t selected_ = 0;
