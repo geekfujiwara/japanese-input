@@ -61,6 +61,9 @@ constexpr Entry kDefaultEntries[] = {
     {u"xya", u"ゃ"}, {u"xyu", u"ゅ"}, {u"xyo", u"ょ"}, {u"lya", u"ゃ"}, {u"lyu", u"ゅ"}, {u"lyo", u"ょ"},
     {u"xtu", u"っ"}, {u"xtsu", u"っ"}, {u"ltu", u"っ"}, {u"ltsu", u"っ"},
     {u"xwa", u"ゎ"}, {u"lwa", u"ゎ"},
+    // Symbols typed with z, as in Google Japanese Input and Mozc.
+    {u"zh", u"←"}, {u"zj", u"↓"}, {u"zk", u"↑"}, {u"zl", u"→"}, {u"z-", u"〜"},
+    {u"z.", u"…"}, {u"z,", u"‥"}, {u"z/", u"・"}, {u"z[", u"『"}, {u"z]", u"』"},
 };
 
 // Doubled consonants produce a small tsu and keep one consonant: "kk" -> "っ" + "k".

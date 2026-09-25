@@ -40,6 +40,23 @@ TEST(Composer, ConvertsEveryDefaultRomajiRule)
     }
 }
 
+// T-B01-5: z + key gives arrows and symbols, as in Google Japanese Input.
+TEST(Composer, ZKeySymbols)
+{
+    EXPECT_EQ(Typed(u"zh"), u"←");
+    EXPECT_EQ(Typed(u"zj"), u"↓");
+    EXPECT_EQ(Typed(u"zk"), u"↑");
+    EXPECT_EQ(Typed(u"zl"), u"→");
+    EXPECT_EQ(Typed(u"z-"), u"〜");
+    EXPECT_EQ(Typed(u"z."), u"…");
+    EXPECT_EQ(Typed(u"z,"), u"‥");
+    EXPECT_EQ(Typed(u"z/"), u"・");
+    EXPECT_EQ(Typed(u"z["), u"『");
+    EXPECT_EQ(Typed(u"z]"), u"』");
+    EXPECT_EQ(Typed(u"zazl"), u"ざ→");
+    EXPECT_EQ(Typed(u"zzl"), u"っ→") << "a doubled z is still a small tsu";
+}
+
 // T-B01-2
 TEST(Composer, ConvertsDigraphsNAndSmallTsu)
 {
