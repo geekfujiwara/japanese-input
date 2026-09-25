@@ -10,6 +10,7 @@ add_library(astelio_tip SHARED
     src/astelio_tip.def
     src/candidate_window.cpp
     src/dictionary_loader.cpp
+    src/display_attributes.cpp
     src/dllmain.cpp
     src/lang_bar_button.cpp
     src/registration.cpp

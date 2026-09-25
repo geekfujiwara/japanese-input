@@ -1,6 +1,7 @@
 #include "text_service.h"
 
 #include "candidate_window.h"
+#include "display_attributes.h"
 #include "key_translation.h"
 #include "dictionary_loader.h"
 #include "lang_bar_button.h"
@@ -179,6 +180,8 @@ STDMETHODIMP TextService::QueryInterface(REFIID riid, void** object)
         *object = static_cast<ITfCompositionSink*>(this);
     } else if (riid == IID_ITfCompartmentEventSink) {
         *object = static_cast<ITfCompartmentEventSink*>(this);
+    } else if (riid == IID_ITfDisplayAttributeProvider) {
+        *object = static_cast<ITfDisplayAttributeProvider*>(this);
     } else {
         *object = nullptr;
         return E_NOINTERFACE;
@@ -226,6 +229,13 @@ STDMETHODIMP TextService::ActivateEx(ITfThreadMgr* thread_mgr, TfClientId client
     key_sink_advised_ = true;
     g_active_service = this;
     session_.SetConverter(SharedConverter());
+    ComPtr<ITfCategoryMgr> categories;
+    if (SUCCEEDED(CoCreateInstance(CLSID_TF_CategoryMgr, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&categories)))) {
+        for (int index = 0; index < kDisplayAttributeCount; ++index) {
+            categories->RegisterGUID(DisplayAttributeGuid(static_cast<DisplayAttribute>(index)),
+                                     &attribute_atoms_[index]);
+        }
+    }
     try {
         StartModeIndicators();
     } catch (...) {
@@ -569,6 +579,60 @@ HRESULT TextService::ApplyToDocument(TfEditCookie cookie, ITfContext* context, c
     return hr;
 }
 
+STDMETHODIMP TextService::EnumDisplayAttributeInfo(IEnumTfDisplayAttributeInfo** attributes)
+{
+    return EnumDisplayAttributes(attributes);
+}
+
+STDMETHODIMP TextService::GetDisplayAttributeInfo(REFGUID guid, ITfDisplayAttributeInfo** attribute)
+{
+    return GetDisplayAttribute(guid, attribute);
+}
+
+void TextService::ClearDisplayAttributes(TfEditCookie cookie, ITfContext* context, ITfRange* range)
+{
+    ComPtr<ITfProperty> property;
+    if (range != nullptr && SUCCEEDED(context->GetProperty(GUID_PROP_ATTRIBUTE, &property))) {
+        property->Clear(cookie, range);
+    }
+}
+
+void TextService::ApplyDisplayAttributes(TfEditCookie cookie, ITfContext* context, ITfRange* composition)
+{
+    ComPtr<ITfProperty> property;
+    if (FAILED(context->GetProperty(GUID_PROP_ATTRIBUTE, &property))) {
+        return;
+    }
+    const auto set = [&](ITfRange* range, DisplayAttribute attribute) {
+        const TfGuidAtom atom = attribute_atoms_[static_cast<int>(attribute)];
+        if (atom == TF_INVALID_GUIDATOM) {
+            return;
+        }
+        VARIANT value;
+        VariantInit(&value);
+        value.vt = VT_I4;
+        value.lVal = static_cast<LONG>(atom);
+        property->SetValue(cookie, range, &value);
+    };
+    if (!session_.Converting()) {
+        set(composition, DisplayAttribute::Input);
+        return;
+    }
+    const std::vector<ConvertedSegment>& segments = session_.Segments();
+    LONG offset = 0;
+    for (std::size_t i = 0; i < segments.size(); ++i) {
+        const LONG length = Length(segments[i].candidates[session_.SelectedCandidate(i)]);
+        ComPtr<ITfRange> range;
+        LONG shifted = 0;
+        if (SUCCEEDED(composition->Clone(&range)) && SUCCEEDED(range->Collapse(cookie, TF_ANCHOR_START)) &&
+            SUCCEEDED(range->ShiftEnd(cookie, offset + length, &shifted, nullptr)) &&
+            SUCCEEDED(range->ShiftStart(cookie, offset, &shifted, nullptr))) {
+            set(range.Get(), i == session_.FocusedSegment() ? DisplayAttribute::Focused : DisplayAttribute::Converted);
+        }
+        offset += length;
+    }
+}
+
 void TextService::HideCandidateWindow()
 {
     if (candidate_window_) {
@@ -636,6 +700,7 @@ HRESULT TextService::ApplyText(TfEditCookie cookie, ITfContext* context, const s
                 hr = range->SetText(cookie, 0, Wide(commit), Length(commit));
             }
             if (SUCCEEDED(hr)) {
+                ClearDisplayAttributes(cookie, context, range.Get());
                 hr = CollapseSelectionToEnd(cookie, context, range.Get());
             }
             const HRESULT ended = EndComposition(cookie);
@@ -677,6 +742,9 @@ HRESULT TextService::ApplyText(TfEditCookie cookie, ITfContext* context, const s
     hr = composition_->GetRange(&range);
     if (SUCCEEDED(hr)) {
         hr = range->SetText(cookie, 0, Wide(text), Length(text));
+    }
+    if (SUCCEEDED(hr)) {
+        ApplyDisplayAttributes(cookie, context, range.Get());
     }
     ComPtr<ITfRange> caret;
     if (SUCCEEDED(hr)) {
