@@ -123,7 +123,7 @@ jobs:
           tool=build/dictionary/dictionary/tools/astelio_dicbuild
           dic=build/dictionary/out/system.dic
           $tool convert $dic わたしはにほんごです 私は日本語です
-          for reading in きょうはいいてんきですね かいぎのしりょうをおくります あしたのごごさんじにえきでまちあわせましょう iphoneをかう; do
+          for reading in きょうはいいてんきですね かいぎのしりょうをおくります あしたのごごさんじにえきでまちあわせましょう iphoneをかう 1234 きょう やじるし にっこり; do
             $tool convert $dic "$reading"
           done
       - name: Upload the dictionary

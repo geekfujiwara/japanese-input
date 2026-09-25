@@ -9,6 +9,7 @@ add_library(astelio_core STATIC
     src/modifier_tap_tracker.cpp
     src/romaji_table.cpp
     src/romaji_table_io.cpp
+    src/special_candidates.cpp
     src/utf.cpp
     src/version.cpp
 )
