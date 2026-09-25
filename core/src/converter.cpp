@@ -11,6 +11,8 @@ namespace {
 constexpr std::size_t kMaxEntriesPerReading = 64;
 constexpr std::size_t kMaxCandidates = 50;
 constexpr std::int32_t kInfinity = std::numeric_limits<std::int32_t>::max() / 2;
+// Added to words found only after fixing a typo, so exact readings win when both make sense.
+constexpr std::int32_t kTypoPenalty = 400;
 
 struct Node {
     std::size_t begin = 0;
@@ -56,7 +58,35 @@ void AddUnique(std::vector<std::u16string>& list, std::u16string text)
     }
 }
 
+bool CollapsesWhenDoubled(char16_t c)
+{
+    switch (c) {
+    case u'\u3063': // っ
+    case u'\u3093': // ん
+    case u'\u30FC': // ー
+    case u'\u3041': case u'\u3043': case u'\u3045': case u'\u3047': case u'\u3049': // ぁぃぅぇぉ
+    case u'\u3083': case u'\u3085': case u'\u3087': case u'\u308E':                  // ゃゅょゎ
+        return true;
+    default:
+        return false;
+    }
+}
+
 } // namespace
+
+TypoCorrection CorrectTypos(std::u16string_view text)
+{
+    TypoCorrection correction;
+    for (std::size_t i = 0; i < text.size(); ++i) {
+        if (i > 0 && text[i] == text[i - 1] && CollapsesWhenDoubled(text[i])) {
+            continue;
+        }
+        correction.text.push_back(text[i]);
+        correction.origin.push_back(i);
+    }
+    correction.origin.push_back(text.size());
+    return correction;
+}
 
 std::u16string HiraganaToKatakana(std::u16string_view text)
 {
@@ -90,6 +120,15 @@ std::vector<std::u16string> Converter::Predict(std::u16string_view reading, std:
             AddUnique(predictions, std::u16string(found.entry.surface));
         }
     }
+    const TypoCorrection corrected = CorrectTypos(reading);
+    if (corrected.text != reading) {
+        for (const SystemDictionary::Prediction& found : dictionary_.PredictiveSearch(corrected.text, limit)) {
+            if (predictions.size() >= limit) {
+                break;
+            }
+            AddUnique(predictions, std::u16string(found.entry.surface));
+        }
+    }
     return predictions;
 }
 
@@ -117,6 +156,14 @@ std::vector<ConvertedSegment> Converter::Convert(std::u16string_view reading,
         limit[p] = forced[p + 1] ? p + 1 : limit[p + 1];
     }
 
+    // Words read from the typo-corrected text span the original characters they came from.
+    const TypoCorrection correction = CorrectTypos(reading);
+    const bool has_typos = correction.text.size() != n;
+    std::vector<std::size_t> corrected_at(n + 1, SIZE_MAX);
+    for (std::size_t i = correction.origin.size(); i-- > 0;) {
+        corrected_at[correction.origin[i]] = i;
+    }
+
     std::vector<Node> nodes;
     for (std::size_t begin = 0; begin < n; ++begin) {
         const std::u16string_view rest = reading.substr(begin, limit[begin] - begin);
@@ -132,6 +179,18 @@ std::vector<ConvertedSegment> Converter::Convert(std::u16string_view reading,
                     MakeNode(begin, begin + length, entry.surface, entry.left_id, entry.right_id, entry.cost));
             }
         });
+        if (has_typos && corrected_at[begin] != SIZE_MAX) {
+            const std::size_t from = corrected_at[begin];
+            dictionary_.CommonPrefixSearch(
+                std::u16string_view(correction.text).substr(from),
+                [&](std::size_t length, const DictionaryEntry& entry) {
+                    const std::size_t end = correction.origin[from + length];
+                    if (end - begin != length && end <= limit[begin]) {
+                        nodes.push_back(MakeNode(begin, end, entry.surface, entry.left_id, entry.right_id,
+                                                 entry.cost + kTypoPenalty));
+                    }
+                });
+        }
         // Text the dictionary does not know: one character, or a whole run of half-width letters and symbols.
         std::size_t length = 1;
         if (IsAsciiGraphic(rest[0])) {
@@ -238,6 +297,16 @@ std::vector<ConvertedSegment> Converter::Convert(std::u16string_view reading,
         const std::size_t head_end = path[tail - 1]->end;
         for (const DictionaryEntry& entry : dictionary_.Lookup(reading.substr(begin, head_end - begin))) {
             scored.emplace_back(score(entry, after_head), std::u16string(entry.surface) + tail_text);
+        }
+        if (has_typos && corrected_at[begin] != SIZE_MAX && corrected_at[head_end] != SIZE_MAX) {
+            const std::u16string_view fixed = std::u16string_view(correction.text)
+                                                  .substr(corrected_at[begin], corrected_at[head_end] - corrected_at[begin]);
+            if (fixed.size() != head_end - begin) {
+                for (const DictionaryEntry& entry : dictionary_.Lookup(fixed)) {
+                    scored.emplace_back(score(entry, after_head) + kTypoPenalty,
+                                        std::u16string(entry.surface) + tail_text);
+                }
+            }
         }
         if (tail < end) {
             for (const DictionaryEntry& entry : dictionary_.Lookup(segment.reading)) {

@@ -42,4 +42,12 @@ private:
 
 std::u16string HiraganaToKatakana(std::u16string_view text);
 
+// Likely typos fixed: a doubled っ, ん, ー or small kana is typed once ("たっっせい" -> "たっせい").
+// `origin[i]` is the index in the original text of `text[i]`; origin.back() is the original length.
+struct TypoCorrection {
+    std::u16string text;
+    std::vector<std::size_t> origin;
+};
+TypoCorrection CorrectTypos(std::u16string_view text);
+
 } // namespace astelio
