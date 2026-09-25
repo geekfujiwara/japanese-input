@@ -1,3 +1,4 @@
+#include "dictionary_loader.h"
 #include "module.h"
 #include "text_service.h"
 
@@ -107,11 +108,14 @@ extern "C" void WINAPI AstelioTipKeyDiagnostics(long* counters, int count)
     counters[3] = diagnostics.eaten;
 }
 
-BOOL WINAPI DllMain(HINSTANCE instance, DWORD reason, LPVOID /*reserved*/)
+BOOL WINAPI DllMain(HINSTANCE instance, DWORD reason, LPVOID reserved)
 {
     if (reason == DLL_PROCESS_ATTACH) {
         astelio::tip::g_module = instance;
         DisableThreadLibraryCalls(instance);
+    } else if (reason == DLL_PROCESS_DETACH && reserved == nullptr) {
+        // FreeLibrary (not process exit): unmap the dictionary.
+        astelio::tip::ReleaseDictionaries();
     }
     return TRUE;
 }

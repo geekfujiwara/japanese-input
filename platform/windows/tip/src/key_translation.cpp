@@ -59,8 +59,10 @@ std::optional<KeyEvent> TranslateKey(std::uint32_t virtual_key, std::uint32_t lp
     case VK_ESCAPE: return KeyEvent{KeyKind::Escape, 0};
     case VK_BACK: return KeyEvent{KeyKind::Backspace, 0};
     case VK_DELETE: return KeyEvent{KeyKind::Delete, 0};
-    case VK_LEFT: return KeyEvent{KeyKind::Left, 0};
-    case VK_RIGHT: return KeyEvent{KeyKind::Right, 0};
+    case VK_LEFT: return KeyEvent{KeyKind::Left, 0, modifiers.shift};
+    case VK_RIGHT: return KeyEvent{KeyKind::Right, 0, modifiers.shift};
+    case VK_UP: return KeyEvent{KeyKind::Up, 0, modifiers.shift};
+    case VK_DOWN: return KeyEvent{KeyKind::Down, 0, modifiers.shift};
     default: break;
     }
 

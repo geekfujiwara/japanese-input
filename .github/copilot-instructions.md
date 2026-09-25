@@ -64,7 +64,7 @@ ctest --preset windows-arm64
 TIP（Windows）の試用: CIの成果物 `astelio-tip-windows-<arch>` を取得し、管理者のPowerShellで登録する（登録はユーザーが行う）。
 
 ```powershell
-& "$env:LOCALAPPDATA\Programs\gh\bin\gh.exe" run download (& "$env:LOCALAPPDATA\Programs\gh\bin\gh.exe" run list --branch main --workflow CI --status success --limit 1 --json databaseId --jq '.[0].databaseId') -n astelio-tip-windows-arm64 -n astelio-tip-windows-x86 -D artifacts/tip
+& "$env:LOCALAPPDATA\Programs\gh\bin\gh.exe" run download (& "$env:LOCALAPPDATA\Programs\gh\bin\gh.exe" run list --branch main --workflow CI --status success --limit 1 --json databaseId --jq '.[0].databaseId') -n astelio-tip-windows-arm64 -n astelio-tip-windows-x86 -n astelio-dictionary -D artifacts/tip
 ./tools/Register-AstelioTip.ps1 -Path artifacts/tip   # 解除は -Unregister
 ```
 

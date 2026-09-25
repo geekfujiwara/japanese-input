@@ -1,6 +1,7 @@
 #include "text_service.h"
 
 #include "key_translation.h"
+#include "dictionary_loader.h"
 #include "lang_bar_button.h"
 #include "module.h"
 
@@ -223,6 +224,7 @@ STDMETHODIMP TextService::ActivateEx(ITfThreadMgr* thread_mgr, TfClientId client
     }
     key_sink_advised_ = true;
     g_active_service = this;
+    session_.SetConverter(SharedConverter());
     try {
         StartModeIndicators();
     } catch (...) {
@@ -647,6 +649,17 @@ HRESULT TextService::TestKey(ITfContext* context, WPARAM wparam, LPARAM lparam, 
     return key_up ? service->OnKeyUp(context, wparam, lparam, eaten) : service->OnKeyDown(context, wparam, lparam, eaten);
 }
 
+HRESULT TextService::TestUseDictionary(const wchar_t* path)
+{
+    TextService* service = g_active_service;
+    if (service == nullptr) {
+        return E_UNEXPECTED;
+    }
+    const Converter* converter = UseDictionaryFile(path);
+    service->session_.SetConverter(converter);
+    return converter != nullptr || path == nullptr ? S_OK : E_FAIL;
+}
+
 } // namespace astelio::tip
 
 // Test entry point: sends a key to the TSF-activated text service without OS keyboard focus.
@@ -654,4 +667,10 @@ extern "C" HRESULT WINAPI AstelioTipTestKey(ITfContext* context, WPARAM wparam, 
                                             BOOL* eaten)
 {
     return astelio::tip::TextService::TestKey(context, wparam, lparam, key_up, eaten);
+}
+
+// Test entry point: converts with the dictionary at `path` instead of the installed one.
+extern "C" HRESULT WINAPI AstelioTipTestUseDictionary(const wchar_t* path)
+{
+    return astelio::tip::TextService::TestUseDictionary(path);
 }
