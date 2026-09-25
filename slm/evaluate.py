@@ -49,6 +49,8 @@ def user_message(context, reading):
 
 def normalize(answer):
     answer = re.sub(r"<think>.*?</think>", "", answer, flags=re.S)
+    # Some GGUF conversions print their end-of-sequence token as text.
+    answer = re.sub(r"</?s>|<\|[^|<>]*\|>", "", answer)
     answer = answer.strip().splitlines()[0] if answer.strip() else ""
     answer = re.sub(r"^(答え|回答|表記)[:：]\s*", "", answer)
     return answer.strip().strip("「」『』\"'").rstrip("。.").strip()
