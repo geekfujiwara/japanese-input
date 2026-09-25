@@ -5,6 +5,7 @@ add_executable(astelio_core_tests
     converter_test.cpp
     dictionary_test.cpp
     input_session_test.cpp
+    kana_forms_test.cpp
     modifier_tap_tracker_test.cpp
     romaji_table_io_test.cpp
     utf_test.cpp

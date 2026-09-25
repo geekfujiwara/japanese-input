@@ -125,6 +125,44 @@ TEST(InputSession, AbandonedCompositionIsCleared)
     EXPECT_FALSE(session.Composing());
 }
 
+// T-B05-1: F6-F10 give hiragana, katakana, half-width katakana, full-width and half-width letters.
+TEST(InputSession, FunctionKeysConvertToFixedForms)
+{
+    InputSession session = MakeSession();
+    Type(session, u"nihon");
+    EXPECT_TRUE(session.WillHandle(Key(KeyKind::F7)));
+    session.Handle(Key(KeyKind::F6));
+    EXPECT_TRUE(session.Converting());
+    EXPECT_EQ(session.CompositionText(), u"にほん");
+    session.Handle(Key(KeyKind::F7));
+    EXPECT_EQ(session.CompositionText(), u"ニホン");
+    session.Handle(Key(KeyKind::F8));
+    EXPECT_EQ(session.CompositionText(), u"ﾆﾎﾝ");
+    session.Handle(Key(KeyKind::F9));
+    EXPECT_EQ(session.CompositionText(), u"ｎｉｈｏｎ");
+    session.Handle(Key(KeyKind::F10));
+    EXPECT_EQ(session.CompositionText(), u"nihon");
+    session.Handle(Key(KeyKind::F7));
+    EXPECT_EQ(session.CompositionText(), u"ニホン") << "forms can be chosen again";
+    EXPECT_EQ(session.Handle(Key(KeyKind::Enter)).commit, u"ニホン");
+    EXPECT_FALSE(session.WillHandle(Key(KeyKind::F7))) << "nothing to convert";
+}
+
+TEST(InputSession, FunctionKeysUseTheTypedKeysOrSpellTheKana)
+{
+    InputSession session = MakeSession();
+    Type(session, u"sinbun");
+    session.Handle(Key(KeyKind::F10));
+    EXPECT_EQ(session.CompositionText(), u"sinbun") << "the keys as typed";
+    session.Handle(Key(KeyKind::Escape));
+    session.Handle(Key(KeyKind::Escape));
+
+    Type(session, u"sinbunn");
+    session.Handle(Key(KeyKind::Backspace));
+    session.Handle(Key(KeyKind::F10));
+    EXPECT_EQ(session.CompositionText(), u"shinbu") << "after editing, spelled from the kana";
+}
+
 KeyEvent Arrow(KeyKind kind, bool shift = false)
 {
     return {kind, 0, shift};

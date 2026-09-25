@@ -1,12 +1,14 @@
 #include "astelio/input_session.h"
 
+#include "astelio/kana_forms.h"
+
 #include <algorithm>
 #include <utility>
 
 namespace astelio {
 
 InputSession::InputSession(const RomajiTable& table, CharacterSettings settings)
-    : composer_(table, settings), settings_(settings)
+    : composer_(table, settings), settings_(settings), table_(&table)
 {
 }
 
@@ -63,6 +65,11 @@ bool InputSession::WillHandle(const KeyEvent& key) const
     case KeyKind::PageUp:
     case KeyKind::PageDown:
     case KeyKind::Tab:
+    case KeyKind::F6:
+    case KeyKind::F7:
+    case KeyKind::F8:
+    case KeyKind::F9:
+    case KeyKind::F10:
         return Composing();
     }
     return false;
@@ -73,9 +80,57 @@ SessionOutput InputSession::Handle(const KeyEvent& key)
     if (!WillHandle(key)) {
         return {};
     }
+    const bool was_converting = converting_;
     SessionOutput output = converting_ ? HandleConversion(key) : HandleComposition(key);
+    if (key.kind == KeyKind::Character && !converting_) {
+        if (was_converting) {
+            typed_keys_.clear(); // the conversion was committed and a new composition started
+            typed_keys_valid_ = true;
+        }
+        typed_keys_.push_back(key.character);
+    } else if (!was_converting && (key.kind == KeyKind::Backspace || key.kind == KeyKind::Delete ||
+                                   key.kind == KeyKind::Left || key.kind == KeyKind::Right)) {
+        typed_keys_valid_ = false;
+    }
+    if (!Composing()) {
+        typed_keys_.clear();
+        typed_keys_valid_ = true;
+    }
     UpdatePredictions();
     return output;
+}
+
+// B-05: F6-F10 turn the focused segment (or the whole kana) into one fixed form.
+void InputSession::ConvertToForm(KeyKind key)
+{
+    if (!converting_) {
+        reading_ = composer_.Commit();
+        ConvertedSegment segment;
+        segment.reading = reading_;
+        segments_ = {std::move(segment)};
+        selected_ = {0};
+        focus_ = 0;
+        converting_ = true;
+    }
+    ConvertedSegment& segment = segments_[focus_];
+    std::u16string form;
+    if (key == KeyKind::F6) {
+        form = segment.reading;
+    } else if (key == KeyKind::F7) {
+        form = HiraganaToKatakana(segment.reading);
+    } else if (key == KeyKind::F8) {
+        form = ToHalfWidthKatakana(segment.reading);
+    } else {
+        const bool typed = segments_.size() == 1 && typed_keys_valid_ && !typed_keys_.empty();
+        const std::u16string romaji = typed ? typed_keys_ : KanaToRomaji(segment.reading, *table_);
+        form = key == KeyKind::F9 ? ToFullWidthAscii(romaji) : romaji;
+    }
+    const auto found = std::find(segment.candidates.begin(), segment.candidates.end(), form);
+    selected_[focus_] = static_cast<std::size_t>(found - segment.candidates.begin());
+    if (found == segment.candidates.end()) {
+        segment.candidates.push_back(std::move(form));
+    }
+    candidate_list_visible_ = false;
 }
 
 void InputSession::UpdatePredictions()
@@ -161,6 +216,13 @@ SessionOutput InputSession::HandleComposition(const KeyEvent& key)
         } else {
             StartPrediction();
         }
+        break;
+    case KeyKind::F6:
+    case KeyKind::F7:
+    case KeyKind::F8:
+    case KeyKind::F9:
+    case KeyKind::F10:
+        ConvertToForm(key.kind);
         break;
     }
     return output;
@@ -281,6 +343,13 @@ SessionOutput InputSession::HandleConversion(const KeyEvent& key)
         break;
     case KeyKind::Delete:
         output.composition_changed = false;
+        break;
+    case KeyKind::F6:
+    case KeyKind::F7:
+    case KeyKind::F8:
+    case KeyKind::F9:
+    case KeyKind::F10:
+        ConvertToForm(key.kind);
         break;
     }
     return output;

@@ -26,6 +26,11 @@ enum class KeyKind : std::uint8_t {
     PageUp,
     PageDown,
     Tab,
+    F6,  // hiragana
+    F7,  // full-width katakana
+    F8,  // half-width katakana
+    F9,  // full-width alphanumerics
+    F10, // half-width alphanumerics
 };
 
 struct KeyEvent {
@@ -83,12 +88,14 @@ private:
     bool HandleCandidateList(const KeyEvent& key);
     void StartPrediction();
     void UpdatePredictions();
+    void ConvertToForm(KeyKind key);
     void Convert(std::vector<std::size_t> fixed_lengths);
     std::u16string ConvertedText() const;
     void EndConversion();
 
     Composer composer_;
     CharacterSettings settings_;
+    const RomajiTable* table_;
     const Converter* converter_ = nullptr;
     bool japanese_mode_ = true;
     bool converting_ = false;
@@ -98,6 +105,9 @@ private:
     std::size_t focus_ = 0;
     bool candidate_list_visible_ = false;
     std::vector<std::u16string> predictions_;
+    // Keys typed for the current composition, for F9/F10; cleared when the text is edited in the middle.
+    std::u16string typed_keys_;
+    bool typed_keys_valid_ = true;
 };
 
 } // namespace astelio
