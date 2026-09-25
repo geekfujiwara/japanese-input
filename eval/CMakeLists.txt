@@ -1,0 +1,23 @@
+add_library(astelio_eval_lib STATIC src/evaluation.cpp)
+target_include_directories(astelio_eval_lib PUBLIC src)
+target_link_libraries(astelio_eval_lib PUBLIC astelio_core)
+
+add_executable(astelio_eval src/main.cpp)
+target_link_libraries(astelio_eval PRIVATE astelio_eval_lib)
+
+foreach(target astelio_eval_lib astelio_eval)
+    if(MSVC)
+        target_compile_options(${target} PRIVATE /W4 /WX /utf-8 /permissive-)
+    else()
+        target_compile_options(${target} PRIVATE -Wall -Wextra -Wpedantic -Werror)
+    endif()
+endforeach()
+
+if(ASTELIO_BUILD_TESTS)
+    add_executable(astelio_eval_tests tests/evaluation_test.cpp)
+    target_link_libraries(astelio_eval_tests PRIVATE astelio_eval_lib GTest::gtest_main)
+    if(MSVC)
+        target_compile_options(astelio_eval_tests PRIVATE /utf-8)
+    endif()
+    gtest_discover_tests(astelio_eval_tests)
+endif()

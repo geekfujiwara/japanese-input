@@ -108,7 +108,7 @@ jobs:
       - name: Build the dictionary tool
         run: |
           cmake -S . -B build/dictionary -DCMAKE_BUILD_TYPE=Release -DASTELIO_BUILD_TESTS=OFF
-          cmake --build build/dictionary --target astelio_dicbuild
+          cmake --build build/dictionary --target astelio_dicbuild astelio_eval
       - name: Build the system dictionary
         run: |
           mkdir -p build/dictionary/out
@@ -126,6 +126,20 @@ jobs:
           for reading in きょうはいいてんきですね かいぎのしりょうをおくります あしたのごごさんじにえきでまちあわせましょう iphoneをかう 1234 きょう やじるし にっこり たっっせい こんんにちは; do
             $tool convert $dic "$reading"
           done
+      - name: Measure the conversion accuracy (test plan 10)
+        run: |
+          mkdir -p build/eval
+          build/dictionary/eval/astelio_eval build/dictionary/out/system.dic \
+            --baseline eval/baseline.tsv --report "$GITHUB_STEP_SUMMARY" --failures build/eval/failures.tsv \
+            eval/corpus/*.tsv
+      - name: Upload the accuracy misses
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: astelio-eval-failures
+          path: build/eval/failures.tsv
+          if-no-files-found: ignore
+          retention-days: 30
       - name: Upload the dictionary
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:

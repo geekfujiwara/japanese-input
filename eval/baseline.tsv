@@ -1,0 +1,3 @@
+# Sentence accuracy (%) of eval/corpus on the current system dictionary. CI fails when it drops by 0.5 points or more.
+# Raise it in the same PR when the accuracy improves; lowering it needs a reason in the PR.
+sentence_accuracy	84.8

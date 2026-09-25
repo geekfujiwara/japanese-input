@@ -98,6 +98,7 @@ TIPの結合テスト（登録を伴う）は `ASTELIO_TIP_INTEGRATION=1` のと
 | [core/](core) | 変換エンジン（C++20） |
 | [platform/windows/tip/](platform/windows/tip) | Windows TIP（TSF） |
 | [dictionary/tools/](dictionary/tools) | 辞書の変換・作成・確認ツール |
+| [eval/](eval) | 変換精度の評価コーパスと評価ツール（CIで正解率を記録） |
 | [docs/](docs) | [計画書](docs/astelio-ime-plan.md)、[テスト計画書](docs/astelio-ime-test-plan.md) |
 | [src/](src)、[tests/](tests) | 旧版（キーフック方式、.NET）。設定アプリとして作り直す予定 |
 

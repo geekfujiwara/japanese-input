@@ -36,6 +36,7 @@ endif()
 
 add_subdirectory(core)
 add_subdirectory(dictionary/tools)
+add_subdirectory(eval)
 
 if(WIN32)
     add_subdirectory(platform/windows/tip)
