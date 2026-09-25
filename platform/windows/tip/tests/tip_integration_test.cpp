@@ -841,10 +841,13 @@ TEST_F(TypingTest, SpaceConvertsWithTheDictionary)
     ASSERT_HRESULT_SUCCEEDED(use_dictionary_(path.c_str()));
 
     TypeLetters("watasiha");
+    std::cout << "[step] typed" << std::endl;
     EXPECT_TRUE(Press(VK_SPACE, 0x39));
+    std::cout << "[step] converted" << std::endl;
     EXPECT_EQ(Text(), L"\u79C1\u306F");
     EXPECT_EQ(CompositionCount(), 1) << "the conversion stays uncommitted";
     EXPECT_TRUE(Press(VK_SPACE, 0x39));
+    std::cout << "[step] second space" << std::endl;
     EXPECT_EQ(Text(), L"\u6E21\u3057\u306F");
 
     // T-B03-1: the second Space opens the candidate window.
@@ -860,7 +863,9 @@ TEST_F(TypingTest, SpaceConvertsWithTheDictionary)
     EXPECT_GT(bounds.right - bounds.left, 0);
     EXPECT_GT(bounds.bottom - bounds.top, 0);
     UpdateWindow(window); // paints with Direct2D
+    std::cout << "[step] painted" << std::endl;
     EXPECT_TRUE(Press(VK_DOWN, 0x50, false, true));
+    std::cout << "[step] down" << std::endl;
     EXPECT_TRUE(IsWindowVisible(window));
 
     EXPECT_TRUE(Press(VK_ESCAPE, 0x01));
