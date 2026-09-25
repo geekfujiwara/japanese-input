@@ -248,6 +248,14 @@ std::vector<ConvertedSegment> Converter::Convert(std::u16string_view reading,
                          [](const auto& a, const auto& b) { return a.first < b.first; });
 
         AddUnique(segment.candidates, std::move(best));
+        const std::u16string_view head_reading = reading.substr(begin, head_end - begin);
+        std::vector<std::u16string> special = NumberForms(head_reading);
+        if (special.empty() && IsDateReading(head_reading)) {
+            special = DateForms(head_reading, clock_ ? clock_() : CurrentLocalTime());
+        }
+        for (std::u16string& text : special) {
+            AddUnique(segment.candidates, std::move(text) + tail_text);
+        }
         for (auto& item : scored) {
             if (segment.candidates.size() + 2 >= kMaxCandidates) {
                 break;

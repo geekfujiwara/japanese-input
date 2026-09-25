@@ -1,8 +1,10 @@
 #pragma once
 
 #include "astelio/dictionary.h"
+#include "astelio/special_candidates.h"
 
 #include <cstddef>
+#include <functional>
 #include <span>
 #include <string>
 #include <string_view>
@@ -30,8 +32,12 @@ public:
     // Predictive candidates while typing: the conversion of `reading`, then words whose reading starts with it.
     std::vector<std::u16string> Predict(std::u16string_view reading, std::size_t limit) const;
 
+    // The clock for date and time candidates (tests fix it); the system clock by default.
+    void SetClock(std::function<LocalTime()> clock) { clock_ = std::move(clock); }
+
 private:
     const SystemDictionary& dictionary_;
+    std::function<LocalTime()> clock_;
 };
 
 std::u16string HiraganaToKatakana(std::u16string_view text);

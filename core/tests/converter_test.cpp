@@ -62,6 +62,7 @@ protected:
         add(u"です", u"です", kAuxiliary, 100);
         add(u"お", u"お", kPrefix, 200);
         add(u"ちゃ", u"茶", kNoun, 300);
+        add(u"きょう", u"今日", kNoun, 300);
         bytes_ = builder.Build();
         dictionary_ = astelio::SystemDictionary::Open(bytes_);
         ASSERT_TRUE(dictionary_);
@@ -176,6 +177,29 @@ TEST_F(ConverterTest, PredictsFromThePrefix)
     EXPECT_EQ(predictions, (std::vector<std::u16string>{u"綿", u"私", u"渡し"}));
     EXPECT_EQ(astelio::Converter(*dictionary_).Predict(u"わた", 1).size(), 1u);
     EXPECT_TRUE(astelio::Converter(*dictionary_).Predict(u"ぬ", 9).empty());
+}
+
+// T-B09-1, T-B09-2: numbers and dates get their other forms, after the best candidate.
+TEST_F(ConverterTest, NumbersAndDatesGetSpecialCandidates)
+{
+    astelio::Converter converter(*dictionary_);
+    converter.SetClock([] { return astelio::LocalTime{2026, 9, 25, 14, 5}; });
+
+    std::vector<ConvertedSegment> segments = converter.Convert(u"1234");
+    ASSERT_EQ(segments.size(), 1u);
+    const std::vector<std::u16string>& numbers = segments[0].candidates;
+    ASSERT_GE(numbers.size(), 5u);
+    EXPECT_EQ(numbers[0], u"1234");
+    EXPECT_EQ(numbers[1], u"１２３４");
+    EXPECT_NE(std::find(numbers.begin(), numbers.end(), u"千二百三十四"), numbers.end());
+    EXPECT_NE(std::find(numbers.begin(), numbers.end(), u"1,234"), numbers.end());
+
+    segments = converter.Convert(u"きょうは");
+    ASSERT_EQ(segments.size(), 1u);
+    const std::vector<std::u16string>& dates = segments[0].candidates;
+    EXPECT_EQ(dates[0], u"今日は");
+    EXPECT_NE(std::find(dates.begin(), dates.end(), u"2026/09/25は"), dates.end()) << "the particle is kept";
+    EXPECT_NE(std::find(dates.begin(), dates.end(), u"9月25日(金)は"), dates.end());
 }
 
 TEST(HiraganaToKatakana, ConvertsOnlyHiragana)
