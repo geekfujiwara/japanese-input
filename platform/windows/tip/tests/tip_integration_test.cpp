@@ -280,6 +280,9 @@ std::wstring WriteTestDictionary()
     builder.Add({u"わたし", u"渡し", 3, 3, 0, 900});
     builder.Add({u"は", u"は", 2, 2, 0, 50});
     builder.Add({u"にほんご", u"日本語", 1, 1, 0, 400});
+    builder.Add({u"えもじ", u"絵文字", 1, 1, 0, 400});
+    builder.Add({u"いぬ", u"🐶", 1, 1, 0, 900});
+    builder.Add({u"ねこ", u"🐱", 1, 1, 0, 900});
     const std::vector<std::byte> bytes = builder.Build();
 
     wchar_t directory[MAX_PATH] = {};
@@ -991,6 +994,62 @@ TEST_F(TypingTest, DisplayAttributesMarkTheFocusedSegment)
 
     EXPECT_TRUE(Press(VK_RETURN, 0x1C));
     EXPECT_TRUE(IsEqualGUID(AttributeAt(0), GUID_NULL)) << "committed text has no attribute";
+}
+
+// T-B13-5 (TIP): えもじ shows the emoji palette, Space still converts, and Tab + search + Enter insert an emoji
+// and save it in the history.
+TEST_F(TypingTest, EmojiPaletteInsertsAnEmoji)
+{
+    const std::wstring path = WriteTestDictionary();
+    ASSERT_FALSE(path.empty());
+    ASSERT_HRESULT_SUCCEEDED(use_dictionary_(path.c_str()));
+    const HMODULE tip = GetModuleHandleW(TipPath().c_str());
+    using WindowFunction = HWND(WINAPI*)();
+    using UseHistoryFunction = void(WINAPI*)(const wchar_t*);
+    const auto emoji_window = reinterpret_cast<WindowFunction>(GetProcAddress(tip, "AstelioTipTestEmojiWindow"));
+    const auto candidate_window = reinterpret_cast<WindowFunction>(GetProcAddress(tip, "AstelioTipTestCandidateWindow"));
+    const auto use_history = reinterpret_cast<UseHistoryFunction>(GetProcAddress(tip, "AstelioTipTestUseEmojiHistory"));
+    ASSERT_NE(emoji_window, nullptr);
+    ASSERT_NE(candidate_window, nullptr);
+    ASSERT_NE(use_history, nullptr);
+    wchar_t directory[MAX_PATH] = {};
+    GetTempPathW(MAX_PATH, directory);
+    const std::wstring history = std::wstring(directory) + L"astelio_tip_test_emoji.txt";
+    DeleteFileW(history.c_str());
+    use_history(history.c_str());
+
+    TypeLetters("emoji");
+    EXPECT_EQ(Text(), L"\u3048\u3082\u3058");
+    const HWND window = emoji_window();
+    ASSERT_NE(window, nullptr);
+    EXPECT_TRUE(IsWindowVisible(window)) << "the palette is offered";
+    if (const HWND candidates = candidate_window()) {
+        EXPECT_FALSE(IsWindowVisible(candidates)) << "one popup at a time";
+    }
+    UpdateWindow(window);
+
+    EXPECT_TRUE(Press(VK_SPACE, 0x39));
+    EXPECT_EQ(Text(), L"\u7D75\u6587\u5B57") << "Space still converts";
+    EXPECT_FALSE(IsWindowVisible(window));
+    EXPECT_TRUE(Press(VK_ESCAPE, 0x01));
+    EXPECT_EQ(Text(), L"\u3048\u3082\u3058");
+    EXPECT_TRUE(IsWindowVisible(window));
+
+    EXPECT_TRUE(Press(VK_TAB, 0x0F));
+    TypeLetters("inu");
+    EXPECT_EQ(Text(), L"\u3048\u3082\u3058") << "the search stays in the palette";
+    UpdateWindow(window);
+    EXPECT_TRUE(Press(VK_RETURN, 0x1C));
+    EXPECT_EQ(Text(), L"\U0001F436");
+    EXPECT_EQ(CompositionCount(), 0);
+    EXPECT_FALSE(IsWindowVisible(window));
+
+    std::ifstream saved(history, std::ios::binary);
+    const std::string content((std::istreambuf_iterator<char>(saved)), std::istreambuf_iterator<char>());
+    EXPECT_EQ(content, "\xF0\x9F\x90\xB6\n") << "the history keeps the emoji";
+    saved.close();
+    use_history(nullptr);
+    DeleteFileW(history.c_str());
 }
 
 // Without an installed dictionary typing still works and Space keeps the kana.

@@ -15,6 +15,7 @@
 namespace astelio::tip {
 
 class CandidateWindow;
+class EmojiWindow;
 class LangBarButton;
 
 class TextService final : public ITfTextInputProcessorEx,
@@ -63,13 +64,19 @@ public:
     static HRESULT TestKey(ITfContext* context, WPARAM wparam, LPARAM lparam, BOOL key_up, BOOL* eaten);
     static HRESULT TestUseDictionary(const wchar_t* path);
     static HWND TestCandidateWindow();
+    static HWND TestEmojiWindow();
 
 private:
     TextService();
     ~TextService();
 
+    void UseConverter(const Converter* converter);
+    // Sends the session's output to the document and saves the emoji history when it changed.
+    HRESULT Deliver(ITfContext* context, SessionOutput output);
+    void OnEmojiClick(bool category, std::size_t index);
     HRESULT ApplyText(TfEditCookie cookie, ITfContext* context, const std::u16string& commit);
     void UpdateCandidateWindow(TfEditCookie cookie, ITfContext* context);
+    bool CompositionRect(TfEditCookie cookie, ITfContext* context, LONG offset, LONG length, RECT* rect) const;
     void HideCandidateWindow();
     // Underlines the composition: dotted while typing, solid per segment (bold for the focused one) while converting.
     void ApplyDisplayAttributes(TfEditCookie cookie, ITfContext* context, ITfRange* composition);
@@ -98,6 +105,7 @@ private:
     LangBarButton* mode_button_ = nullptr;
     bool mode_button_added_ = false;
     std::unique_ptr<CandidateWindow> candidate_window_;
+    std::unique_ptr<EmojiWindow> emoji_window_;
     TfGuidAtom attribute_atoms_[3] = {TF_INVALID_GUIDATOM, TF_INVALID_GUIDATOM, TF_INVALID_GUIDATOM};
 };
 
