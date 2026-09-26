@@ -6,6 +6,15 @@ target_link_libraries(astelio_tip_keys PUBLIC astelio_core)
 target_compile_definitions(astelio_tip_keys PUBLIC UNICODE _UNICODE WIN32_LEAN_AND_MEAN NOMINMAX)
 target_compile_options(astelio_tip_keys PRIVATE /W4 /WX /utf-8 /permissive- /EHsc)
 
+# The user dictionary file and its import/export, also linked into the tests (T-D03-3).
+add_library(astelio_tip_store STATIC
+    src/user_dictionary_store.cpp
+)
+target_include_directories(astelio_tip_store PUBLIC src)
+target_link_libraries(astelio_tip_store PUBLIC astelio_core)
+target_compile_definitions(astelio_tip_store PUBLIC UNICODE _UNICODE WIN32_LEAN_AND_MEAN NOMINMAX)
+target_compile_options(astelio_tip_store PRIVATE /W4 /WX /utf-8 /permissive- /EHsc)
+
 add_library(astelio_tip SHARED
     src/astelio_tip.def
     src/candidate_window.cpp
@@ -21,10 +30,11 @@ add_library(astelio_tip SHARED
     src/popup_window.cpp
     src/registration.cpp
     src/text_service.cpp
+    src/user_dictionary_manager.cpp
 )
 
 target_include_directories(astelio_tip PUBLIC include PRIVATE src)
-target_link_libraries(astelio_tip PRIVATE astelio_tip_keys d2d1 dwrite dwmapi comctl32)
+target_link_libraries(astelio_tip PRIVATE astelio_tip_keys astelio_tip_store d2d1 dwrite dwmapi comctl32 comdlg32)
 target_compile_options(astelio_tip PRIVATE /W4 /WX /utf-8 /permissive- /EHsc)
 
 if(ASTELIO_BUILD_TESTS)
