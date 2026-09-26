@@ -13,12 +13,14 @@ add_executable(astelio_core_tests
     special_candidates_test.cpp
     typo_candidates_test.cpp
     user_dictionary_contract_test.cpp
+    user_dictionary_io_test.cpp
     utf_test.cpp
     version_test.cpp
 )
 
 target_link_libraries(astelio_core_tests PRIVATE astelio_core GTest::gtest_main)
 target_compile_definitions(astelio_core_tests PRIVATE ASTELIO_EXPECTED_VERSION="${PROJECT_VERSION}")
+target_compile_definitions(astelio_core_tests PRIVATE ASTELIO_TEST_DATA_DIR="${CMAKE_CURRENT_SOURCE_DIR}/data")
 
 if(MSVC)
     target_compile_options(astelio_core_tests PRIVATE /utf-8)

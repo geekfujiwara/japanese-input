@@ -13,6 +13,7 @@ add_library(astelio_core STATIC
     src/romaji_table_io.cpp
     src/special_candidates.cpp
     src/typo_candidates.cpp
+    src/user_dictionary_io.cpp
     src/utf.cpp
     src/version.cpp
 )
@@ -40,4 +41,9 @@ if(ASTELIO_BUILD_FUZZERS)
     target_link_libraries(astelio_dictionary_fuzzer PRIVATE astelio_core)
     target_compile_options(astelio_dictionary_fuzzer PRIVATE -fsanitize=fuzzer,address,undefined)
     target_link_options(astelio_dictionary_fuzzer PRIVATE -fsanitize=fuzzer,address,undefined)
+
+    add_executable(astelio_user_dictionary_io_fuzzer fuzz/user_dictionary_io_fuzzer.cpp)
+    target_link_libraries(astelio_user_dictionary_io_fuzzer PRIVATE astelio_core)
+    target_compile_options(astelio_user_dictionary_io_fuzzer PRIVATE -fsanitize=fuzzer,address,undefined)
+    target_link_options(astelio_user_dictionary_io_fuzzer PRIVATE -fsanitize=fuzzer,address,undefined)
 endif()
