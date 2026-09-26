@@ -63,6 +63,23 @@ std::wstring TipPath()
     return path;
 }
 
+// This test program's exe file name in lower case, as the TIP names the app (D-06, C-09).
+std::wstring ThisAppName()
+{
+    wchar_t module[MAX_PATH] = {};
+    const DWORD length = GetModuleFileNameW(nullptr, module, MAX_PATH);
+    std::wstring app(module, length);
+    app.erase(0, app.find_last_of(L'\\') + 1);
+    CharLowerBuffW(app.data(), static_cast<DWORD>(app.size()));
+    return app;
+}
+
+// A REG_MULTI_SZ list with another app and this one.
+std::wstring AppListWithThisApp()
+{
+    return L"other.exe" + std::wstring(1, L'\0') + ThisAppName() + std::wstring(2, L'\0');
+}
+
 std::wstring GuidString(const GUID& guid)
 {
     wchar_t text[40] = {};
@@ -1163,12 +1180,8 @@ TEST_F(TypingTest, SecretModeAndLeftOutAppsRecordNothing)
     choose_second();
     EXPECT_EQ(file_size(), 0u) << "secret mode records nothing";
 
-    wchar_t module[MAX_PATH] = {};
-    const DWORD length = GetModuleFileNameW(nullptr, module, MAX_PATH);
-    std::wstring app(module, length);
-    app.erase(0, app.find_last_of(L'\\') + 1);
-    CharLowerBuffW(app.data(), static_cast<DWORD>(app.size()));
-    const std::wstring apps = L"other.exe" + std::wstring(1, L'\0') + app + std::wstring(2, L'\0');
+    const std::wstring app = ThisAppName();
+    const std::wstring apps = AppListWithThisApp();
     ASSERT_EQ(RegDeleteKeyValueW(HKEY_CURRENT_USER, kTestSettingsKey, L"LearningPaused"), ERROR_SUCCESS);
     ASSERT_EQ(RegSetKeyValueW(HKEY_CURRENT_USER, kTestSettingsKey, L"NoLearningApps", REG_MULTI_SZ, apps.data(),
                               static_cast<DWORD>(apps.size() * sizeof(wchar_t))),
@@ -1179,6 +1192,29 @@ TEST_F(TypingTest, SecretModeAndLeftOutAppsRecordNothing)
     ASSERT_EQ(RegDeleteKeyValueW(HKEY_CURRENT_USER, kTestSettingsKey, L"NoLearningApps"), ERROR_SUCCESS);
     choose_second();
     EXPECT_GT(file_size(), 0u) << "recorded again";
+}
+
+// T-C09-1 (TIP): in an app left out, letters and Alt taps reach the app as they are; other apps are not affected.
+TEST_F(TypingTest, DisabledAppGetsTheKeysAsTheyAre)
+{
+    const std::wstring apps = AppListWithThisApp();
+    ASSERT_EQ(RegSetKeyValueW(HKEY_CURRENT_USER, kTestSettingsKey, L"DisabledApps", REG_MULTI_SZ, apps.data(),
+                              static_cast<DWORD>(apps.size() * sizeof(wchar_t))),
+              ERROR_SUCCESS);
+    use_settings_(kTestSettingsKey); // the TIP reads the list when it gets the focus
+    EXPECT_FALSE(Press('A', 0x1E));
+    EXPECT_FALSE(Press(VK_SPACE, 0x39));
+    EXPECT_EQ(Text(), L"");
+    EXPECT_EQ(CompositionCount(), 0);
+    EXPECT_FALSE(TapAlt(true)) << "the app sees the Alt tap (and may open its menu)";
+
+    const std::wstring others = L"other.exe" + std::wstring(2, L'\0');
+    ASSERT_EQ(RegSetKeyValueW(HKEY_CURRENT_USER, kTestSettingsKey, L"DisabledApps", REG_MULTI_SZ, others.data(),
+                              static_cast<DWORD>(others.size() * sizeof(wchar_t))),
+              ERROR_SUCCESS);
+    use_settings_(kTestSettingsKey);
+    EXPECT_TRUE(Press('A', 0x1E));
+    EXPECT_EQ(Text(), L"\u3042") << "only the listed apps go without the IME";
 }
 
 // T-B06-2, T-B08-1 (TIP): Ctrl+Down commits up to the focused segment; Ctrl+Backspace right after a commit takes

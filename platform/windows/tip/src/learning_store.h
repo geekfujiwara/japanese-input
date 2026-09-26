@@ -32,6 +32,10 @@ void SetLearningPaused(bool paused);
 bool AppLearningExcluded(const std::wstring& app);
 void SetAppLearningExcluded(const std::wstring& app, bool excluded);
 
+// C-09: apps where the IME stays out of the way: keys and Alt taps reach the app as they are (DisabledApps).
+bool AppDisabled(const std::wstring& app);
+void SetAppDisabled(const std::wstring& app, bool disabled);
+
 // B-14: whether もしかして words are offered (TypoSuggestions under the same key; on unless set to 0).
 bool TypoSuggestionsEnabled();
 

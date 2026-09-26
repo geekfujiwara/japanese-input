@@ -67,6 +67,9 @@ public:
     bool LearningOn() const { return learning_on_; }
     // The exe file name the "not in this app" item names.
     const std::wstring& AppName() const { return app_name_; }
+    // C-09: the IME is not used in this app (the menu item "use direct input in this app").
+    bool AppDisabledHere() const { return app_disabled_; }
+    void ToggleAppDisabled();
     void OnLearningCommand(LearningCommand command, HWND owner);
 
     // Runs inside an edit session: commits `commit`, then shows the session's uncommitted text.
@@ -134,6 +137,7 @@ private:
     UserDictionary user_dictionary_;
     std::uint64_t user_dictionary_stamp_ = 0;
     std::wstring app_name_;
+    bool app_disabled_ = false;
     Microsoft::WRL::ComPtr<ITfComposition> composition_;
     ModifierTapTracker alt_taps_;
     std::optional<ModifierSide> pending_alt_tap_;
