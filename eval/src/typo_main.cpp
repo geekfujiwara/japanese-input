@@ -393,6 +393,8 @@ int main(int argc, char** argv)
         return static_cast<std::size_t>((seed >> 8) % bound);
     };
     std::size_t synthetic_made = 0;
+    std::size_t synthetic_misses_shown = 0;
+    std::ostringstream synthetic_misses;
     for (const CheckedWord& word : checked_words) {
         if (synthetic_made >= synthetic_count) {
             break;
@@ -432,6 +434,14 @@ int main(int argc, char** argv)
             astelio::SuggestTypoCorrection(slipped, table, *dictionary);
         if (suggestion && suggestion->surface == word.surface) {
             ++synthetic_hits[kind];
+        } else if (synthetic_misses_shown < 40) {
+            ++synthetic_misses_shown;
+            const std::vector<astelio::DictionaryEntry> typed = dictionary->Lookup(ToKana(slipped));
+            synthetic_misses << "| " << kSlipNames[kind] << " | " << Utf8(word.surface) << " `" << Utf8(word.keys)
+                             << "` | `" << Utf8(slipped) << "` " << Utf8(ToKana(slipped)) << " | "
+                             << (suggestion ? Utf8(suggestion->surface) : std::string("（なし）")) << " | "
+                             << (typed.empty() ? std::string("—") : Utf8(std::u16string(typed.front().surface)))
+                             << " |\n";
         }
     }
     std::size_t synthetic_hit_total = 0;
@@ -482,6 +492,11 @@ int main(int argc, char** argv)
         report << "<details><summary>よく使う語への誤提案（最大30件）</summary>\n\n"
                << "| 打ったキー | 語 | 提案 |\n| --- | --- | --- |\n"
                << frequent_misses.str() << "\n</details>\n\n";
+    }
+    if (!synthetic_misses.str().empty()) {
+        report << "<details><summary>機械的に入れた打ち間違いの外れ（最大40件）</summary>\n\n"
+               << "| 種類 | 元の語 | 打ったキー | 提案 | 打った語 |\n| --- | --- | --- | --- | --- |\n"
+               << synthetic_misses.str() << "\n</details>\n\n";
     }
 
     if (!baseline_path.empty()) {
