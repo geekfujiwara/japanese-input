@@ -571,16 +571,12 @@ std::u16string InputSession::CommitConversion(SessionOutput& output)
     // B-08: what Ctrl+Backspace right after the commit brings back.
     std::optional<CommittedConversion> undo;
     if (!predicting_ && !segments_.empty()) {
-        undo.emplace();
-        undo->text = text;
-        undo->reading = reading_;
+        CommittedConversion saved{text, reading_, {}, {}, focus_, context_right_id_, previous_surface_};
         for (std::size_t i = 0; i < segments_.size(); ++i) {
-            undo->lengths.push_back(segments_[i].reading.size());
-            undo->chosen.push_back(segments_[i].candidates[selected_[i]]);
+            saved.lengths.push_back(segments_[i].reading.size());
+            saved.chosen.push_back(segments_[i].candidates[selected_[i]]);
         }
-        undo->focus = focus_;
-        undo->context_right_id = context_right_id_;
-        undo->previous_surface = previous_surface_;
+        undo = std::move(saved);
     }
     RecordChoices(output, segments_.size());
     // T-D04-2: segments split by hand (or taken from the history) are kept for the reading.

@@ -194,7 +194,7 @@ private:
         std::u16string reading;
         std::vector<std::size_t> lengths;
         std::vector<std::u16string> chosen;
-        std::size_t focus = 0;
+        std::size_t focus; // no default initializer: clang then rejects std::optional of it in this class
         std::optional<std::uint16_t> context_right_id;
         std::u16string previous_surface;
     };

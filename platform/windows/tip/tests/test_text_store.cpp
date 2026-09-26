@@ -56,7 +56,7 @@ public:
         *count = 1;
         return S_OK;
     }
-    STDMETHODIMP GetPhrases(BSTR** /*phrases*/, UINT* /*count*/) override { return E_NOTIMPL; }
+    STDMETHODIMP GetPhrase(BSTR** /*phrases*/, UINT* /*count*/) override { return E_NOTIMPL; }
     STDMETHODIMP GetRegularExpression(BSTR* /*expression*/) override { return E_NOTIMPL; }
     STDMETHODIMP GetSRGS(BSTR* /*srgs*/) override { return E_NOTIMPL; }
     STDMETHODIMP GetXML(BSTR* /*xml*/) override { return E_NOTIMPL; }
