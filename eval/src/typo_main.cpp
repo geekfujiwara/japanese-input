@@ -95,6 +95,12 @@ bool IsHiraganaWord(std::u16string_view text)
                        [](char16_t c) { return (c >= u'\u3041' && c <= u'\u3094') || c == u'\u30FC'; });
 }
 
+// Common words for the checks: nouns written with kanji (not symbols like α or slang like スゴイ).
+bool HasKanji(std::u16string_view text)
+{
+    return std::any_of(text.begin(), text.end(), [](char16_t c) { return c >= u'\u4E00' && c <= u'\u9FFF'; });
+}
+
 std::string Percent(std::size_t part, std::size_t whole)
 {
     char text[32];
@@ -208,7 +214,7 @@ int main(int argc, char** argv)
             }
         }
         if (frequent_count > 0 && reading.size() >= 2 && reading.size() <= 8 && IsHiraganaWord(reading) &&
-            !IsHiraganaWord(entry.surface.substr(entry.surface.size() - 1)) &&
+            HasKanji(entry.surface) && !IsHiraganaWord(entry.surface.substr(entry.surface.size() - 1)) &&
             dictionary->word_type(entry.left_id) == astelio::WordType::Content) {
             frequent.push_back({std::u16string(reading), std::u16string(entry.surface), entry.cost});
         }
@@ -432,7 +438,8 @@ int main(int argc, char** argv)
         ++synthetic_tried[kind];
         const std::optional<astelio::TypoCandidate> suggestion =
             astelio::SuggestTypoCorrection(slipped, table, *dictionary);
-        if (suggestion && suggestion->surface == word.surface) {
+        // The word is found again when the suggestion has its reading (the surface may be another of the same).
+        if (suggestion && suggestion->reading == word.reading) {
             ++synthetic_hits[kind];
         } else if (synthetic_misses_shown < 40) {
             ++synthetic_misses_shown;
