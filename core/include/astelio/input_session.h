@@ -13,6 +13,7 @@
 #include <functional>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <utility>
 #include <vector>
 
@@ -173,6 +174,8 @@ private:
     // The word before segment `segment`: the previous segment as chosen, or the last word committed.
     std::u16string SegmentContext(std::size_t segment) const;
     void AddTypoSuggestions();
+    // D-08: whether `surface` (as a candidate of `segment`, with its particles) is a suppressed word.
+    bool Hidden(const ConvertedSegment& segment, std::u16string_view surface) const;
     bool ForgetSelectedCandidate();
     void EndConversion();
 

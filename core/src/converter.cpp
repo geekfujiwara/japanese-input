@@ -58,6 +58,30 @@ void AddUnique(std::vector<std::u16string>& list, std::u16string text)
     }
 }
 
+using UserWord = UserDictionary::Word;
+using UserPos = UserDictionary::PartOfSpeech;
+
+std::vector<const UserWord*> SuppressedWords(const UserDictionary* user)
+{
+    std::vector<const UserWord*> suppressed;
+    if (user != nullptr) {
+        for (const UserWord& word : user->Words()) {
+            if (word.pos == UserPos::Suppressed) {
+                suppressed.push_back(&word);
+            }
+        }
+    }
+    return suppressed;
+}
+
+// UserDictionary::Suppressed over the few suppressed words only (it is asked for every dictionary entry).
+bool Hidden(const std::vector<const UserWord*>& suppressed, std::u16string_view reading, std::u16string_view surface)
+{
+    return std::any_of(suppressed.begin(), suppressed.end(), [&](const UserWord* word) {
+        return word->surface == surface && (word->reading.empty() || reading.empty() || word->reading == reading);
+    });
+}
+
 bool CollapsesWhenDoubled(char16_t c)
 {
     switch (c) {
@@ -105,18 +129,27 @@ std::vector<std::u16string> Converter::Predict(std::u16string_view reading, std:
     if (reading.empty() || limit == 0) {
         return predictions;
     }
+    const std::vector<const UserWord*> suppressed = SuppressedWords(user_dictionary_);
     std::u16string best;
     for (const ConvertedSegment& segment : Convert(reading)) {
         best += segment.candidates.front();
     }
-    if (best != reading) {
+    if (best != reading && !Hidden(suppressed, reading, best)) {
         predictions.push_back(std::move(best));
+    }
+    if (user_dictionary_ != nullptr) {
+        for (std::u16string& surface : user_dictionary_->Predict(reading, limit)) {
+            if (predictions.size() >= limit) {
+                break;
+            }
+            AddUnique(predictions, std::move(surface));
+        }
     }
     for (const SystemDictionary::Prediction& found : dictionary_.PredictiveSearch(reading, limit * 2)) {
         if (predictions.size() >= limit) {
             break;
         }
-        if (found.reading.size() > reading.size()) {
+        if (found.reading.size() > reading.size() && !Hidden(suppressed, found.reading, found.entry.surface)) {
             AddUnique(predictions, std::u16string(found.entry.surface));
         }
     }
@@ -126,7 +159,9 @@ std::vector<std::u16string> Converter::Predict(std::u16string_view reading, std:
             if (predictions.size() >= limit) {
                 break;
             }
-            AddUnique(predictions, std::u16string(found.entry.surface));
+            if (!Hidden(suppressed, found.reading, found.entry.surface)) {
+                AddUnique(predictions, std::u16string(found.entry.surface));
+            }
         }
     }
     return predictions;
@@ -166,12 +201,33 @@ std::vector<ConvertedSegment> Converter::Convert(std::u16string_view reading,
         corrected_at[correction.origin[i]] = i;
     }
 
+    // D-02: the user's words by where their reading starts; D-08: the words never to offer.
+    const std::vector<const UserWord*> suppressed = SuppressedWords(user_dictionary_);
+    std::vector<std::vector<const UserWord*>> user_words(n);
+    if (user_dictionary_ != nullptr) {
+        for (const UserWord& word : user_dictionary_->Words()) {
+            if (word.pos == UserPos::Suppressed || word.reading.empty() ||
+                Hidden(suppressed, word.reading, word.surface)) {
+                continue;
+            }
+            for (std::size_t at = reading.find(word.reading); at != std::u16string_view::npos;
+                 at = reading.find(word.reading, at + 1)) {
+                user_words[at].push_back(&word);
+            }
+        }
+    }
+    // User words join sentences as nouns: dearer than common words, cheaper than text the dictionary does not know.
+    const std::int32_t user_cost = dictionary_.unknown_cost() / 2;
+
     std::vector<Node> nodes;
     for (std::size_t begin = 0; begin < n; ++begin) {
         const std::u16string_view rest = reading.substr(begin, limit[begin] - begin);
         std::size_t current_length = 0;
         std::size_t count = 0;
         dictionary_.CommonPrefixSearch(rest, [&](std::size_t length, const DictionaryEntry& entry) {
+            if (!suppressed.empty() && Hidden(suppressed, rest.substr(0, length), entry.surface)) {
+                return;
+            }
             if (length != current_length) {
                 current_length = length;
                 count = 0;
@@ -187,11 +243,23 @@ std::vector<ConvertedSegment> Converter::Convert(std::u16string_view reading,
                 std::u16string_view(correction.text).substr(from),
                 [&](std::size_t length, const DictionaryEntry& entry) {
                     const std::size_t end = correction.origin[from + length];
-                    if (end - begin != length && end <= limit[begin]) {
+                    if (end - begin != length && end <= limit[begin] &&
+                        !Hidden(suppressed, std::u16string_view(correction.text).substr(from, length),
+                                entry.surface)) {
                         nodes.push_back(MakeNode(begin, end, entry.surface, entry.left_id, entry.right_id,
                                                  entry.cost + kTypoPenalty));
                     }
                 });
+        }
+        for (const UserWord* word : user_words[begin]) {
+            const std::size_t end = begin + word->reading.size();
+            // A shortcut reading (短縮よみ) only as a whole segment: all the text, or a segment the user fixed.
+            const bool fits = word->pos == UserPos::Abbreviation ? (begin == 0 || forced[begin]) && end == limit[begin]
+                                                                  : end <= limit[begin];
+            if (fits) {
+                nodes.push_back(MakeNode(begin, end, word->surface, dictionary_.unknown_id(), dictionary_.unknown_id(),
+                                         user_cost));
+            }
         }
         // Text the dictionary does not know: one character, or a whole run of half-width letters and symbols.
         std::size_t length = 1;
@@ -300,35 +368,55 @@ std::vector<ConvertedSegment> Converter::Convert(std::u16string_view reading,
         segment.head_length = head_end - begin;
         segment.tail = tail_text;
         segment.right_id = path[end - 1]->right;
-        for (const DictionaryEntry& entry : dictionary_.Lookup(reading.substr(begin, head_end - begin))) {
-            scored.emplace_back(score(entry, after_head), std::u16string(entry.surface) + tail_text);
+        const std::u16string_view head_reading = reading.substr(begin, head_end - begin);
+        for (const DictionaryEntry& entry : dictionary_.Lookup(head_reading)) {
+            if (!Hidden(suppressed, head_reading, entry.surface)) {
+                scored.emplace_back(score(entry, after_head), std::u16string(entry.surface) + tail_text);
+            }
         }
         if (has_typos && corrected_at[begin] != SIZE_MAX && corrected_at[head_end] != SIZE_MAX) {
             const std::u16string_view fixed = std::u16string_view(correction.text)
                                                   .substr(corrected_at[begin], corrected_at[head_end] - corrected_at[begin]);
             if (fixed.size() != head_end - begin) {
                 for (const DictionaryEntry& entry : dictionary_.Lookup(fixed)) {
-                    scored.emplace_back(score(entry, after_head) + kTypoPenalty,
-                                        std::u16string(entry.surface) + tail_text);
+                    if (!Hidden(suppressed, fixed, entry.surface)) {
+                        scored.emplace_back(score(entry, after_head) + kTypoPenalty,
+                                            std::u16string(entry.surface) + tail_text);
+                    }
                 }
             }
         }
         if (tail < end) {
             for (const DictionaryEntry& entry : dictionary_.Lookup(segment.reading)) {
-                scored.emplace_back(score(entry, after_segment), std::u16string(entry.surface));
+                if (!Hidden(suppressed, segment.reading, entry.surface)) {
+                    scored.emplace_back(score(entry, after_segment), std::u16string(entry.surface));
+                }
             }
         }
         std::stable_sort(scored.begin(), scored.end(),
                          [](const auto& a, const auto& b) { return a.first < b.first; });
 
+        // D-02: the user's words for the whole segment or its head come first.
+        for (const UserWord* word : user_words[begin]) {
+            const std::size_t length = word->reading.size();
+            if (length == finish - begin) {
+                if (segment.candidates.empty() && word->surface != best) {
+                    segment.right_id = dictionary_.unknown_id();
+                }
+                AddUnique(segment.candidates, word->surface);
+            } else if (length == head_end - begin && word->pos != UserPos::Abbreviation) {
+                AddUnique(segment.candidates, word->surface + tail_text);
+            }
+        }
         AddUnique(segment.candidates, std::move(best));
-        const std::u16string_view head_reading = reading.substr(begin, head_end - begin);
         std::vector<std::u16string> special = NumberForms(head_reading);
         if (special.empty() && IsDateReading(head_reading)) {
             special = DateForms(head_reading, clock_ ? clock_() : CurrentLocalTime());
         }
         for (std::u16string& text : special) {
-            AddUnique(segment.candidates, std::move(text) + tail_text);
+            if (!Hidden(suppressed, head_reading, text)) {
+                AddUnique(segment.candidates, std::move(text) + tail_text);
+            }
         }
         for (auto& item : scored) {
             if (segment.candidates.size() + 2 >= kMaxCandidates) {
@@ -338,6 +426,14 @@ std::vector<ConvertedSegment> Converter::Convert(std::u16string_view reading,
         }
         AddUnique(segment.candidates, segment.reading);
         AddUnique(segment.candidates, HiraganaToKatakana(segment.reading));
+        if (!suppressed.empty()) {
+            std::erase_if(segment.candidates, [&](const std::u16string& candidate) {
+                return Hidden(suppressed, segment.reading, candidate);
+            });
+            if (segment.candidates.empty()) {
+                segment.candidates.push_back(segment.reading);
+            }
+        }
         segments.push_back(std::move(segment));
     }
     return segments;
