@@ -6,12 +6,14 @@
 #include "astelio/emoji.h"
 #include "astelio/learning.h"
 #include "astelio/romaji_table.h"
+#include "astelio/user_dictionary.h"
 
 #include <cstddef>
 #include <cstdint>
 #include <functional>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <utility>
 #include <vector>
 
@@ -88,6 +90,11 @@ public:
     bool IsTypoCandidate(std::size_t segment, std::size_t index) const;
     // Longer words are not searched for slips (it takes about 0.1 ms per key).
     static constexpr std::size_t kMaxTypoKeys = 24;
+
+    // D-08: suppressed words are left out of the history's candidates, its predictions and もしかして. Give the
+    // same dictionary to the Converter (Converter::SetUserDictionary), which adds the user's words.
+    // `dictionary` must outlive the session; nullptr turns it off.
+    void SetUserDictionary(const UserDictionary* dictionary) { user_dictionary_ = dictionary; }
 
     // T-B02-5: the last word committed is the context of the next conversion. The platform layer calls this
     // when the caret may have moved (keys the IME does not handle, focus changes).
@@ -167,6 +174,8 @@ private:
     // The word before segment `segment`: the previous segment as chosen, or the last word committed.
     std::u16string SegmentContext(std::size_t segment) const;
     void AddTypoSuggestions();
+    // D-08: whether `surface` (as a candidate of `segment`, with its particles) is a suppressed word.
+    bool Hidden(const ConvertedSegment& segment, std::u16string_view surface) const;
     bool ForgetSelectedCandidate();
     void EndConversion();
 
@@ -174,6 +183,7 @@ private:
     CharacterSettings settings_;
     const RomajiTable* table_;
     const Converter* converter_ = nullptr;
+    const UserDictionary* user_dictionary_ = nullptr;
     LearningHistory* learning_ = nullptr;
     bool recording_ = true;
     bool japanese_mode_ = true;

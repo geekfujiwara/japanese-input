@@ -1,6 +1,7 @@
 #include "astelio/input_session.h"
 
 #include "astelio/dictionary_builder.h"
+#include "astelio/user_dictionary.h"
 
 #include <gtest/gtest.h>
 
@@ -503,6 +504,69 @@ TEST_F(ConversionTest, ChosenPredictionComesFirstAndCanBeForgotten)
     EXPECT_EQ(session_.Predictions().front(), u"ありがとう");
 }
 
+using Pos = UserDictionary::PartOfSpeech;
+
+// T-D02-1: a word added to the user dictionary is used from the next conversion; edited or removed, likewise.
+TEST_F(ConversionTest, UserDictionaryWordsAreUsedAtOnce)
+{
+    UserDictionary user;
+    converter_->SetUserDictionary(&user);
+    session_.SetUserDictionary(&user);
+    const UserDictionary::Word added{u"わたし", u"ワタシ", Pos::Noun, u""};
+    ASSERT_TRUE(user.Add(added));
+    Type(session_, u"watasihanihongodesu");
+    session_.Handle(Key(KeyKind::Space));
+    EXPECT_EQ(session_.CompositionText(), u"ワタシは日本語です");
+    EXPECT_EQ(session_.Segments()[0].candidates.at(1), u"私は");
+    session_.Handle(Key(KeyKind::Escape));
+    session_.Handle(Key(KeyKind::Escape));
+
+    const UserDictionary::Word edited{u"わたし", u"WATASHI", Pos::Noun, u""};
+    ASSERT_TRUE(user.Update(added, edited));
+    Type(session_, u"watasiha");
+    session_.Handle(Key(KeyKind::Space));
+    EXPECT_EQ(session_.Handle(Key(KeyKind::Enter)).commit, u"WATASHIは");
+
+    ASSERT_TRUE(user.Remove(edited));
+    Type(session_, u"watasiha");
+    session_.Handle(Key(KeyKind::Space));
+    EXPECT_EQ(session_.Handle(Key(KeyKind::Enter)).commit, u"私は");
+
+    ASSERT_TRUE(user.Add({u"あすてりお", u"Astelio", Pos::ProperNoun, u""}));
+    Type(session_, u"asute");
+    ASSERT_FALSE(session_.Predictions().empty());
+    EXPECT_EQ(session_.Predictions().front(), u"Astelio");
+    Type(session_, u"riohanihongodesu");
+    session_.Handle(Key(KeyKind::Space));
+    EXPECT_EQ(session_.CompositionText(), u"Astelioは日本語です");
+}
+
+// T-D08-1: a suppressed word is never offered: not converted to, not listed, not predicted, even when learned.
+TEST_F(ConversionTest, SuppressedWordsAreNeverOffered)
+{
+    UserDictionary user;
+    LearningHistory history;
+    history.Record(LearningHistory::Kind::Conversion, u"わたしは", u"私は");
+    history.Record(LearningHistory::Kind::Prediction, u"あり", u"有り難い");
+    converter_->SetUserDictionary(&user);
+    session_.SetUserDictionary(&user);
+    session_.SetLearning(&history);
+    ASSERT_TRUE(user.Add({u"わたし", u"私", Pos::Suppressed, u""}));
+    ASSERT_TRUE(user.Add({u"", u"有り難い", Pos::Suppressed, u""}));
+
+    Type(session_, u"watasihanihongodesu");
+    session_.Handle(Key(KeyKind::Space));
+    EXPECT_EQ(session_.CompositionText(), u"渡しは日本語です") << "the next candidate";
+    for (const std::u16string& candidate : session_.Segments()[0].candidates) {
+        EXPECT_EQ(candidate.find(u"私"), std::u16string::npos);
+    }
+    session_.Handle(Key(KeyKind::Escape));
+    session_.Handle(Key(KeyKind::Escape));
+
+    Type(session_, u"ari");
+    EXPECT_EQ(session_.Predictions(), (std::vector<std::u16string>{u"ありがとう"}));
+}
+
 KeyEvent ControlKey(KeyKind kind)
 {
     KeyEvent key{kind, 0};
@@ -675,6 +739,23 @@ TEST_F(ContextTest, TypoSuggestionIsTheSecondCandidate)
     for (std::size_t i = 0; i < session_.Segments().size(); ++i) {
         for (std::size_t c = 0; c < session_.Segments()[i].candidates.size(); ++c) {
             EXPECT_NE(session_.Segments()[i].candidates[c], u"ユーザー") << "off in the settings";
+        }
+    }
+}
+
+// T-D08-1 (B-14): a suppressed word is not suggested as もしかして either.
+TEST_F(ContextTest, SuppressedWordIsNotSuggested)
+{
+    UserDictionary user;
+    ASSERT_TRUE(user.Add({u"", u"ユーザー", UserDictionary::PartOfSpeech::Suppressed, u""}));
+    converter_->SetUserDictionary(&user);
+    session_.SetUserDictionary(&user);
+    Type(session_, u"yu-a-");
+    session_.Handle(Key(KeyKind::Space));
+    for (std::size_t i = 0; i < session_.Segments().size(); ++i) {
+        for (std::size_t c = 0; c < session_.Segments()[i].candidates.size(); ++c) {
+            EXPECT_NE(session_.Segments()[i].candidates[c], u"ユーザー");
+            EXPECT_FALSE(session_.IsTypoCandidate(i, c));
         }
     }
 }
