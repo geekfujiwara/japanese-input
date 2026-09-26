@@ -5,6 +5,7 @@
 
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <optional>
 #include <string_view>
 #include <vector>
@@ -741,6 +742,49 @@ TEST_F(ContextTest, TypoSuggestionIsTheSecondCandidate)
             EXPECT_NE(session_.Segments()[i].candidates[c], u"ユーザー") << "off in the settings";
         }
     }
+}
+
+// T-B14-5: the もしかして word is offered among the predictions while typing, before Space; Tab selects it.
+TEST_F(ContextTest, TypoSuggestionIsPredictedWhileTyping)
+{
+    const auto typo_index = [this]() -> std::optional<std::size_t> {
+        const std::vector<std::u16string>& predictions = session_.Predictions();
+        for (std::size_t i = 0; i < predictions.size(); ++i) {
+            if (session_.IsTypoPrediction(i)) {
+                return i;
+            }
+        }
+        return std::nullopt;
+    };
+
+    Type(session_, u"yu-a-");
+    const std::optional<std::size_t> index = typo_index();
+    ASSERT_TRUE(index.has_value()) << "offered before Space";
+    EXPECT_LE(*index, 1u);
+    EXPECT_EQ(session_.Predictions()[*index], u"ユーザー");
+    EXPECT_EQ(session_.CompositionText(), u"ゆーあー") << "the text typed stays as it is";
+
+    session_.Handle(Key(KeyKind::Tab));
+    for (std::size_t i = 0; i < *index; ++i) {
+        session_.Handle(Key(KeyKind::Tab));
+    }
+    EXPECT_EQ(session_.CompositionText(), u"ユーザー");
+    EXPECT_TRUE(session_.IsTypoCandidate(0, *index)) << "marked in the list";
+    EXPECT_EQ(session_.Handle(Key(KeyKind::Enter)).commit, u"ユーザー");
+
+    Type(session_, u"yu-za-");
+    EXPECT_FALSE(typo_index().has_value()) << "nothing for a correct reading";
+    session_.Handle(Key(KeyKind::Escape));
+
+    Type(session_, u"yu-a-k");
+    EXPECT_FALSE(typo_index().has_value()) << "not while romaji is still being typed";
+    session_.Handle(Key(KeyKind::Escape));
+
+    session_.SetTypoSuggestions(false);
+    Type(session_, u"yu-a-");
+    EXPECT_FALSE(typo_index().has_value()) << "off in the settings";
+    const std::vector<std::u16string>& offered = session_.Predictions();
+    EXPECT_TRUE(std::find(offered.begin(), offered.end(), u"ユーザー") == offered.end());
 }
 
 // T-D08-1 (B-14): a suppressed word is not suggested as もしかして either.
