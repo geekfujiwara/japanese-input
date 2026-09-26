@@ -14,6 +14,7 @@ add_executable(astelio_core_tests
     typo_candidates_test.cpp
     user_dictionary_contract_test.cpp
     user_dictionary_io_test.cpp
+    user_dictionary_test.cpp
     utf_test.cpp
     version_test.cpp
 )
