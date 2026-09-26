@@ -1031,6 +1031,10 @@ void TextService::UpdateCandidateWindow(TfEditCookie cookie, ITfContext* context
                             : session_.IsLearnedCandidate(focus, i) ? CandidateWindow::Mark::Learned
                                                                     : CandidateWindow::Mark::None);
         }
+    } else {
+        for (std::size_t i = 0; i < candidates->size(); ++i) {
+            marks.push_back(session_.IsTypoPrediction(i) ? CandidateWindow::Mark::Typo : CandidateWindow::Mark::None);
+        }
     }
 
     RECT anchor{};

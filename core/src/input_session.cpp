@@ -158,6 +158,7 @@ void InputSession::ConvertToForm(KeyKind key)
 void InputSession::UpdatePredictions()
 {
     predictions_.clear();
+    typo_prediction_.clear();
     if (converting_ || emoji_active_ || converter_ == nullptr || composer_.Empty()) {
         return;
     }
@@ -187,7 +188,30 @@ void InputSession::UpdatePredictions()
             }
             predictions_ = std::move(learned);
         }
+        AddTypoPrediction(reading.size() == composer_.Text().size());
     }
+}
+
+// B-14: the もしかして word goes second among the predictions, so it is seen before Space.
+void InputSession::AddTypoPrediction(bool keys_complete)
+{
+    if (!typo_suggestions_ || !keys_complete || !typed_keys_valid_ || typed_keys_.empty() ||
+        typed_keys_.size() > kMaxTypoKeys) {
+        return;
+    }
+    const std::optional<TypoCandidate> suggestion =
+        SuggestTypoCorrection(typed_keys_, *table_, converter_->dictionary(), context_right_id_);
+    if (!suggestion ||
+        (user_dictionary_ != nullptr && user_dictionary_->Suppressed(suggestion->reading, suggestion->surface)) ||
+        std::find(predictions_.begin(), predictions_.end(), suggestion->surface) != predictions_.end()) {
+        return;
+    }
+    const auto position = static_cast<std::ptrdiff_t>(std::min<std::size_t>(1, predictions_.size()));
+    predictions_.insert(predictions_.begin() + position, suggestion->surface);
+    if (predictions_.size() > kCandidatePageSize) {
+        predictions_.pop_back();
+    }
+    typo_prediction_ = suggestion->surface;
 }
 
 void InputSession::StartPrediction()
@@ -202,6 +226,7 @@ void InputSession::StartPrediction()
         }
     }
     base_candidates_ = {segment.candidates};
+    typo_surfaces_ = {typo_prediction_};
     segments_ = {std::move(segment)};
     selected_ = {0};
     focus_ = 0;

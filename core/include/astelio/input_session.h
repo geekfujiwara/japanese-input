@@ -88,6 +88,11 @@ public:
     // (shown as もしかして). On by default.
     void SetTypoSuggestions(bool enabled) { typo_suggestions_ = enabled; }
     bool IsTypoCandidate(std::size_t segment, std::size_t index) const;
+    // The same word offered among the predictions while typing, before Space.
+    bool IsTypoPrediction(std::size_t index) const
+    {
+        return !typo_prediction_.empty() && index < predictions_.size() && predictions_[index] == typo_prediction_;
+    }
     // Longer words are not searched for slips (it takes about 0.1 ms per key).
     static constexpr std::size_t kMaxTypoKeys = 24;
 
@@ -161,6 +166,8 @@ private:
     bool HandleCandidateList(const KeyEvent& key);
     void StartPrediction();
     void UpdatePredictions();
+    // `keys_complete`: no romaji is still being typed.
+    void AddTypoPrediction(bool keys_complete);
     void ConvertToForm(KeyKind key);
     void Convert(std::vector<std::size_t> fixed_lengths);
     std::u16string ConvertedText() const;
@@ -195,6 +202,7 @@ private:
     std::vector<std::vector<std::u16string>> base_candidates_;
     bool typo_suggestions_ = true;
     std::vector<std::u16string> typo_surfaces_; // per segment; empty when there is no suggestion
+    std::u16string typo_prediction_;
     std::optional<std::uint16_t> context_right_id_;
     std::u16string previous_surface_; // the last segment committed, for the pairs of words (D-04)
     bool segments_resized_ = false;   // Shift+Left/Right changed the segments
