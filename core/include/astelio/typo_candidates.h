@@ -27,21 +27,26 @@ inline constexpr std::int32_t kTypoKeyPenalty = 300;
 // A vowel typed as another vowel, a key typed for a similar romaji (h/f, j/z, v/b), or both keys of a
 // doubled consonant slipped the same way ("nerro" for "netto").
 inline constexpr std::int32_t kTypoSoundPenalty = 400;
+// The most common slips: a vowel or ー pressed twice, and a long vowel left out ("ryoko" for "ryokou").
+inline constexpr std::int32_t kTypoLikelyPenalty = 150;
+// Added when the edit needs a key few people type in romaji (c other than ch, q, x, l).
+inline constexpr std::int32_t kTypoRareKeySurcharge = 200;
+// How much more likely than the word typed a candidate must be (in cost) to be suggested.
+inline constexpr std::int32_t kTypoSuggestMargin = 1000;
 
-// Words whose whole reading is reached from `keys` by one of the edits above, cheapest first, one per surface.
-// The reading typed as is never appears.
+// Words (content words only) whose whole reading is reached from `keys` by one of the edits above, cheapest
+// first, one per surface. The reading typed as is never appears.
 std::vector<TypoCandidate> FindTypoCandidates(std::u16string_view keys, const RomajiTable& table,
                                               const SystemDictionary& dictionary, std::size_t limit);
 
 // The もしかして suggestion for `keys`, or nothing. `previous_right_id` is the right id of the word before it
 // (the beginning of the sentence when there is none). A candidate is suggested when the reading typed is not a
-// word, or when the candidate, with the connection to the words around it, is much more likely than the word typed.
+// word, or when the candidate, with the connection from the word before, is more likely than the word typed by
+// `margin`.
 std::optional<TypoCandidate> SuggestTypoCorrection(std::u16string_view keys, const RomajiTable& table,
                                                    const SystemDictionary& dictionary,
-                                                   std::optional<std::uint16_t> previous_right_id = std::nullopt);
-
-// How much more likely than the word typed a candidate must be (in cost) to be suggested.
-inline constexpr std::int32_t kTypoSuggestMargin = 1000;
+                                                   std::optional<std::uint16_t> previous_right_id = std::nullopt,
+                                                   std::int32_t margin = kTypoSuggestMargin);
 
 // Keys next to `key` on a US keyboard (letters and '-').
 std::u16string_view NeighbouringKeys(char16_t key);

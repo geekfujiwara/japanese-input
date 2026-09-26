@@ -96,13 +96,22 @@ std::vector<TypoCandidate> FindTypoCandidates(std::u16string_view keys, const Ro
             found->second = penalty;
         }
     };
+    // A key put at `at` of `variant` by the edit costs more when few people type it (c other than ch, q, x, l).
+    const auto put = [&add](std::u16string variant, std::size_t at, std::int32_t penalty) {
+        const char16_t key = variant[at];
+        const bool rare = key == u'q' || key == u'x' || key == u'l' ||
+                          (key == u'c' && (at + 1 >= variant.size() || variant[at + 1] != u'h'));
+        add(std::move(variant), rare ? penalty + kTypoRareKeySurcharge : penalty);
+    };
     const std::u16string typed(keys);
     for (std::size_t i = 0; i < typed.size(); ++i) {
-        add(typed.substr(0, i) + typed.substr(i + 1), kTypoKeyPenalty); // an extra key
+        // An extra key; a key pressed twice ("kaigii") is the most common.
+        const bool repeated = (i > 0 && typed[i - 1] == typed[i]) && (IsVowel(typed[i]) || typed[i] == u'-');
+        add(typed.substr(0, i) + typed.substr(i + 1), repeated ? kTypoLikelyPenalty : kTypoKeyPenalty);
         std::u16string replaced = typed;
         for (const char16_t neighbour : NeighbouringKeys(typed[i])) {
             replaced[i] = neighbour;
-            add(replaced, kTypoKeyPenalty);
+            put(replaced, i, kTypoKeyPenalty);
         }
         for (const char16_t similar : SimilarKeys(typed[i])) {
             replaced[i] = similar;
@@ -124,7 +133,7 @@ std::vector<TypoCandidate> FindTypoCandidates(std::u16string_view keys, const Ro
                 for (const std::u16string_view keys_like : {NeighbouringKeys(typed[i]), SimilarKeys(typed[i])}) {
                     for (const char16_t other : keys_like) {
                         doubled[i] = doubled[i + 1] = other;
-                        add(doubled, kTypoSoundPenalty);
+                        put(doubled, i, kTypoSoundPenalty);
                     }
                 }
             }
@@ -132,7 +141,18 @@ std::vector<TypoCandidate> FindTypoCandidates(std::u16string_view keys, const Ro
     }
     for (std::size_t i = 0; i <= typed.size(); ++i) {
         for (const char16_t missing : kInsertableKeys) {
-            add(typed.substr(0, i) + missing + typed.substr(i), kTypoKeyPenalty);
+            put(typed.substr(0, i) + missing + typed.substr(i), i, kTypoKeyPenalty);
+        }
+        // A long vowel left out ("ryoko" for "ryokou", "sense" for "sensei"), and ん before a な-row kana
+        // ("konichiha"), which takes two n.
+        if (i > 0 && (typed[i - 1] == u'o' || typed[i - 1] == u'u')) {
+            add(typed.substr(0, i) + u'u' + typed.substr(i), kTypoLikelyPenalty);
+        }
+        if (i > 0 && typed[i - 1] == u'e') {
+            add(typed.substr(0, i) + u'i' + typed.substr(i), kTypoLikelyPenalty);
+        }
+        if (i + 1 < typed.size() && typed[i] == u'n' && (i == 0 || typed[i - 1] != u'n')) {
+            add(typed.substr(0, i) + u"nn" + typed.substr(i), kTypoKeyPenalty);
         }
     }
     variants.erase(typed);
@@ -145,6 +165,10 @@ std::vector<TypoCandidate> FindTypoCandidates(std::u16string_view keys, const Ro
             continue;
         }
         for (const DictionaryEntry& entry : dictionary.Lookup(reading)) {
+            // Particles and endings are not what a slipped key usually meant.
+            if (dictionary.word_type(entry.left_id) != WordType::Content) {
+                continue;
+            }
             TypoCandidate candidate{variant, reading, std::u16string(entry.surface), entry.cost + penalty,
                                     entry.left_id, entry.right_id};
             const auto found = by_surface.find(candidate.surface);
@@ -171,32 +195,32 @@ std::vector<TypoCandidate> FindTypoCandidates(std::u16string_view keys, const Ro
 
 std::optional<TypoCandidate> SuggestTypoCorrection(std::u16string_view keys, const RomajiTable& table,
                                                    const SystemDictionary& dictionary,
-                                                   std::optional<std::uint16_t> previous_right_id)
+                                                   std::optional<std::uint16_t> previous_right_id,
+                                                   std::int32_t margin)
 {
     const std::uint16_t previous = previous_right_id.value_or(dictionary.bos_id());
-    const auto standalone = [&](std::uint16_t left, std::uint16_t right, std::int32_t cost) {
-        return dictionary.ConnectionCost(previous, left) + cost + dictionary.ConnectionCost(right, dictionary.eos_id());
+    const auto score_of = [&](std::uint16_t left, std::int32_t cost) {
+        return dictionary.ConnectionCost(previous, left) + cost;
     };
     std::optional<std::int32_t> typed_score;
     for (const DictionaryEntry& entry : dictionary.Lookup(ToKana(keys, table))) {
-        const std::int32_t score = standalone(entry.left_id, entry.right_id, entry.cost);
+        const std::int32_t score = score_of(entry.left_id, entry.cost);
         typed_score = typed_score ? std::min(*typed_score, score) : score;
     }
 
     std::optional<TypoCandidate> best;
     std::int32_t best_score = 0;
     for (TypoCandidate& candidate : FindTypoCandidates(keys, table, dictionary, kCandidatesToScore)) {
-        // Inflection fragments (出しゃ) and particles are not what a slipped key usually meant.
-        if (candidate.reading.size() < 2 || dictionary.word_type(candidate.left_id) != WordType::Content) {
+        if (candidate.reading.size() < 2) {
             continue;
         }
-        const std::int32_t score = standalone(candidate.left_id, candidate.right_id, candidate.cost);
+        const std::int32_t score = score_of(candidate.left_id, candidate.cost);
         if (!best || score < best_score) {
             best_score = score;
             best = std::move(candidate);
         }
     }
-    if (best && typed_score && best_score + kTypoSuggestMargin >= *typed_score) {
+    if (best && typed_score && best_score + margin >= *typed_score) {
         return std::nullopt;
     }
     return best;

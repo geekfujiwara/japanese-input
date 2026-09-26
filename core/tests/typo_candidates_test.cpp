@@ -33,6 +33,8 @@ protected:
         builder.Add({u"いんたーねっと", u"インターネット", 1, 1, 0, 500});
         builder.Add({u"しりょう", u"資料", 1, 1, 0, 300});
         builder.Add({u"しちょう", u"市長", 1, 1, 0, 350});
+        builder.Add({u"りょこう", u"旅行", 1, 1, 0, 400});
+        builder.Add({u"こんにちは", u"こんにちは", 1, 1, 0, 300});
         bytes_ = builder.Build();
         dictionary_ = SystemDictionary::Open(bytes_);
         ASSERT_TRUE(dictionary_);
@@ -108,10 +110,21 @@ TEST_F(TypoCandidatesTest, SuggestsWhenTheReadingIsNotAWord)
 
 TEST_F(TypoCandidatesTest, SkipsFragmentsAndParticles)
 {
-    ASSERT_EQ(Find(u"renrako").at(0).surface, u"連だこ") << "the fragment is the cheapest candidate";
+    for (const TypoCandidate& candidate : Find(u"renrako")) {
+        EXPECT_NE(candidate.surface, u"連だこ") << "a suffix, though the cheapest";
+    }
     const std::optional<TypoCandidate> suggested = Suggest(u"renrako");
     ASSERT_TRUE(suggested);
     EXPECT_EQ(suggested->surface, u"連絡");
+}
+
+TEST_F(TypoCandidatesTest, PrefersTheMostCommonSlips)
+{
+    EXPECT_EQ(Find(u"kaigisituu").at(0).cost, 500 + kTypoLikelyPenalty) << "a vowel pressed twice";
+    EXPECT_EQ(Find(u"ryoko").at(0).surface, u"旅行");
+    EXPECT_EQ(Find(u"ryoko").at(0).cost, 400 + kTypoLikelyPenalty) << "a long vowel left out";
+    EXPECT_EQ(Find(u"konichiha").at(0).surface, u"こんにちは") << "ん before に takes nn";
+    EXPECT_EQ(Find(u"yu-za").at(0).cost, 300 + kTypoKeyPenalty);
 }
 
 TEST_F(TypoCandidatesTest, SuggestsOverAWordOnlyWhenMuchMoreLikely)

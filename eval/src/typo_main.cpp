@@ -203,7 +203,8 @@ int main(int argc, char** argv)
             }
         }
         if (frequent_count > 0 && reading.size() >= 2 && reading.size() <= 8 && IsHiraganaWord(reading) &&
-            entry.surface != reading && dictionary->word_type(entry.left_id) == astelio::WordType::Content) {
+            !IsHiraganaWord(entry.surface.substr(entry.surface.size() - 1)) &&
+            dictionary->word_type(entry.left_id) == astelio::WordType::Content) {
             frequent.push_back({std::u16string(reading), std::u16string(entry.surface), entry.cost});
         }
     });
@@ -218,6 +219,12 @@ int main(int argc, char** argv)
     };
 
     std::string json = "{\"entries\": [\n";
+    // The same scores with other margins, to choose kTypoSuggestMargin.
+    constexpr std::int32_t kMargins[] = {0, 250, 500, 750, 1000, 1500};
+    constexpr std::size_t kMarginCount = std::size(kMargins);
+    std::size_t sweep_hits[kMarginCount] = {};
+    std::size_t sweep_false[kMarginCount] = {};
+    std::size_t sweep_frequent_false[kMarginCount] = {};
     std::vector<long long> micros;
     std::size_t typos = 0;
     std::size_t hits = 0;
@@ -265,9 +272,19 @@ int main(int argc, char** argv)
         micros.push_back(
             std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - started).count());
         const std::vector<astelio::TypoCandidate> candidates = astelio::FindTypoCandidates(keys, table, *dictionary, 20);
+        for (std::size_t m = 0; m < kMarginCount; ++m) {
+            const std::optional<astelio::TypoCandidate> other =
+                astelio::SuggestTypoCorrection(keys, table, *dictionary, previous, kMargins[m]);
+            if (fields[0] == "typo" && other && is_expected(other->surface)) {
+                ++sweep_hits[m];
+            } else if (fields[0] == "correct" && other) {
+                ++sweep_false[m];
+            }
+        }
 
         const std::vector<astelio::DictionaryEntry> typed = dictionary->Lookup(reading);
         const std::string typed_text = Utf8(typed.empty() ? reading : std::u16string(typed.front().surface));
+        const std::string typed_cost = typed.empty() ? std::string("—") : std::to_string(typed.front().cost);
         const std::string suggested_text = suggestion ? Utf8(suggestion->surface) : std::string("（なし）");
         if (fields[0] == "typo") {
             ++typos;
@@ -282,6 +299,10 @@ int main(int argc, char** argv)
                 misses << "| " << number << " | typo | " << fields[1] << " | `" << Utf8(keys) << "` " << Utf8(reading)
                        << " | " << fields[4] << " | " << suggested_text << " | " << typed_text << " | "
                        << (rank == candidates.end() ? std::string("—") : std::to_string(rank - candidates.begin() + 1))
+                       << " | " << typed_cost << " / "
+                       << (rank == candidates.end() ? std::string("—") : std::to_string(rank->cost)) << " / "
+                       << (candidates.empty() ? std::string("—") : Utf8(candidates.front().surface) + " " +
+                                                                        std::to_string(candidates.front().cost))
                        << " |\n";
             }
         } else {
@@ -290,7 +311,8 @@ int main(int argc, char** argv)
                 ++false_suggestions;
                 misses << "| " << number << " | correct | " << fields[1] << " | `" << Utf8(keys) << "` "
                        << Utf8(reading) << " | " << fields[4] << " | " << suggested_text << " | " << typed_text
-                       << " | — |\n";
+                       << " | — | " << typed_cost << " / — / " << Utf8(suggestion->surface) << ' ' << suggestion->cost
+                       << " |\n";
             }
         }
 
@@ -331,13 +353,19 @@ int main(int argc, char** argv)
             continue;
         }
         ++frequent_checked;
+        for (std::size_t m = 0; m < kMarginCount; ++m) {
+            if (astelio::SuggestTypoCorrection(keys, table, *dictionary, std::nullopt, kMargins[m])) {
+                ++sweep_frequent_false[m];
+            }
+        }
         const std::optional<astelio::TypoCandidate> suggestion =
             astelio::SuggestTypoCorrection(keys, table, *dictionary);
         if (suggestion) {
             ++frequent_false;
             if (frequent_false <= 30) {
                 frequent_misses << "| `" << Utf8(keys) << "` " << Utf8(word.reading) << " | " << Utf8(word.surface)
-                                << " | " << Utf8(suggestion->surface) << " |\n";
+                                << ' ' << word.cost << " | " << Utf8(suggestion->surface) << ' ' << suggestion->cost
+                                << " |\n";
             }
         }
     }
@@ -358,10 +386,18 @@ int main(int argc, char** argv)
            << "| よく使う語への誤提案率 | " << Percent(frequent_false, frequent_checked) << "% (" << frequent_false << "/"
            << frequent_checked << ") |\n"
            << "| 提案の時間 p50 / p95 | " << p50 << " / " << p95 << " µs |\n\n";
+    report << "<details><summary>判定の余裕（打った語があるとき）ごとの比較（現在 " << astelio::kTypoSuggestMargin
+           << "）</summary>\n\n| 余裕 | 的中率 | 正しい読みへの誤提案率 | よく使う語への誤提案率 |\n| ---: | ---: | ---: | ---: |\n";
+    for (std::size_t m = 0; m < kMarginCount; ++m) {
+        report << "| " << kMargins[m] << " | " << Percent(sweep_hits[m], typos) << "% | "
+               << Percent(sweep_false[m], corrects) << "% | " << Percent(sweep_frequent_false[m], frequent_checked)
+               << "% |\n";
+    }
+    report << "\n</details>\n\n";
     if (!misses.str().empty()) {
         report << "<details><summary>外した例</summary>\n\n"
-               << "| 行 | 種類 | 前の文脈 | 打ったキー | 意図 | 提案 | 打った語 | 候補での順位 |\n"
-               << "| ---: | --- | --- | --- | --- | --- | --- | ---: |\n"
+               << "| 行 | 種類 | 前の文脈 | 打ったキー | 意図 | 提案 | 打った語 | 候補での順位 | コスト（打った語 / 正解 / 先頭） |\n"
+               << "| ---: | --- | --- | --- | --- | --- | --- | ---: | --- |\n"
                << misses.str() << "\n</details>\n\n";
     }
     if (!frequent_misses.str().empty()) {
