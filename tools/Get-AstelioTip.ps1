@@ -47,4 +47,6 @@ if (Test-Path $Path) {
 if ($LASTEXITCODE -ne 0) {
     throw 'Download failed.'
 }
+# Register-AstelioTip.ps1 shows which build it installs.
+Set-Content -LiteralPath (Join-Path $Path 'build.txt') -Value "main $sha" -Encoding utf8
 Write-Host "Downloaded the build of main $($sha.Substring(0, 7)) to $Path"
