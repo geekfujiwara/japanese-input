@@ -110,7 +110,7 @@ jobs:
       - name: Build the dictionary tool
         run: |
           cmake -S . -B build/dictionary -DCMAKE_BUILD_TYPE=Release -DASTELIO_BUILD_TESTS=OFF
-          cmake --build build/dictionary --target astelio_dicbuild astelio_eval astelio_typo
+          cmake --build build/dictionary --target astelio_dicbuild astelio_eval astelio_typo astelio_bench
       - name: Build the system dictionary
         run: |
           mkdir -p build/dictionary/out
@@ -138,6 +138,10 @@ jobs:
         run: |
           build/dictionary/eval/astelio_typo build/dictionary/out/system.dic eval/typo/typo.tsv \
             --frequent 500 --synthetic 400 --baseline eval/typo-baseline.tsv --report "$GITHUB_STEP_SUMMARY"
+      - name: Measure the performance (P-01 to P-04)
+        run: |
+          build/dictionary/eval/astelio_bench build/dictionary/out/system.dic --report "$GITHUB_STEP_SUMMARY" \
+            eval/corpus/*.tsv
       - name: Upload the accuracy misses
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
