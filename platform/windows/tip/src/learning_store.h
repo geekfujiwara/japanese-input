@@ -21,4 +21,7 @@ std::uint64_t LearningFileStamp();
 bool LearningEnabled();
 void SetLearningEnabled(bool enabled);
 
+// B-14: whether もしかして words are offered (TypoSuggestions under the same key; on unless set to 0).
+bool TypoSuggestionsEnabled();
+
 } // namespace astelio::tip

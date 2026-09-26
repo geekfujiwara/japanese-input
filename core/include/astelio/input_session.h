@@ -10,6 +10,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <functional>
+#include <optional>
 #include <string>
 #include <utility>
 #include <vector>
@@ -77,6 +78,17 @@ public:
     // Whether candidate `index` of `segment` is shown because it was chosen before (marked in the window).
     bool IsLearnedCandidate(std::size_t segment, std::size_t index) const;
 
+    // B-14: a word the user may have meant when a key slipped is added as the second candidate of a segment
+    // (shown as もしかして). On by default.
+    void SetTypoSuggestions(bool enabled) { typo_suggestions_ = enabled; }
+    bool IsTypoCandidate(std::size_t segment, std::size_t index) const;
+    // Longer words are not searched for slips (it takes about 0.1 ms per key).
+    static constexpr std::size_t kMaxTypoKeys = 24;
+
+    // T-B02-5: the last word committed is the context of the next conversion. The platform layer calls this
+    // when the caret may have moved (keys the IME does not handle, focus changes).
+    void ResetContext() { context_right_id_.reset(); }
+
     bool JapaneseMode() const { return japanese_mode_; }
     // Leaving Japanese mode commits the uncommitted text.
     SessionOutput SetJapaneseMode(bool enabled);
@@ -139,6 +151,7 @@ private:
     // Records the choices, then returns the text to commit and ends the conversion.
     std::u16string CommitConversion(SessionOutput& output);
     void ApplyLearning(std::size_t segment);
+    void AddTypoSuggestions();
     bool ForgetSelectedCandidate();
     void EndConversion();
 
@@ -155,6 +168,9 @@ private:
     std::vector<ConvertedSegment> segments_;
     // The candidates of each segment before the history reordered them.
     std::vector<std::vector<std::u16string>> base_candidates_;
+    bool typo_suggestions_ = true;
+    std::vector<std::u16string> typo_surfaces_; // per segment; empty when there is no suggestion
+    std::optional<std::uint16_t> context_right_id_;
     std::vector<std::size_t> selected_;
     std::size_t focus_ = 0;
     bool candidate_list_visible_ = false;

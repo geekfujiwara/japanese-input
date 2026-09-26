@@ -133,12 +133,14 @@ std::vector<std::u16string> Converter::Predict(std::u16string_view reading, std:
 }
 
 std::vector<ConvertedSegment> Converter::Convert(std::u16string_view reading,
-                                                 std::span<const std::size_t> fixed_lengths) const
+                                                 std::span<const std::size_t> fixed_lengths,
+                                                 std::optional<std::uint16_t> previous_right_id) const
 {
     const std::size_t n = reading.size();
     if (n == 0) {
         return {};
     }
+    const std::uint16_t start = previous_right_id.value_or(dictionary_.bos_id());
 
     std::vector<bool> forced(n + 1, false);
     std::size_t fixed_end = 0;
@@ -218,7 +220,7 @@ std::vector<ConvertedSegment> Converter::Convert(std::u16string_view reading,
         for (; i < nodes.size() && nodes[i].begin == begin; ++i) {
             Node& node = nodes[i];
             if (begin == 0) {
-                node.best = dictionary_.ConnectionCost(dictionary_.bos_id(), node.left) + node.cost;
+                node.best = dictionary_.ConnectionCost(start, node.left) + node.cost;
             } else {
                 for (const std::int32_t head : heads) {
                     const std::int32_t total =
@@ -285,7 +287,7 @@ std::vector<ConvertedSegment> Converter::Convert(std::u16string_view reading,
         for (std::size_t k = tail; k < end; ++k) {
             tail_text += path[k]->surface;
         }
-        const std::uint16_t previous_right = first == 0 ? dictionary_.bos_id() : path[first - 1]->right;
+        const std::uint16_t previous_right = first == 0 ? start : path[first - 1]->right;
         const std::uint16_t after_segment = end < path.size() ? path[end]->left : dictionary_.eos_id();
         const std::uint16_t after_head = tail < end ? path[tail]->left : after_segment;
 
@@ -295,6 +297,9 @@ std::vector<ConvertedSegment> Converter::Convert(std::u16string_view reading,
                    dictionary_.ConnectionCost(entry.right_id, next_left);
         };
         const std::size_t head_end = path[tail - 1]->end;
+        segment.head_length = head_end - begin;
+        segment.tail = tail_text;
+        segment.right_id = path[end - 1]->right;
         for (const DictionaryEntry& entry : dictionary_.Lookup(reading.substr(begin, head_end - begin))) {
             scored.emplace_back(score(entry, after_head), std::u16string(entry.surface) + tail_text);
         }

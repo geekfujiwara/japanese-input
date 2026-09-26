@@ -20,9 +20,11 @@ constexpr float kRightPadding = 16.0f;
 constexpr float kFooterHeight = 22.0f;
 constexpr float kMinWidth = 140.0f;
 constexpr float kMaxTextWidth = 480.0f;
-// The history mark (a clock) at the end of learned rows.
+// The history mark (a clock) at the end of learned rows, and the もしかして label at the end of a typo row.
 constexpr float kMarkWidth = 20.0f;
 constexpr wchar_t kHistoryMark[] = L"\u23F2";
+constexpr float kTypoLabelWidth = 64.0f;
+constexpr wchar_t kTypoLabel[] = L"\u3082\u3057\u304B\u3057\u3066";
 // Ctrl+Del 履歴から削除
 constexpr wchar_t kForgetHint[] = L"Ctrl+Del \u5C65\u6B74\u304B\u3089\u524A\u9664";
 constexpr float kHintWidth = 150.0f;
@@ -68,11 +70,13 @@ SIZE CandidateWindow::MeasureDips()
             }
         }
     }
-    bool any_learned = false;
+    float mark_width = 0.0f;
     for (std::size_t i = page_begin_; i < page_end_; ++i) {
-        any_learned = any_learned || Learned(i);
+        mark_width = std::max(mark_width, MarkOf(i) == Mark::Typo      ? kTypoLabelWidth
+                                          : MarkOf(i) == Mark::Learned ? kMarkWidth
+                                                                       : 0.0f);
     }
-    float width = std::max(kMinWidth, kTextLeft + widest + kRightPadding + (any_learned ? kMarkWidth : 0.0f));
+    float width = std::max(kMinWidth, kTextLeft + widest + kRightPadding + mark_width);
     if (has_selection_ && Learned(selected_)) {
         width = std::max(width, kPadding * 2 + kHintWidth + 60.0f);
     }
@@ -81,14 +85,14 @@ SIZE CandidateWindow::MeasureDips()
 }
 
 void CandidateWindow::Show(const std::vector<std::u16string>& candidates, std::size_t selected, const RECT& anchor,
-                          const std::vector<bool>& learned)
+                          const std::vector<Mark>& marks)
 {
     if (candidates.empty() || !EnsureFormats()) {
         Hide();
         return;
     }
     candidates_ = candidates;
-    learned_ = learned;
+    marks_ = marks;
     has_selection_ = selected != kNoSelection;
     selected_ = has_selection_ ? std::min(selected, candidates_.size() - 1) : 0;
     constexpr std::size_t kPage = 9;
@@ -115,15 +119,20 @@ void CandidateWindow::Render(ID2D1RenderTarget* target, ID2D1SolidColorBrush* br
                           D2D1::RectF(kPadding + kNumberLeft, top, kTextLeft, top + kRowHeight), brush);
         brush->SetColor(selected ? palette.highlight_text : palette.text);
         const std::u16string& text = candidates_[i];
-        const float mark = Learned(i) ? kMarkWidth : 0.0f;
+        const Mark row_mark = MarkOf(i);
+        const float mark = row_mark == Mark::Typo ? kTypoLabelWidth : row_mark == Mark::Learned ? kMarkWidth : 0.0f;
         target->DrawTextW(Wide(text), static_cast<UINT32>(text.size()), text_format_.Get(),
                           D2D1::RectF(kTextLeft, top, width - kRightPadding / 2 - mark, top + kRowHeight), brush,
                           D2D1_DRAW_TEXT_OPTIONS_CLIP | D2D1_DRAW_TEXT_OPTIONS_ENABLE_COLOR_FONT);
-        if (Learned(i)) {
+        if (row_mark != Mark::None) {
+            const wchar_t* label = row_mark == Mark::Typo ? kTypoLabel : kHistoryMark;
+            const UINT32 length = row_mark == Mark::Typo ? static_cast<UINT32>(std::size(kTypoLabel) - 1) : 1;
             brush->SetColor(selected ? palette.highlight_text : palette.secondary);
-            target->DrawTextW(kHistoryMark, 1, small_format_.Get(),
-                              D2D1::RectF(width - kPadding - kMarkWidth, top, width - kPadding, top + kRowHeight),
+            small_format_->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_TRAILING);
+            target->DrawTextW(label, length, small_format_.Get(),
+                              D2D1::RectF(width - kPadding - mark, top, width - kPadding - 4.0f, top + kRowHeight),
                               brush);
+            small_format_->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_LEADING);
         }
     }
     const std::wstring footer = has_selection_

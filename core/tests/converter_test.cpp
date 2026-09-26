@@ -110,6 +110,33 @@ TEST_F(ConverterTest, SegmentCandidatesReplaceTheHeadAndKeepTheParticle)
     ASSERT_EQ(segments.size(), 2u);
     EXPECT_EQ(segments[0].candidates,
               (std::vector<std::u16string>{u"私は", u"渡しは", u"わたしは", u"ワタシハ"}));
+    EXPECT_EQ(segments[0].head_length, 3u) << "わたし";
+    EXPECT_EQ(segments[0].tail, u"は");
+    EXPECT_EQ(segments[1].right_id, kAuxiliary) << "the last word of the best candidate: です";
+}
+
+// T-B02-5: the word committed before (its right id) is the context of the next conversion.
+TEST(ConverterContext, ThePreviousWordChangesTheBestCandidate)
+{
+    constexpr std::uint16_t kIdCount = 4; // edge, noun, particle, verb
+    astelio::ConnectionMatrix matrix;
+    matrix.size = kIdCount;
+    matrix.costs.assign(kIdCount * kIdCount, 1000);
+    matrix.word_types = {WordType::Edge, WordType::Content, WordType::Suffix, WordType::Content};
+    matrix.unknown_id = kNoun;
+    matrix.costs[kEdge * kIdCount + kVerb] = 0;         // a sentence often starts with a verb here
+    matrix.costs[kParticle * kIdCount + kNoun] = 0;     // after a particle, a noun
+    astelio::DictionaryBuilder builder(std::move(matrix));
+    ASSERT_TRUE(builder.Add({u"かえる", u"蛙", kNoun, kNoun, 0, 400}));
+    ASSERT_TRUE(builder.Add({u"かえる", u"帰る", kVerb, kVerb, 0, 300}));
+    const std::vector<std::byte> bytes = builder.Build();
+    const std::optional<astelio::SystemDictionary> dictionary = astelio::SystemDictionary::Open(bytes);
+    ASSERT_TRUE(dictionary);
+    const astelio::Converter converter(*dictionary);
+
+    EXPECT_EQ(converter.Convert(u"かえる").at(0).candidates.at(0), u"帰る");
+    EXPECT_EQ(converter.Convert(u"かえる", {}, kParticle).at(0).candidates.at(0), u"蛙");
+    EXPECT_EQ(converter.Convert(u"かえる", {}, kParticle).at(0).right_id, kNoun);
 }
 
 TEST_F(ConverterTest, PrefixesStayInTheSegmentOfTheirWord)
