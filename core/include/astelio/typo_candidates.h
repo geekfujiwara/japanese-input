@@ -31,8 +31,9 @@ inline constexpr std::int32_t kTypoSoundPenalty = 400;
 inline constexpr std::int32_t kTypoLikelyPenalty = 150;
 // Added when the edit needs a key few people type in romaji (c other than ch, q, x, l).
 inline constexpr std::int32_t kTypoRareKeySurcharge = 200;
-// How much more likely than the word typed a candidate must be (in cost) to be suggested.
-inline constexpr std::int32_t kTypoSuggestMargin = 1000;
+// How much more likely than the word typed a candidate must be (in cost) to be suggested. Chosen with the margin
+// table of astelio_typo: 500 keeps both false suggestion rates at 0 (2026-09-26).
+inline constexpr std::int32_t kTypoSuggestMargin = 500;
 
 // Words (content words only) whose whole reading is reached from `keys` by one of the edits above, cheapest
 // first, one per surface. The reading typed as is never appears.
