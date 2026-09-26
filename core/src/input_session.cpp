@@ -26,7 +26,7 @@ SessionOutput InputSession::SetJapaneseMode(bool enabled)
     }
     japanese_mode_ = enabled;
     predictions_.clear();
-    context_right_id_.reset();
+    ResetContext();
     return output;
 }
 
@@ -36,7 +36,7 @@ void InputSession::AbandonComposition()
     composer_.Clear();
     EndConversion();
     predictions_.clear();
-    context_right_id_.reset();
+    ResetContext();
 }
 
 std::u16string InputSession::CompositionText() const
@@ -216,7 +216,7 @@ SessionOutput InputSession::HandleComposition(const KeyEvent& key)
         break;
     case KeyKind::Enter:
         output.commit = composer_.Commit();
-        context_right_id_.reset();
+        ResetContext();
         break;
     case KeyKind::Escape:
         composer_.Clear();
@@ -352,6 +352,7 @@ SessionOutput InputSession::HandleConversion(const KeyEvent& key)
             chosen.push_back(segments_[i].candidates[selected_[i]]);
         }
         Convert(std::move(fixed));
+        segments_resized_ = true;
         for (std::size_t i = 0; i < chosen.size() && i < segments_.size(); ++i) {
             const std::vector<std::u16string>& candidates = segments_[i].candidates;
             for (std::size_t c = 0; c < candidates.size(); ++c) {
@@ -392,6 +393,14 @@ SessionOutput InputSession::HandleConversion(const KeyEvent& key)
 
 void InputSession::Convert(std::vector<std::size_t> fixed_lengths)
 {
+    // T-D04-2: a reading split by hand before is split the same way.
+    segments_learned_ = false;
+    if (fixed_lengths.empty() && learning_ != nullptr) {
+        if (std::optional<std::vector<std::size_t>> learned = learning_->Segmentation(reading_)) {
+            fixed_lengths = std::move(*learned);
+            segments_learned_ = true;
+        }
+    }
     segments_ = converter_->Convert(reading_, fixed_lengths, context_right_id_);
     // A slipped key often leaves text the dictionary splits into pieces ("ゆーあー"); when the whole input is a
     // word one slip away, keep it as one segment so the word can be offered for all of it.
@@ -468,7 +477,7 @@ bool InputSession::IsTypoCandidate(std::size_t segment, std::size_t index) const
            segments_[segment].candidates[index] == typo_surfaces_[segment];
 }
 
-// The surfaces chosen before for the segment's reading come first, most recent first.
+// The surfaces chosen before come first: after the same word before, then for the reading, most recent first.
 void InputSession::ApplyLearning(std::size_t segment)
 {
     if (segment >= base_candidates_.size()) {
@@ -476,7 +485,12 @@ void InputSession::ApplyLearning(std::size_t segment)
     }
     std::vector<std::u16string> candidates;
     if (learning_ != nullptr && !predicting_) {
-        candidates = learning_->Conversions(segments_[segment].reading);
+        candidates = learning_->Pairs(SegmentContext(segment), segments_[segment].reading);
+        for (std::u16string& surface : learning_->Conversions(segments_[segment].reading)) {
+            if (std::find(candidates.begin(), candidates.end(), surface) == candidates.end()) {
+                candidates.push_back(std::move(surface));
+            }
+        }
     }
     for (const std::u16string& candidate : base_candidates_[segment]) {
         if (std::find(candidates.begin(), candidates.end(), candidate) == candidates.end()) {
@@ -492,8 +506,21 @@ bool InputSession::IsLearnedCandidate(std::size_t segment, std::size_t index) co
         return false;
     }
     const std::u16string& surface = segments_[segment].candidates[index];
-    return predicting_ ? learning_->Contains(LearningHistory::Kind::Prediction, segments_[segment].reading, surface)
-                       : learning_->Contains(LearningHistory::Kind::Conversion, segments_[segment].reading, surface);
+    if (predicting_) {
+        return learning_->Contains(LearningHistory::Kind::Prediction, segments_[segment].reading, surface);
+    }
+    return learning_->Contains(LearningHistory::Kind::Conversion, segments_[segment].reading, surface) ||
+           learning_->Contains(LearningHistory::Kind::Pair, segments_[segment].reading, surface,
+                               SegmentContext(segment));
+}
+
+std::u16string InputSession::SegmentContext(std::size_t segment) const
+{
+    if (segment == 0) {
+        return previous_surface_;
+    }
+    return segment - 1 < selected_.size() ? segments_[segment - 1].candidates[selected_[segment - 1]]
+                                          : std::u16string();
 }
 
 bool InputSession::ForgetSelectedCandidate()
@@ -510,6 +537,8 @@ bool InputSession::ForgetSelectedCandidate()
         removed = learning_->Remove(LearningHistory::Kind::Conversion, segment.reading, surface) || removed;
     } else {
         removed = learning_->Remove(LearningHistory::Kind::Conversion, segment.reading, surface);
+        removed = learning_->Remove(LearningHistory::Kind::Pair, segment.reading, surface, SegmentContext(focus_)) ||
+                  removed;
     }
     if (!removed) {
         return false;
@@ -541,12 +570,33 @@ std::u16string InputSession::CommitConversion(SessionOutput& output)
             // Learn a choice that differs from the dictionary's first candidate, and refresh one learned before.
             const bool differs = i < base_candidates_.size() && !base_candidates_[i].empty() &&
                                  base_candidates_[i].front() != chosen;
-            if ((differs || !learning_->Conversions(segment.reading).empty()) &&
-                learning_->Record(LearningHistory::Kind::Conversion, segment.reading, chosen)) {
+            const std::u16string context = SegmentContext(i);
+            if (!differs && learning_->Conversions(segment.reading).empty() &&
+                learning_->Pairs(context, segment.reading).empty()) {
+                continue;
+            }
+            if (learning_->Record(LearningHistory::Kind::Conversion, segment.reading, chosen)) {
+                output.learning_changed = true;
+            }
+            // D-04: the pair of words, so the same reading after the same word gets the same choice.
+            if (!context.empty() &&
+                learning_->Record(LearningHistory::Kind::Pair, segment.reading, chosen, context)) {
+                output.learning_changed = true;
+            }
+        }
+        // T-D04-2: segments split by hand (or taken from the history) are kept for the reading.
+        if (!predicting_ && (segments_resized_ || segments_learned_)) {
+            std::vector<std::u16string> readings;
+            for (const ConvertedSegment& segment : segments_) {
+                readings.push_back(segment.reading);
+            }
+            if (learning_->Record(LearningHistory::Kind::Segmentation, reading_,
+                                  LearningHistory::JoinSegments(readings))) {
                 output.learning_changed = true;
             }
         }
     }
+    previous_surface_ = segments_.empty() ? std::u16string() : segments_.back().candidates[selected_.back()];
     // The next conversion continues from the last word, when it is the dictionary's best one (its id is known).
     context_right_id_.reset();
     if (!predicting_ && !segments_.empty() && base_candidates_.size() == segments_.size() &&
@@ -575,6 +625,8 @@ void InputSession::EndConversion()
     segments_.clear();
     base_candidates_.clear();
     typo_surfaces_.clear();
+    segments_resized_ = false;
+    segments_learned_ = false;
     selected_.clear();
     focus_ = 0;
     candidate_list_visible_ = false;

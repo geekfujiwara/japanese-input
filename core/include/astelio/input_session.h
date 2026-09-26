@@ -87,7 +87,11 @@ public:
 
     // T-B02-5: the last word committed is the context of the next conversion. The platform layer calls this
     // when the caret may have moved (keys the IME does not handle, focus changes).
-    void ResetContext() { context_right_id_.reset(); }
+    void ResetContext()
+    {
+        context_right_id_.reset();
+        previous_surface_.clear();
+    }
 
     bool JapaneseMode() const { return japanese_mode_; }
     // Leaving Japanese mode commits the uncommitted text.
@@ -151,6 +155,8 @@ private:
     // Records the choices, then returns the text to commit and ends the conversion.
     std::u16string CommitConversion(SessionOutput& output);
     void ApplyLearning(std::size_t segment);
+    // The word before segment `segment`: the previous segment as chosen, or the last word committed.
+    std::u16string SegmentContext(std::size_t segment) const;
     void AddTypoSuggestions();
     bool ForgetSelectedCandidate();
     void EndConversion();
@@ -171,6 +177,9 @@ private:
     bool typo_suggestions_ = true;
     std::vector<std::u16string> typo_surfaces_; // per segment; empty when there is no suggestion
     std::optional<std::uint16_t> context_right_id_;
+    std::u16string previous_surface_; // the last segment committed, for the pairs of words (D-04)
+    bool segments_resized_ = false;   // Shift+Left/Right changed the segments
+    bool segments_learned_ = false;   // the segments came from the history
     std::vector<std::size_t> selected_;
     std::size_t focus_ = 0;
     bool candidate_list_visible_ = false;

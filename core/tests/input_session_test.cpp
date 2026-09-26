@@ -503,6 +503,30 @@ TEST_F(ConversionTest, ChosenPredictionComesFirstAndCanBeForgotten)
     EXPECT_EQ(session_.Predictions().front(), u"ありがとう");
 }
 
+// T-D04-2: segments split by hand are split the same way the next time.
+TEST_F(ConversionTest, ResizedSegmentsAreLearned)
+{
+    LearningHistory history;
+    session_.SetLearning(&history);
+    Type(session_, u"watasihanihongodesu");
+    session_.Handle(Key(KeyKind::Space));
+    session_.Handle(Arrow(KeyKind::Left, true));
+    ASSERT_EQ(Readings(), (std::vector<std::u16string>{u"わたし", u"は", u"にほんごです"}));
+    EXPECT_TRUE(session_.Handle(Key(KeyKind::Enter)).learning_changed);
+    ASSERT_TRUE(history.Segmentation(u"わたしはにほんごです"));
+
+    Type(session_, u"watasihanihongodesu");
+    session_.Handle(Key(KeyKind::Space));
+    EXPECT_EQ(Readings(), (std::vector<std::u16string>{u"わたし", u"は", u"にほんごです"}));
+    EXPECT_EQ(session_.CompositionText(), u"私は日本語です");
+    session_.Handle(Key(KeyKind::Escape));
+    session_.Handle(Key(KeyKind::Escape));
+
+    Type(session_, u"watasiha");
+    session_.Handle(Key(KeyKind::Space));
+    EXPECT_EQ(Readings(), (std::vector<std::u16string>{u"わたしは"})) << "only the same reading";
+}
+
 // A dictionary where the word before decides: 帰る at the start, 蛙 after a particle.
 class ContextTest : public ::testing::Test {
 protected:
@@ -589,6 +613,36 @@ TEST_F(ContextTest, TypoSuggestionIsTheSecondCandidate)
             EXPECT_NE(session_.Segments()[i].candidates[c], u"ユーザー") << "off in the settings";
         }
     }
+}
+
+// T-D04-4: after the same word, the same reading gets the choice made after it, whatever was chosen elsewhere.
+TEST_F(ContextTest, PairsOfWordsAreLearned)
+{
+    LearningHistory history;
+    session_.SetLearning(&history);
+    EXPECT_EQ(ConvertAndCommit(u"ha"), u"は");
+    Type(session_, u"kaeru");
+    session_.Handle(Key(KeyKind::Space));
+    ASSERT_EQ(session_.CompositionText(), u"蛙") << "a noun after the particle";
+    session_.Handle(Key(KeyKind::Space));
+    ASSERT_EQ(session_.CompositionText(), u"帰る");
+    EXPECT_TRUE(session_.Handle(Key(KeyKind::Enter)).learning_changed);
+    EXPECT_TRUE(history.Contains(LearningHistory::Kind::Pair, u"かえる", u"帰る", u"は"));
+
+    session_.ResetContext();
+    Type(session_, u"kaeru");
+    session_.Handle(Key(KeyKind::Space));
+    session_.Handle(Key(KeyKind::Space));
+    ASSERT_EQ(session_.CompositionText(), u"蛙");
+    session_.Handle(Key(KeyKind::Enter)); // 蛙 is now the most recent choice for かえる
+    ASSERT_EQ(history.Conversions(u"かえる").front(), u"蛙");
+
+    session_.ResetContext();
+    EXPECT_EQ(ConvertAndCommit(u"ha"), u"は");
+    Type(session_, u"kaeru");
+    session_.Handle(Key(KeyKind::Space));
+    EXPECT_EQ(session_.CompositionText(), u"帰る") << "the pair wins after は";
+    EXPECT_TRUE(session_.IsLearnedCandidate(0, 0));
 }
 
 } // namespace
