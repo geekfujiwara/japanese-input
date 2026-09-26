@@ -1,0 +1,14 @@
+{
+  "version": 1,
+  "words": [
+    {"reading": "あすてりお", "surface": "Astelio", "pos": "固有名詞", "comment": "入力システムの名前"},
+    {"reading": "ふじわら", "surface": "藤原", "pos": "人名", "comment": ""},
+    {"reading": "よこはま", "surface": "横浜", "pos": "地名"},
+    {"reading": "あすてりおぶ", "surface": "Astelio部", "pos": "組織", "comment": ""},
+    {"reading": "おつ", "surface": "お疲れさまです", "pos": "短縮よみ", "comment": "あいさつ"},
+    {"reading": "やじるし", "surface": "\u2192", "pos": "記号", "comment": ""},
+    {"reading": "", "surface": "鰐", "pos": "抑制単語", "comment": "どの読みでも出さない"},
+    {"surface": "\"引用\"\\です", "reading": "かっこ", "pos": "名詞", "comment": "", "extra": [1, {"a": null}, true]},
+    {"reading": "えもじ", "surface": "\ud83d\ude00", "pos": "記号", "comment": ""}
+  ]
+}
