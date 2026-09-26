@@ -34,7 +34,7 @@ jobs:
           build/tools/dictionary/tools/astelio_dicbuild import-azookey build/azookey/Dictionary build/words.tsv build/connection.tsv
           build/tools/dictionary/tools/astelio_dicbuild build build/connection.tsv build/system.dic build/words.tsv
       - name: Find the typo candidates
-        run: build/tools/eval/astelio_typo build/system.dic slm/corpus/typo.tsv candidates.json
+        run: build/tools/eval/astelio_typo build/system.dic eval/typo/typo.tsv --json candidates.json
       - name: Score the algorithms (no SLM)
         run: |
           mkdir -p results
