@@ -120,5 +120,71 @@ TEST(LearningHistory, ParseSkipsMalformedLines)
     EXPECT_TRUE(LearningHistory::Parse("\n\n\t\t\n").Empty());
 }
 
+// T-D04-4
+TEST(LearningHistory, PairsDependOnTheWordBefore)
+{
+    LearningHistory history;
+    EXPECT_TRUE(history.Record(Kind::Pair, u"はし", u"箸", u"お"));
+    EXPECT_TRUE(history.Record(Kind::Pair, u"はし", u"橋", u"川の"));
+    EXPECT_EQ(history.Pairs(u"お", u"はし"), (std::vector<std::u16string>{u"箸"}));
+    EXPECT_EQ(history.Pairs(u"川の", u"はし"), (std::vector<std::u16string>{u"橋"}));
+    EXPECT_TRUE(history.Pairs(u"", u"はし").empty());
+    EXPECT_TRUE(history.Conversions(u"はし").empty()) << "pairs are separate";
+    EXPECT_TRUE(history.Predictions(u"は", 5).empty());
+    EXPECT_FALSE(history.Record(Kind::Pair, u"はし", u"箸")) << "a pair needs the word before";
+    EXPECT_FALSE(history.Record(Kind::Conversion, u"はし", u"箸", u"お")) << "only pairs have a word before";
+    EXPECT_TRUE(history.Remove(Kind::Pair, u"はし", u"箸", u"お"));
+    EXPECT_TRUE(history.Pairs(u"お", u"はし").empty());
+}
+
+// T-D04-2
+TEST(LearningHistory, OneSegmentationPerReading)
+{
+    LearningHistory history;
+    EXPECT_EQ(LearningHistory::JoinSegments({u"わたし", u"は"}), u"わたし|は");
+    EXPECT_TRUE(history.Record(Kind::Segmentation, u"わたしは", u"わたし|は"));
+    EXPECT_EQ(history.Segmentation(u"わたしは"), (std::vector<std::size_t>{3, 1}));
+    EXPECT_TRUE(history.Record(Kind::Segmentation, u"わたしは", u"わた|しは"));
+    EXPECT_EQ(history.Segmentation(u"わたしは"), (std::vector<std::size_t>{2, 2}));
+    EXPECT_EQ(history.Entries().size(), 1u) << "the older split is replaced";
+    EXPECT_FALSE(history.Segmentation(u"わたし"));
+    EXPECT_FALSE(history.Record(Kind::Segmentation, u"わたしは", u"わたし|が")) << "must spell the reading";
+    EXPECT_FALSE(history.Record(Kind::Segmentation, u"わたしは", u"わたし||は")) << "no empty segment";
+}
+
+// T-D05-2
+TEST(LearningHistory, RemovesWhatWasUsedInAPeriod)
+{
+    std::int64_t now = 1'000'000;
+    LearningHistory history;
+    history.SetClock([&now] { return now; });
+    history.Record(Kind::Conversion, u"ふるい", u"古い");
+    now += 3600;
+    history.Record(Kind::Conversion, u"あたらしい", u"新しい");
+    history.Record(Kind::Pair, u"はし", u"箸", u"お");
+    EXPECT_EQ(history.Entries().front().time, now);
+    EXPECT_EQ(history.RemoveSince(now - 60), 2u) << "the last minute";
+    ASSERT_EQ(history.Entries().size(), 1u);
+    EXPECT_EQ(history.Entries().front().surface, u"古い");
+    EXPECT_EQ(history.RemoveSince(0), 1u);
+    EXPECT_TRUE(history.Empty());
+}
+
+TEST(LearningHistory, SerializesContextsTimesAndSegmentations)
+{
+    LearningHistory history;
+    history.SetClock([] { return std::int64_t{1'700'000'000}; });
+    history.Record(Kind::Pair, u"はし", u"箸", u"お");
+    history.Record(Kind::Segmentation, u"わたしは", u"わたし|は");
+    const LearningHistory parsed = LearningHistory::Parse(history.Serialize());
+    ASSERT_EQ(parsed.Entries().size(), 2u);
+    EXPECT_EQ(parsed.Entries()[0].kind, Kind::Segmentation);
+    EXPECT_EQ(parsed.Entries()[1].context, u"お");
+    EXPECT_EQ(parsed.Entries()[1].time, 1'700'000'000);
+    EXPECT_EQ(parsed.Pairs(u"お", u"はし"), (std::vector<std::u16string>{u"箸"}));
+    EXPECT_TRUE(LearningHistory::Parse("w\t\tはし\t箸\t1\t1\t0\n").Empty()) << "a pair without the word before";
+    EXPECT_TRUE(LearningHistory::Parse("s\t\tわたしは\tわたし|が\t1\t1\t0\n").Empty());
+}
+
 } // namespace
 } // namespace astelio

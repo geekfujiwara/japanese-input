@@ -7,6 +7,10 @@
 
 #include <commctrl.h>
 
+#include <chrono>
+#include <ctime>
+#include <cwchar>
+#include <iterator>
 #include <new>
 #include <string>
 #include <utility>
@@ -20,12 +24,27 @@ constexpr int kListId = 100;
 constexpr int kDeleteId = 101;
 constexpr int kClearId = 102;
 constexpr int kCloseId = 103;
+constexpr int kPeriodId = 104;
+constexpr int kDeletePeriodId = 105;
+
+// T-D05-2: 過去1時間 / 過去24時間 / 過去7日間 / 過去4週間
+constexpr struct {
+    const wchar_t* name;
+    std::int64_t seconds;
+} kPeriods[] = {
+    {L"\u904E\u53BB1\u6642\u9593", 3600},
+    {L"\u904E\u53BB24\u6642\u9593", 24 * 3600},
+    {L"\u904E\u53BB7\u65E5\u9593", 7 * 24 * 3600},
+    {L"\u904E\u53BB4\u9031\u9593", 28 * 24 * 3600},
+};
 
 struct State {
     LearningHistory history; // what the list shows, in the same order
     HWND note = nullptr;
     HWND list = nullptr;
     HWND delete_button = nullptr;
+    HWND period = nullptr;
+    HWND delete_period_button = nullptr;
     HWND clear_button = nullptr;
     HWND close_button = nullptr;
     HFONT font = nullptr;
@@ -43,6 +62,39 @@ int Scale(HWND window, int value)
     return MulDiv(value, static_cast<int>(GetDpiForWindow(window)), 96);
 }
 
+const wchar_t* KindName(LearningHistory::Kind kind)
+{
+    switch (kind) {
+    case LearningHistory::Kind::Prediction: return L"\u4E88\u6E2C";                          // 予測
+    case LearningHistory::Kind::Pair: return L"\u7D44\u307F\u5408\u308F\u305B";              // 組み合わせ
+    case LearningHistory::Kind::Segmentation: return L"\u6587\u7BC0\u306E\u533A\u5207\u308A"; // 文節の区切り
+    case LearningHistory::Kind::Conversion: break;
+    }
+    return L"\u5909\u63DB"; // 変換
+}
+
+// Local date and time of the last use, or a dash for entries saved before times were kept.
+std::wstring TimeText(std::int64_t time)
+{
+    if (time <= 0) {
+        return L"\u2014";
+    }
+    const std::time_t seconds = static_cast<std::time_t>(time);
+    std::tm local{};
+    if (localtime_s(&local, &seconds) != 0) {
+        return L"\u2014";
+    }
+    wchar_t text[32];
+    wcsftime(text, std::size(text), L"%Y/%m/%d %H:%M", &local);
+    return text;
+}
+
+std::int64_t Now()
+{
+    return std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now().time_since_epoch())
+        .count();
+}
+
 void Fill(State& state)
 {
     SendMessageW(state.list, WM_SETREDRAW, FALSE, 0);
@@ -57,15 +109,17 @@ void Fill(State& state)
         item.lParam = static_cast<LPARAM>(i);
         const int row = ListView_InsertItem(state.list, &item);
         ListView_SetItemText(state.list, row, 1, const_cast<wchar_t*>(Wide(entry.reading)));
-        wchar_t kind[] = L"\u5909\u63DB";      // 変換
-        wchar_t prediction[] = L"\u4E88\u6E2C"; // 予測
-        ListView_SetItemText(state.list, row, 2, entry.kind == LearningHistory::Kind::Prediction ? prediction : kind);
+        ListView_SetItemText(state.list, row, 2, const_cast<wchar_t*>(Wide(entry.context)));
+        ListView_SetItemText(state.list, row, 3, const_cast<wchar_t*>(KindName(entry.kind)));
         std::wstring count = std::to_wstring(entry.count);
-        ListView_SetItemText(state.list, row, 3, count.data());
+        ListView_SetItemText(state.list, row, 4, count.data());
+        std::wstring used = TimeText(entry.time);
+        ListView_SetItemText(state.list, row, 5, used.data());
     }
     SendMessageW(state.list, WM_SETREDRAW, TRUE, 0);
     InvalidateRect(state.list, nullptr, TRUE);
     EnableWindow(state.clear_button, !entries.empty());
+    EnableWindow(state.delete_period_button, !entries.empty());
     EnableWindow(state.delete_button, FALSE);
 }
 
@@ -85,10 +139,24 @@ void DeleteSelected(State& state)
         const auto index = static_cast<std::size_t>(item.lParam);
         if (index < state.history.Entries().size()) {
             const LearningHistory::Entry& entry = state.history.Entries()[index];
-            removed = latest.Remove(entry.kind, entry.reading, entry.surface) || removed;
+            removed = latest.Remove(entry.kind, entry.reading, entry.surface, entry.context) || removed;
         }
     }
     if (removed) {
+        SaveLearning(latest);
+    }
+    state.history = std::move(latest);
+    Fill(state);
+}
+
+void DeletePeriod(State& state)
+{
+    const LRESULT chosen = SendMessageW(state.period, CB_GETCURSEL, 0, 0);
+    if (chosen < 0 || static_cast<std::size_t>(chosen) >= std::size(kPeriods)) {
+        return;
+    }
+    LearningHistory latest = LoadLearning();
+    if (latest.RemoveSince(Now() - kPeriods[chosen].seconds) > 0) {
         SaveLearning(latest);
     }
     state.history = std::move(latest);
@@ -119,9 +187,15 @@ void Layout(HWND window, State& state)
     const int list_top = margin + note_height + Scale(window, 4);
     const int buttons_top = client.bottom - margin - button_height;
     MoveWindow(state.list, margin, list_top, width, buttons_top - margin - list_top, TRUE);
-    MoveWindow(state.delete_button, margin, buttons_top, button_width, button_height, TRUE);
-    MoveWindow(state.clear_button, margin * 2 + button_width, buttons_top, button_width, button_height, TRUE);
-    MoveWindow(state.close_button, client.right - margin - Scale(window, 100), buttons_top, Scale(window, 100),
+    int left = margin;
+    MoveWindow(state.delete_button, left, buttons_top, button_width, button_height, TRUE);
+    left += button_width + margin;
+    MoveWindow(state.period, left, buttons_top + Scale(window, 2), Scale(window, 110), Scale(window, 200), TRUE);
+    left += Scale(window, 110) + Scale(window, 4);
+    MoveWindow(state.delete_period_button, left, buttons_top, Scale(window, 90), button_height, TRUE);
+    left += Scale(window, 90) + margin;
+    MoveWindow(state.clear_button, left, buttons_top, Scale(window, 90), button_height, TRUE);
+    MoveWindow(state.close_button, client.right - margin - Scale(window, 80), buttons_top, Scale(window, 80),
                button_height, TRUE);
 }
 
@@ -146,27 +220,37 @@ bool Create(HWND window, State& state)
     state.list = Child(window, WC_LISTVIEWW, L"", WS_BORDER | WS_TABSTOP | LVS_REPORT | LVS_SHOWSELALWAYS, kListId);
     state.delete_button = Child(window, L"BUTTON", L"\u9078\u3093\u3060\u9805\u76EE\u3092\u524A\u9664",
                                 WS_TABSTOP | BS_PUSHBUTTON, kDeleteId);                     // 選んだ項目を削除
+    state.period = Child(window, WC_COMBOBOXW, L"", WS_TABSTOP | CBS_DROPDOWNLIST | WS_VSCROLL, kPeriodId);
+    state.delete_period_button = Child(window, L"BUTTON", L"\u671F\u9593\u3092\u524A\u9664",
+                                       WS_TABSTOP | BS_PUSHBUTTON, kDeletePeriodId);        // 期間を削除
     state.clear_button = Child(window, L"BUTTON", L"\u3059\u3079\u3066\u524A\u9664", WS_TABSTOP | BS_PUSHBUTTON,
                                kClearId);                                                  // すべて削除
     state.close_button = Child(window, L"BUTTON", L"\u9589\u3058\u308B", WS_TABSTOP | BS_PUSHBUTTON, kCloseId); // 閉じる
-    if (state.note == nullptr || state.list == nullptr || state.delete_button == nullptr ||
-        state.clear_button == nullptr || state.close_button == nullptr) {
+    if (state.note == nullptr || state.list == nullptr || state.delete_button == nullptr || state.period == nullptr ||
+        state.delete_period_button == nullptr || state.clear_button == nullptr || state.close_button == nullptr) {
         return false;
     }
-    for (HWND child : {state.note, state.list, state.delete_button, state.clear_button, state.close_button}) {
+    for (HWND child : {state.note, state.list, state.delete_button, state.period, state.delete_period_button,
+                       state.clear_button, state.close_button}) {
         SendMessageW(child, WM_SETFONT, reinterpret_cast<WPARAM>(state.font), TRUE);
     }
+    for (const auto& period : kPeriods) {
+        SendMessageW(state.period, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(period.name));
+    }
+    SendMessageW(state.period, CB_SETCURSEL, 0, 0);
     ListView_SetExtendedListViewStyle(state.list, LVS_EX_FULLROWSELECT | LVS_EX_DOUBLEBUFFER);
     const struct {
         const wchar_t* title;
         int width;
     } columns[] = {
-        {L"\u5019\u88DC", 180}, // 候補
-        {L"\u8AAD\u307F", 180}, // 読み
-        {L"\u7A2E\u985E", 60},  // 種類
-        {L"\u56DE\u6570", 60},  // 回数
+        {L"\u5019\u88DC", 150},             // 候補
+        {L"\u8AAD\u307F", 150},             // 読み
+        {L"\u524D\u306E\u8A9E", 90},        // 前の語
+        {L"\u7A2E\u985E", 90},              // 種類
+        {L"\u56DE\u6570", 50},              // 回数
+        {L"\u6700\u5F8C\u306B\u4F7F\u3063\u305F\u65E5\u6642", 130}, // 最後に使った日時
     };
-    for (int i = 0; i < 4; ++i) {
+    for (int i = 0; i < static_cast<int>(std::size(columns)); ++i) {
         LVCOLUMNW column{};
         column.mask = LVCF_TEXT | LVCF_WIDTH | LVCF_SUBITEM;
         column.pszText = const_cast<wchar_t*>(columns[i].title);
@@ -207,6 +291,7 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
             }
             switch (LOWORD(wparam)) {
             case kDeleteId: DeleteSelected(*state); return 0;
+            case kDeletePeriodId: DeletePeriod(*state); return 0;
             case kClearId: ClearAll(window, *state); return 0;
             case kCloseId:
             case IDCANCEL: DestroyWindow(window); return 0;
@@ -273,7 +358,7 @@ void ShowLearningManager()
     RegisterClassExW(&window_class); // fails harmlessly when already registered
 
     const UINT dpi = GetDpiForSystem();
-    const int width = MulDiv(560, static_cast<int>(dpi), 96);
+    const int width = MulDiv(780, static_cast<int>(dpi), 96);
     const int height = MulDiv(480, static_cast<int>(dpi), 96);
     RECT work{};
     SystemParametersInfoW(SPI_GETWORKAREA, 0, &work, 0);
