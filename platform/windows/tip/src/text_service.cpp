@@ -66,6 +66,20 @@ std::uint64_t Now()
     return GetTickCount64();
 }
 
+// The exe file name of this process in lower case (D-06).
+std::wstring CurrentAppName()
+{
+    wchar_t path[MAX_PATH] = {};
+    const DWORD length = GetModuleFileNameW(nullptr, path, MAX_PATH);
+    if (length == 0 || length >= MAX_PATH) {
+        return {};
+    }
+    std::wstring name(path, length);
+    name.erase(0, name.find_last_of(L"\\/") + 1);
+    CharLowerBuffW(name.data(), static_cast<DWORD>(name.size()));
+    return name;
+}
+
 // Keys the app gets that can move the caret or change the text around it (T-B02-5).
 bool MovesTheCaret(WPARAM wparam)
 {
@@ -384,6 +398,7 @@ STDMETHODIMP TextService::ActivateEx(ITfThreadMgr* thread_mgr, TfClientId client
     g_active_service = this;
     UseConverter(SharedConverter());
     session_.SetRecentEmoji(LoadRecentEmoji());
+    app_name_ = CurrentAppName();
     learning_on_ = LearningEnabled();
     RefreshLearning(true);
     session_.SetTypoSuggestions(TypoSuggestionsEnabled());
@@ -766,8 +781,8 @@ HRESULT TextService::StartComposition(TfEditCookie cookie, ITfContext* context)
         hr = compositions->StartComposition(cookie, range.Get(), static_cast<ITfCompositionSink*>(this),
                                             composition_.ReleaseAndGetAddressOf());
     }
-    // Nothing typed in a password field is learned (D-06).
-    session_.SetRecording(!IsPasswordField(cookie, context, range.Get()));
+    // Nothing typed in a password field, in secret mode or in an app left out is learned (D-06).
+    session_.SetRecording(recording_allowed_ && !IsPasswordField(cookie, context, range.Get()));
     return SUCCEEDED(hr) && !composition_ ? E_FAIL : hr;
 }
 
@@ -868,6 +883,7 @@ void TextService::UseConverter(const Converter* converter)
 
 void TextService::RefreshLearning(bool force)
 {
+    recording_allowed_ = !LearningPaused() && !AppLearningExcluded(app_name_);
     session_.SetLearning(learning_on_ ? &learning_ : nullptr);
     if (!learning_on_) {
         return;
@@ -889,6 +905,14 @@ void TextService::OnLearningCommand(LearningCommand command, HWND owner)
         break;
     case LearningCommand::Manage:
         ShowLearningManager();
+        break;
+    case LearningCommand::Pause:
+        SetLearningPaused(!LearningPaused());
+        RefreshLearning();
+        break;
+    case LearningCommand::ExcludeApp:
+        SetAppLearningExcluded(app_name_, !AppLearningExcluded(app_name_));
+        RefreshLearning();
         break;
     case LearningCommand::Clear:
         // 入力履歴をすべて削除しますか？
@@ -1153,6 +1177,16 @@ void TextService::TestUseLearningFile(const wchar_t* path)
     }
 }
 
+void TextService::TestUseSettingsKey(const wchar_t* key)
+{
+    UseSettingsKey(key);
+    if (TextService* service = g_active_service) {
+        service->learning_on_ = LearningEnabled();
+        service->session_.SetTypoSuggestions(TypoSuggestionsEnabled());
+        service->RefreshLearning(true);
+    }
+}
+
 } // namespace astelio::tip
 
 // Test entry point: sends a key to the TSF-activated text service without OS keyboard focus.
@@ -1196,4 +1230,10 @@ extern "C" void WINAPI AstelioTipTestUseEmojiHistory(const wchar_t* path)
 extern "C" void WINAPI AstelioTipTestUseLearningHistory(const wchar_t* path)
 {
     astelio::tip::TextService::TestUseLearningFile(path);
+}
+
+// Test entry point: reads the settings from `key` under HKCU instead of the user's (nullptr restores it).
+extern "C" void WINAPI AstelioTipTestUseSettingsKey(const wchar_t* key)
+{
+    astelio::tip::TextService::TestUseSettingsKey(key);
 }

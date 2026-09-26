@@ -1,6 +1,7 @@
 #include "lang_bar_button.h"
 
 #include "astelio/tip/guids.h"
+#include "learning_store.h"
 #include "module.h"
 #include "text_service.h"
 
@@ -10,6 +11,7 @@
 #include <algorithm>
 #include <cstdint>
 #include <new>
+#include <string>
 #include <vector>
 
 namespace astelio::tip {
@@ -205,14 +207,24 @@ STDMETHODIMP LangBarButton::OnClick(TfLBIClick click, POINT point, const RECT* /
 // D-04 / D-05: right click shows the history menu.
 void LangBarButton::ShowMenu(POINT point)
 {
-    enum : UINT { kToggle = 1, kManage, kClear };
+    enum : UINT { kToggle = 1, kManage, kClear, kPause, kExcludeApp };
     HMENU menu = CreatePopupMenu();
     if (menu == nullptr) {
         return;
     }
-    // 入力履歴を使う / 入力履歴の管理... / 入力履歴をすべて削除...
+    // 入力履歴を使う / 記録を一時停止（シークレットモード） / このアプリ（name）では記録しない /
+    // 入力履歴の管理... / 入力履歴をすべて削除...
     AppendMenuW(menu, MF_STRING | (service_->LearningOn() ? MF_CHECKED : MF_UNCHECKED), kToggle,
                 L"\u5165\u529B\u5C65\u6B74\u3092\u4F7F\u3046");
+    AppendMenuW(menu, MF_STRING | (LearningPaused() ? MF_CHECKED : MF_UNCHECKED), kPause,
+                L"\u8A18\u9332\u3092\u4E00\u6642\u505C\u6B62\uFF08\u30B7\u30FC\u30AF\u30EC\u30C3\u30C8\u30E2\u30FC\u30C9\uFF09");
+    const std::wstring& app = service_->AppName();
+    const std::wstring exclude_label = L"\u3053\u306E\u30A2\u30D7\u30EA\uFF08" + app +
+                                       L"\uFF09\u3067\u306F\u8A18\u9332\u3057\u306A\u3044";
+    AppendMenuW(menu,
+                MF_STRING | (AppLearningExcluded(app) ? MF_CHECKED : MF_UNCHECKED) | (app.empty() ? MF_GRAYED : 0),
+                kExcludeApp, exclude_label.c_str());
+    AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
     AppendMenuW(menu, MF_STRING, kManage, L"\u5165\u529B\u5C65\u6B74\u306E\u7BA1\u7406...");
     AppendMenuW(menu, MF_STRING, kClear, L"\u5165\u529B\u5C65\u6B74\u3092\u3059\u3079\u3066\u524A\u9664...");
 
@@ -245,6 +257,8 @@ void LangBarButton::ShowMenu(POINT point)
         case kToggle: service_->OnLearningCommand(TextService::LearningCommand::Toggle, owner); break;
         case kManage: service_->OnLearningCommand(TextService::LearningCommand::Manage, owner); break;
         case kClear: service_->OnLearningCommand(TextService::LearningCommand::Clear, owner); break;
+        case kPause: service_->OnLearningCommand(TextService::LearningCommand::Pause, owner); break;
+        case kExcludeApp: service_->OnLearningCommand(TextService::LearningCommand::ExcludeApp, owner); break;
         default: break;
         }
     }

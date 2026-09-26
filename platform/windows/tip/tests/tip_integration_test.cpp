@@ -395,12 +395,21 @@ protected:
         learning_path_ = std::wstring(directory) + L"astelio_tip_test_learning.tsv";
         DeleteFileW(learning_path_.c_str());
         use_learning_(learning_path_.c_str());
+        use_settings_ = reinterpret_cast<UseSettingsFunction>(
+            GetProcAddress(GetModuleHandleW(TipPath().c_str()), "AstelioTipTestUseSettingsKey"));
+        ASSERT_NE(use_settings_, nullptr);
+        RegDeleteTreeW(HKEY_CURRENT_USER, kTestSettingsKey);
+        use_settings_(kTestSettingsKey);
         ASSERT_HRESULT_SUCCEEDED(thread_mgr_->IsThreadFocus(&thread_focus_));
     }
 
     void TearDown() override
     {
         SetModifierState(false, false);
+        if (use_settings_ != nullptr) {
+            use_settings_(nullptr);
+            RegDeleteTreeW(HKEY_CURRENT_USER, kTestSettingsKey);
+        }
         if (use_learning_ != nullptr) {
             use_learning_(nullptr);
             DeleteFileW(learning_path_.c_str());
@@ -657,6 +666,9 @@ protected:
     using UseLearningFunction = void(WINAPI*)(const wchar_t*);
     UseLearningFunction use_learning_ = nullptr;
     std::wstring learning_path_;
+    using UseSettingsFunction = void(WINAPI*)(const wchar_t*);
+    UseSettingsFunction use_settings_ = nullptr;
+    static constexpr wchar_t kTestSettingsKey[] = L"Software\\AstelioIME\\Tests";
     BOOL thread_focus_ = FALSE;
 };
 
@@ -1107,6 +1119,47 @@ TEST_F(TypingTest, ChosenCandidateIsLearnedAndControlDeleteForgetsIt)
     EXPECT_EQ(Text(), L"\u6E21\u3057\u306F\u79C1\u306F") << "back to the dictionary's order";
     EXPECT_TRUE(Press(VK_ESCAPE, 0x01));
     EXPECT_TRUE(Press(VK_ESCAPE, 0x01));
+}
+
+// T-D06-1, T-D06-2 (TIP): in secret mode, or in an app left out, the history is used but nothing is recorded.
+TEST_F(TypingTest, SecretModeAndLeftOutAppsRecordNothing)
+{
+    const std::wstring path = WriteTestDictionary();
+    ASSERT_FALSE(path.empty());
+    ASSERT_HRESULT_SUCCEEDED(use_dictionary_(path.c_str()));
+    const auto file_size = [this] {
+        WIN32_FILE_ATTRIBUTE_DATA data{};
+        return GetFileAttributesExW(learning_path_.c_str(), GetFileExInfoStandard, &data) ? data.nFileSizeLow : 0;
+    };
+    const auto choose_second = [this] {
+        TypeLetters("watasiha");
+        EXPECT_TRUE(Press(VK_SPACE, 0x39));
+        EXPECT_TRUE(Press(VK_SPACE, 0x39));
+        EXPECT_TRUE(Press(VK_RETURN, 0x1C));
+    };
+    const DWORD on = 1;
+
+    ASSERT_EQ(RegSetKeyValueW(HKEY_CURRENT_USER, kTestSettingsKey, L"LearningPaused", REG_DWORD, &on, sizeof(on)),
+              ERROR_SUCCESS);
+    choose_second();
+    EXPECT_EQ(file_size(), 0u) << "secret mode records nothing";
+
+    wchar_t module[MAX_PATH] = {};
+    const DWORD length = GetModuleFileNameW(nullptr, module, MAX_PATH);
+    std::wstring app(module, length);
+    app.erase(0, app.find_last_of(L'\\') + 1);
+    CharLowerBuffW(app.data(), static_cast<DWORD>(app.size()));
+    const std::wstring apps = L"other.exe" + std::wstring(1, L'\0') + app + std::wstring(2, L'\0');
+    ASSERT_EQ(RegDeleteKeyValueW(HKEY_CURRENT_USER, kTestSettingsKey, L"LearningPaused"), ERROR_SUCCESS);
+    ASSERT_EQ(RegSetKeyValueW(HKEY_CURRENT_USER, kTestSettingsKey, L"NoLearningApps", REG_MULTI_SZ, apps.data(),
+                              static_cast<DWORD>(apps.size() * sizeof(wchar_t))),
+              ERROR_SUCCESS);
+    choose_second();
+    EXPECT_EQ(file_size(), 0u) << app.c_str() << " is left out";
+
+    ASSERT_EQ(RegDeleteKeyValueW(HKEY_CURRENT_USER, kTestSettingsKey, L"NoLearningApps"), ERROR_SUCCESS);
+    choose_second();
+    EXPECT_GT(file_size(), 0u) << "recorded again";
 }
 
 // T-B06-2, T-B08-1 (TIP): Ctrl+Down commits up to the focused segment; Ctrl+Backspace right after a commit takes
