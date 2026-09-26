@@ -135,7 +135,7 @@ jobs:
       - name: Measure the typo suggestions (T-B14-4)
         run: |
           build/dictionary/eval/astelio_typo build/dictionary/out/system.dic eval/typo/typo.tsv \
-            --frequent 500 --baseline eval/typo-baseline.tsv --report "$GITHUB_STEP_SUMMARY"
+            --frequent 500 --synthetic 400 --baseline eval/typo-baseline.tsv --report "$GITHUB_STEP_SUMMARY"
       - name: Upload the accuracy misses
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1

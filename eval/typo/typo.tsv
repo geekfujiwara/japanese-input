@@ -103,6 +103,34 @@ typo	所得の	jeikin	じぇいきん	税金	zとj
 typo		chorro	ちょっろ	ちょっと	ttとrr
 typo	検査の	kejja	けっじゃ	結果	kkとjj
 typo	近くの	gajjou	がっじょう	学校	kkとjj
+typo	明日は	tanjoubu	たんじょうぶ	誕生日	iとu
+typo	授業の	shitsumin	しつみん	質問	oとi
+typo	来週の	yoteu	よてう	予定	iとu
+typo	来年の	keikaki	けいかき	計画	uとi
+typo	会議の	junbo	じゅんぼ	準備	iとo
+typo	出張の	houkiku	ほうきく	報告	oとi
+typo	営業の	tanrou	たんろう	担当	tとr
+typo	皆さんの	kyoutyoku	きょうちょく	協力	rとt
+typo	個人	jouhoi	じょうほい	情報	uとi
+typo	新しい	sa-bosu	さーぼす	サービス	iとo
+typo	画面の	dezaun	でざうん	デザイン	iとu
+typo	社内の	shisitemu	ししてむ	システム	uとi
+typo	午後の	kaig	かいg	会議	iの抜け
+typo	家族に	denwaa	でんわあ	電話	aの二度押し
+typo	祖母に	tegani	てがに	手紙	mとn
+typo	今朝の	shinbum	しんぶm	新聞	nとm
+typo	電車の	kiopu	きおぷ	切符	pとo
+typo	成田	kuukoi	くうこい	空港	uとi
+typo	羽田行きの	hikiuki	ひきうき	飛行機	oとi
+typo	駅前で	kaimomo	かいもも	買い物	nとm
+typo	得意な	ryoiri	りょいり	料理	uとi
+typo	毎日の	kenkoi	けんこい	健康	uとi
+typo	重い	byoiki	びょいき	病気	uとi
+typo	風邪の	kusuti	くすち	薬	rとt
+typo	今年の	natsuyasimi	なつやしみ	夏休み	uとi
+typo	新しい	ofosu	おふぉす	オフィス	iとo
+typo	明日の	purezem	ぷれぜm	プレゼン	nとm
+typo	新しい	kikaki	きかき	企画|規格	uとi
 correct			わたしはがくせいです	私は学生です	
 correct			きょうはいいてんきですね	今日はいい天気ですね	
 correct	来週の		かいぎのしりょうをおくります	会議の資料を送ります	
@@ -161,3 +189,23 @@ correct	月に一度の		ていれい	定例
 correct	電車の		じこくひょう	時刻表	
 correct	駅の		かいさつ	改札	
 correct	少し		きゅうけい	休憩	
+correct	明日は		たんじょうび	誕生日	
+correct	授業の		しつもん	質問	
+correct	来週の		よてい	予定	
+correct	来年の		けいかく	計画	
+correct	会議の		じゅんび	準備	
+correct	出張の		ほうこく	報告	
+correct	営業の		たんとう	担当	
+correct	個人		じょうほう	情報	
+correct	新しい		さーびす	サービス	
+correct	画面の		でざいん	デザイン	
+correct	社内の		しすてむ	システム	
+correct	祖母に		てがみ	手紙	
+correct	今朝の		しんぶん	新聞	
+correct	成田		くうこう	空港	
+correct	羽田行きの		ひこうき	飛行機	
+correct	得意な		りょうり	料理	
+correct	毎日の		けんこう	健康	
+correct	風邪の		くすり	薬	
+correct	今年の		なつやすみ	夏休み	
+correct	明日の		ぷれぜん	プレゼン	

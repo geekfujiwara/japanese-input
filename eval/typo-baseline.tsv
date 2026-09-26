@@ -1,6 +1,7 @@
 # Scores of もしかして (B-14, T-B14-4) on eval/typo/typo.tsv and 500 common dictionary words.
 # CI fails when the hit rate drops, or a false suggestion rate rises, by 0.5 points or more.
 # Raise the hit rate in the same PR when it improves; changing it the other way needs a reason in the PR.
-typo_hit_rate	82.4
+typo_hit_rate	82.3
 false_suggestion_rate	0.0
 frequent_false_rate	0.0
+synthetic_hit_rate	83.9
