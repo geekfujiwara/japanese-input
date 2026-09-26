@@ -1,17 +1,9 @@
 name: SLM comparison
 
-# T-S06: compares "もしかして" methods: the dictionary proposes words one key slip away, then an algorithm or a
-# bundled-SLM candidate (plan 4.5.3) picks one or none.
+# T-S06: compares "もしかして" methods: the dictionary proposes words one key slip away, then an algorithm or an
+# SLM picks one or none. The IME uses no SLM (docs/slm-evaluation-2026-09.md); run by hand to re-evaluate.
 on:
   workflow_dispatch:
-  schedule:
-    - cron: '0 18 * * 0'
-  pull_request:
-    paths:
-      - 'slm/**'
-      - 'core/src/typo_candidates.cpp'
-      - 'eval/src/typo_main.cpp'
-      - '.github/workflows/slm-eval.yml'
 
 permissions:
   contents: read
