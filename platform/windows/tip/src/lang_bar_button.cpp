@@ -185,12 +185,57 @@ STDMETHODIMP LangBarButton::GetTooltipString(BSTR* tooltip)
     return *tooltip != nullptr ? S_OK : E_OUTOFMEMORY;
 }
 
-STDMETHODIMP LangBarButton::OnClick(TfLBIClick click, POINT /*point*/, const RECT* /*area*/)
+STDMETHODIMP LangBarButton::OnClick(TfLBIClick click, POINT point, const RECT* /*area*/)
 {
-    if (click == TF_LBI_CLK_LEFT && service_ != nullptr) {
+    if (service_ == nullptr) {
+        return S_OK;
+    }
+    if (click == TF_LBI_CLK_LEFT) {
         return service_->ToggleMode();
     }
+    try {
+        ShowMenu(point);
+    } catch (...) {
+        return E_UNEXPECTED;
+    }
     return S_OK;
+}
+
+// D-04 / D-05: right click shows the history menu.
+void LangBarButton::ShowMenu(POINT point)
+{
+    enum : UINT { kToggle = 1, kManage, kClear };
+    HMENU menu = CreatePopupMenu();
+    if (menu == nullptr) {
+        return;
+    }
+    // 入力履歴を使う / 入力履歴の管理... / 入力履歴をすべて削除...
+    AppendMenuW(menu, MF_STRING | (service_->LearningOn() ? MF_CHECKED : MF_UNCHECKED), kToggle,
+                L"\u5165\u529B\u5C65\u6B74\u3092\u4F7F\u3046");
+    AppendMenuW(menu, MF_STRING, kManage, L"\u5165\u529B\u5C65\u6B74\u306E\u7BA1\u7406...");
+    AppendMenuW(menu, MF_STRING, kClear, L"\u5165\u529B\u5C65\u6B74\u3092\u3059\u3079\u3066\u524A\u9664...");
+
+    // A popup menu needs a window of this thread to own it.
+    HWND owner = CreateWindowExW(WS_EX_TOOLWINDOW, L"STATIC", L"", WS_POPUP, point.x, point.y, 0, 0, nullptr,
+                                 nullptr, ModuleHandle(), nullptr);
+    if (owner == nullptr) {
+        DestroyMenu(menu);
+        return;
+    }
+    SetForegroundWindow(owner);
+    const UINT chosen = static_cast<UINT>(TrackPopupMenuEx(
+        menu, TPM_RETURNCMD | TPM_NONOTIFY | TPM_RIGHTBUTTON | TPM_BOTTOMALIGN, point.x, point.y, owner, nullptr));
+    PostMessageW(owner, WM_NULL, 0, 0);
+    DestroyMenu(menu);
+    if (service_ != nullptr) {
+        switch (chosen) {
+        case kToggle: service_->OnLearningCommand(TextService::LearningCommand::Toggle, owner); break;
+        case kManage: service_->OnLearningCommand(TextService::LearningCommand::Manage, owner); break;
+        case kClear: service_->OnLearningCommand(TextService::LearningCommand::Clear, owner); break;
+        default: break;
+        }
+    }
+    DestroyWindow(owner);
 }
 
 STDMETHODIMP LangBarButton::InitMenu(ITfMenu* /*menu*/)

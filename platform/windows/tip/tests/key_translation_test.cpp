@@ -76,5 +76,17 @@ TEST(KeyTranslation, ShortcutsAndOtherKeysAreNotHandled)
     EXPECT_FALSE(TranslateKey(VK_HOME, LParam(0x47, true), {}).has_value());
 }
 
+// D-05: Ctrl+Delete reaches the session, which uses it only while the candidate list is shown.
+TEST(KeyTranslation, ControlDeleteIsTheOnlyControlKey)
+{
+    const std::optional<KeyEvent> key = TranslateKey(VK_DELETE, LParam(0x53, true), {.control = true});
+    ASSERT_TRUE(key.has_value());
+    EXPECT_EQ(key->kind, KeyKind::Delete);
+    EXPECT_TRUE(key->control);
+    EXPECT_FALSE(TranslateKey(VK_DELETE, LParam(0x53, true), {})->control);
+    EXPECT_FALSE(TranslateKey(VK_DELETE, LParam(0x53, true), {.control = true, .alt = true}).has_value());
+    EXPECT_FALSE(TranslateKey(VK_BACK, LParam(0x0E), {.control = true}).has_value());
+}
+
 } // namespace
 } // namespace astelio::tip

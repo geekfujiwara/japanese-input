@@ -385,12 +385,25 @@ protected:
         use_dictionary_ = reinterpret_cast<UseDictionaryFunction>(
             GetProcAddress(GetModuleHandleW(TipPath().c_str()), "AstelioTipTestUseDictionary"));
         ASSERT_NE(use_dictionary_, nullptr);
+        // The user's own history must neither change the results nor be changed by the tests.
+        use_learning_ = reinterpret_cast<UseLearningFunction>(
+            GetProcAddress(GetModuleHandleW(TipPath().c_str()), "AstelioTipTestUseLearningHistory"));
+        ASSERT_NE(use_learning_, nullptr);
+        wchar_t directory[MAX_PATH] = {};
+        GetTempPathW(MAX_PATH, directory);
+        learning_path_ = std::wstring(directory) + L"astelio_tip_test_learning.tsv";
+        DeleteFileW(learning_path_.c_str());
+        use_learning_(learning_path_.c_str());
         ASSERT_HRESULT_SUCCEEDED(thread_mgr_->IsThreadFocus(&thread_focus_));
     }
 
     void TearDown() override
     {
         SetModifierState(false, false);
+        if (use_learning_ != nullptr) {
+            use_learning_(nullptr);
+            DeleteFileW(learning_path_.c_str());
+        }
         if (use_dictionary_ != nullptr && thread_mgr_active_) {
             use_dictionary_(nullptr);
         }
@@ -640,6 +653,9 @@ protected:
     TestKeyFunction key_ = nullptr;
     using UseDictionaryFunction = HRESULT(WINAPI*)(const wchar_t*);
     UseDictionaryFunction use_dictionary_ = nullptr;
+    using UseLearningFunction = void(WINAPI*)(const wchar_t*);
+    UseLearningFunction use_learning_ = nullptr;
+    std::wstring learning_path_;
     BOOL thread_focus_ = FALSE;
 };
 
@@ -1050,6 +1066,46 @@ TEST_F(TypingTest, EmojiPaletteInsertsAnEmoji)
     saved.close();
     use_history(nullptr);
     DeleteFileW(history.c_str());
+}
+
+// T-D04-1, T-D05-1 (TIP): a chosen candidate is saved and comes first; Ctrl+Delete in the list forgets it.
+TEST_F(TypingTest, ChosenCandidateIsLearnedAndControlDeleteForgetsIt)
+{
+    const std::wstring path = WriteTestDictionary();
+    ASSERT_FALSE(path.empty());
+    ASSERT_HRESULT_SUCCEEDED(use_dictionary_(path.c_str()));
+    const auto saved = [this] {
+        std::ifstream file(learning_path_, std::ios::binary);
+        return std::string((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+    };
+    const std::string watashiha = "\xE6\xB8\xA1\xE3\x81\x97\xE3\x81\xAF"; // 渡しは
+
+    TypeLetters("watasiha");
+    EXPECT_TRUE(Press(VK_SPACE, 0x39));
+    EXPECT_TRUE(Press(VK_SPACE, 0x39));
+    ASSERT_EQ(Text(), L"\u6E21\u3057\u306F");
+    EXPECT_TRUE(Press(VK_RETURN, 0x1C));
+    EXPECT_NE(saved().find(watashiha), std::string::npos) << "the choice is saved";
+
+    TypeLetters("watasiha");
+    EXPECT_TRUE(Press(VK_SPACE, 0x39));
+    EXPECT_EQ(Text(), L"\u6E21\u3057\u306F\u6E21\u3057\u306F") << "the learned word comes first";
+    EXPECT_TRUE(Press(VK_SPACE, 0x39));
+    EXPECT_TRUE(Press(VK_UP, 0x48, false, true));
+    EXPECT_EQ(Text(), L"\u6E21\u3057\u306F\u6E21\u3057\u306F");
+
+    SetModifierState(false, true);
+    EXPECT_TRUE(SendKey(VK_DELETE, 0x53, false, true)) << "Ctrl+Delete is eaten while the list is shown";
+    SetModifierState(false, false);
+    EXPECT_EQ(saved().find(watashiha), std::string::npos) << "the word is gone from the file";
+    EXPECT_TRUE(Press(VK_ESCAPE, 0x01));
+    EXPECT_TRUE(Press(VK_ESCAPE, 0x01));
+
+    TypeLetters("watasiha");
+    EXPECT_TRUE(Press(VK_SPACE, 0x39));
+    EXPECT_EQ(Text(), L"\u6E21\u3057\u306F\u79C1\u306F") << "back to the dictionary's order";
+    EXPECT_TRUE(Press(VK_ESCAPE, 0x01));
+    EXPECT_TRUE(Press(VK_ESCAPE, 0x01));
 }
 
 // Without an installed dictionary typing still works and Space keeps the kana.

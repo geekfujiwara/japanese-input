@@ -46,6 +46,7 @@ private:
     ~LangBarButton();
 
     bool JapaneseMode() const;
+    void ShowMenu(POINT point);
 
     LONG ref_count_ = 1;
     TextService* service_;

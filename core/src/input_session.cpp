@@ -17,9 +17,8 @@ SessionOutput InputSession::SetJapaneseMode(bool enabled)
     CloseEmojiPalette();
     SessionOutput output;
     if (!enabled && converting_) {
-        output.commit = ConvertedText();
+        output.commit = CommitConversion(output);
         output.composition_changed = true;
-        EndConversion();
     } else if (!enabled && Composing()) {
         output.commit = composer_.Commit();
         output.composition_changed = true;
@@ -157,6 +156,19 @@ void InputSession::UpdatePredictions()
     }
     if (reading.size() >= kMinPredictionLength) {
         predictions_ = converter_->Predict(reading, kCandidatePageSize);
+        if (learning_ != nullptr) {
+            // Words chosen before come first.
+            std::vector<std::u16string> learned = learning_->Predictions(reading, kCandidatePageSize);
+            for (std::u16string& prediction : predictions_) {
+                if (learned.size() >= kCandidatePageSize) {
+                    break;
+                }
+                if (std::find(learned.begin(), learned.end(), prediction) == learned.end()) {
+                    learned.push_back(std::move(prediction));
+                }
+            }
+            predictions_ = std::move(learned);
+        }
     }
 }
 
@@ -171,10 +183,12 @@ void InputSession::StartPrediction()
             segment.candidates.push_back(std::move(form));
         }
     }
+    base_candidates_ = {segment.candidates};
     segments_ = {std::move(segment)};
     selected_ = {0};
     focus_ = 0;
     converting_ = true;
+    predicting_ = true;
     candidate_list_visible_ = true;
 }
 
@@ -286,6 +300,12 @@ SessionOutput InputSession::HandleConversion(const KeyEvent& key)
 {
     SessionOutput output;
     output.composition_changed = true;
+    // D-05: Ctrl+Delete removes the selected candidate from the history.
+    if (key.kind == KeyKind::Delete && key.control && candidate_list_visible_) {
+        output.learning_changed = ForgetSelectedCandidate();
+        output.composition_changed = output.learning_changed;
+        return output;
+    }
     if (HandleCandidateList(key)) {
         return output;
     }
@@ -340,8 +360,7 @@ SessionOutput InputSession::HandleConversion(const KeyEvent& key)
         break;
     }
     case KeyKind::Enter:
-        output.commit = ConvertedText();
-        EndConversion();
+        output.commit = CommitConversion(output);
         break;
     case KeyKind::Escape:
     case KeyKind::Backspace:
@@ -350,8 +369,7 @@ SessionOutput InputSession::HandleConversion(const KeyEvent& key)
         EndConversion();
         break;
     case KeyKind::Character:
-        output.commit = ConvertedText();
-        EndConversion();
+        output.commit = CommitConversion(output);
         composer_.InsertKey(key.character);
         break;
     case KeyKind::Delete:
@@ -372,15 +390,104 @@ void InputSession::Convert(std::vector<std::size_t> fixed_lengths)
 {
     segments_ = converter_->Convert(reading_, fixed_lengths);
     selected_.assign(segments_.size(), 0);
+    predicting_ = false;
     if (segments_.empty()) {
         composer_.SetText(reading_);
         EndConversion();
         return;
     }
+    base_candidates_.clear();
+    for (std::size_t i = 0; i < segments_.size(); ++i) {
+        base_candidates_.push_back(segments_[i].candidates);
+        ApplyLearning(i);
+    }
     converting_ = true;
     if (focus_ >= segments_.size()) {
         focus_ = segments_.size() - 1;
     }
+}
+
+// The surfaces chosen before for the segment's reading come first, most recent first.
+void InputSession::ApplyLearning(std::size_t segment)
+{
+    if (segment >= base_candidates_.size()) {
+        return;
+    }
+    std::vector<std::u16string> candidates;
+    if (learning_ != nullptr && !predicting_) {
+        candidates = learning_->Conversions(segments_[segment].reading);
+    }
+    for (const std::u16string& candidate : base_candidates_[segment]) {
+        if (std::find(candidates.begin(), candidates.end(), candidate) == candidates.end()) {
+            candidates.push_back(candidate);
+        }
+    }
+    segments_[segment].candidates = std::move(candidates);
+}
+
+bool InputSession::IsLearnedCandidate(std::size_t segment, std::size_t index) const
+{
+    if (learning_ == nullptr || segment >= segments_.size() || index >= segments_[segment].candidates.size()) {
+        return false;
+    }
+    const std::u16string& surface = segments_[segment].candidates[index];
+    return predicting_ ? learning_->Contains(LearningHistory::Kind::Prediction, segments_[segment].reading, surface)
+                       : learning_->Contains(LearningHistory::Kind::Conversion, segments_[segment].reading, surface);
+}
+
+bool InputSession::ForgetSelectedCandidate()
+{
+    if (learning_ == nullptr) {
+        return false;
+    }
+    ConvertedSegment& segment = segments_[focus_];
+    const std::u16string surface = segment.candidates[selected_[focus_]];
+    bool removed = false;
+    if (predicting_) {
+        // The history may hold the word for a longer reading; forget it for every reading.
+        removed = learning_->RemoveSurface(LearningHistory::Kind::Prediction, surface);
+        removed = learning_->Remove(LearningHistory::Kind::Conversion, segment.reading, surface) || removed;
+    } else {
+        removed = learning_->Remove(LearningHistory::Kind::Conversion, segment.reading, surface);
+    }
+    if (!removed) {
+        return false;
+    }
+    if (!predicting_) {
+        ApplyLearning(focus_);
+        const auto found = std::find(segment.candidates.begin(), segment.candidates.end(), surface);
+        selected_[focus_] = found == segment.candidates.end()
+                                ? 0
+                                : static_cast<std::size_t>(found - segment.candidates.begin());
+    }
+    return true;
+}
+
+std::u16string InputSession::CommitConversion(SessionOutput& output)
+{
+    std::u16string text = ConvertedText();
+    if (learning_ != nullptr && recording_) {
+        for (std::size_t i = 0; i < segments_.size(); ++i) {
+            const ConvertedSegment& segment = segments_[i];
+            const std::u16string& chosen = segment.candidates[selected_[i]];
+            if (predicting_) {
+                if (chosen != segment.reading &&
+                    learning_->Record(LearningHistory::Kind::Prediction, segment.reading, chosen)) {
+                    output.learning_changed = true;
+                }
+                continue;
+            }
+            // Learn a choice that differs from the dictionary's first candidate, and refresh one learned before.
+            const bool differs = i < base_candidates_.size() && !base_candidates_[i].empty() &&
+                                 base_candidates_[i].front() != chosen;
+            if ((differs || !learning_->Conversions(segment.reading).empty()) &&
+                learning_->Record(LearningHistory::Kind::Conversion, segment.reading, chosen)) {
+                output.learning_changed = true;
+            }
+        }
+    }
+    EndConversion();
+    return text;
 }
 
 std::u16string InputSession::ConvertedText() const
@@ -395,8 +502,10 @@ std::u16string InputSession::ConvertedText() const
 void InputSession::EndConversion()
 {
     converting_ = false;
+    predicting_ = false;
     reading_.clear();
     segments_.clear();
+    base_candidates_.clear();
     selected_.clear();
     focus_ = 0;
     candidate_list_visible_ = false;
