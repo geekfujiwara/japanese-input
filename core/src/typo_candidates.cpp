@@ -4,13 +4,33 @@
 
 #include <algorithm>
 #include <unordered_map>
-#include <unordered_set>
 #include <utility>
 
 namespace astelio {
 namespace {
 
 constexpr std::u16string_view kInsertableKeys = u"abcdefghijklmnopqrstuvwxyz-";
+constexpr std::u16string_view kVowels = u"aiueo";
+constexpr std::size_t kCandidatesToScore = 20;
+
+bool IsVowel(char16_t key)
+{
+    return kVowels.find(key) != std::u16string_view::npos;
+}
+
+// Keys typed for a similar sound: ふ is hu or fu, じ is ji or zi, and ヴ and ブ are often mixed up.
+std::u16string_view SimilarKeys(char16_t key)
+{
+    switch (key) {
+    case u'h': return u"f";
+    case u'f': return u"h";
+    case u'j': return u"z";
+    case u'z': return u"j";
+    case u'v': return u"b";
+    case u'b': return u"v";
+    default: return {};
+    }
+}
 
 std::u16string ToKana(std::u16string_view keys, const RomajiTable& table)
 {
@@ -69,46 +89,75 @@ std::vector<TypoCandidate> FindTypoCandidates(std::u16string_view keys, const Ro
     if (keys.empty() || limit == 0) {
         return result;
     }
-    std::unordered_set<std::u16string> variants;
+    std::unordered_map<std::u16string, std::int32_t> variants; // keys -> penalty of the edit
+    const auto add = [&variants](std::u16string variant, std::int32_t penalty) {
+        const auto [found, inserted] = variants.emplace(std::move(variant), penalty);
+        if (!inserted && penalty < found->second) {
+            found->second = penalty;
+        }
+    };
     const std::u16string typed(keys);
     for (std::size_t i = 0; i < typed.size(); ++i) {
-        variants.insert(typed.substr(0, i) + typed.substr(i + 1)); // an extra key
+        add(typed.substr(0, i) + typed.substr(i + 1), kTypoKeyPenalty); // an extra key
+        std::u16string replaced = typed;
         for (const char16_t neighbour : NeighbouringKeys(typed[i])) {
-            std::u16string replaced = typed;
             replaced[i] = neighbour;
-            variants.insert(std::move(replaced));
+            add(replaced, kTypoKeyPenalty);
+        }
+        for (const char16_t similar : SimilarKeys(typed[i])) {
+            replaced[i] = similar;
+            add(replaced, kTypoSoundPenalty);
+        }
+        if (IsVowel(typed[i])) {
+            for (const char16_t vowel : kVowels) {
+                replaced[i] = vowel;
+                add(replaced, kTypoSoundPenalty);
+            }
         }
         if (i + 1 < typed.size()) {
             std::u16string swapped = typed;
             std::swap(swapped[i], swapped[i + 1]);
-            variants.insert(std::move(swapped));
+            add(std::move(swapped), kTypoKeyPenalty);
+            // Both keys of a doubled consonant (っ) slipped the same way.
+            if (typed[i] == typed[i + 1] && !IsVowel(typed[i]) && typed[i] != u'n') {
+                std::u16string doubled = typed;
+                for (const std::u16string_view keys_like : {NeighbouringKeys(typed[i]), SimilarKeys(typed[i])}) {
+                    for (const char16_t other : keys_like) {
+                        doubled[i] = doubled[i + 1] = other;
+                        add(doubled, kTypoSoundPenalty);
+                    }
+                }
+            }
         }
     }
     for (std::size_t i = 0; i <= typed.size(); ++i) {
         for (const char16_t missing : kInsertableKeys) {
-            variants.insert(typed.substr(0, i) + missing + typed.substr(i));
+            add(typed.substr(0, i) + missing + typed.substr(i), kTypoKeyPenalty);
         }
     }
     variants.erase(typed);
 
     const std::u16string typed_reading = ToKana(typed, table);
     std::unordered_map<std::u16string, std::size_t> by_surface;
-    for (const std::u16string& variant : variants) {
+    for (const auto& [variant, penalty] : variants) {
         std::u16string reading = ToKana(variant, table);
         if (reading.empty() || reading == typed_reading || HasLeftoverRomaji(reading)) {
             continue;
         }
         for (const DictionaryEntry& entry : dictionary.Lookup(reading)) {
-            const std::int32_t cost = entry.cost + kTypoKeyPenalty;
-            const auto found = by_surface.find(std::u16string(entry.surface));
+            TypoCandidate candidate{variant, reading, std::u16string(entry.surface), entry.cost + penalty,
+                                    entry.left_id, entry.right_id};
+            const auto found = by_surface.find(candidate.surface);
             if (found != by_surface.end()) {
-                if (cost < result[found->second].cost) {
-                    result[found->second] = {variant, reading, std::u16string(entry.surface), cost};
+                TypoCandidate& known = result[found->second];
+                if (candidate.cost < known.cost ||
+                    (candidate.cost == known.cost && candidate.keys < known.keys)) {
+                    known = std::move(candidate);
                 }
                 continue;
             }
-            by_surface.emplace(std::u16string(entry.surface), result.size());
-            result.push_back({variant, reading, std::u16string(entry.surface), cost});
+            by_surface.emplace(candidate.surface, result.size());
+            result.push_back(std::move(candidate));
         }
     }
     std::sort(result.begin(), result.end(), [](const TypoCandidate& a, const TypoCandidate& b) {
@@ -118,6 +167,39 @@ std::vector<TypoCandidate> FindTypoCandidates(std::u16string_view keys, const Ro
         result.resize(limit);
     }
     return result;
+}
+
+std::optional<TypoCandidate> SuggestTypoCorrection(std::u16string_view keys, const RomajiTable& table,
+                                                   const SystemDictionary& dictionary,
+                                                   std::optional<std::uint16_t> previous_right_id)
+{
+    const std::uint16_t previous = previous_right_id.value_or(dictionary.bos_id());
+    const auto standalone = [&](std::uint16_t left, std::uint16_t right, std::int32_t cost) {
+        return dictionary.ConnectionCost(previous, left) + cost + dictionary.ConnectionCost(right, dictionary.eos_id());
+    };
+    std::optional<std::int32_t> typed_score;
+    for (const DictionaryEntry& entry : dictionary.Lookup(ToKana(keys, table))) {
+        const std::int32_t score = standalone(entry.left_id, entry.right_id, entry.cost);
+        typed_score = typed_score ? std::min(*typed_score, score) : score;
+    }
+
+    std::optional<TypoCandidate> best;
+    std::int32_t best_score = 0;
+    for (TypoCandidate& candidate : FindTypoCandidates(keys, table, dictionary, kCandidatesToScore)) {
+        // Inflection fragments (出しゃ) and particles are not what a slipped key usually meant.
+        if (candidate.reading.size() < 2 || dictionary.word_type(candidate.left_id) != WordType::Content) {
+            continue;
+        }
+        const std::int32_t score = standalone(candidate.left_id, candidate.right_id, candidate.cost);
+        if (!best || score < best_score) {
+            best_score = score;
+            best = std::move(candidate);
+        }
+    }
+    if (best && typed_score && best_score + kTypoSuggestMargin >= *typed_score) {
+        return std::nullopt;
+    }
+    return best;
 }
 
 } // namespace astelio

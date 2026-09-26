@@ -12,7 +12,7 @@ IME本体でSLM（小型言語モデル）を使うかどうかを決めるた�
 
 | 項目 | 内容 |
 | --- | --- |
-| コーパス | `slm/corpus/typo.tsv`: キー1つの打ち間違い30件（`yu-a-`→ユーザー など）と、正しい読み15件。AIが作った下書き |
+| コーパス | `slm/corpus/typo.tsv`（現在は `eval/typo/typo.tsv` に移し、文例を増やした）: キー1つの打ち間違い30件（`yu-a-`→ユーザー など）と、正しい読み15件。AIが作った下書き |
 | 実行環境 | GitHub Actions の ubuntu-latest、CPUのみ。llama.cpp b11191（`llama-server`） |
 | モデル | ライセンスで絞った8種（商用利用・再配布可）。Q8_0、sarashina2.2-0.5b だけQ4_K_Mも追加。版とSHA-256は `slm/models.tsv` |
 | 指示文 | すべてのモデルで同じ。例を2〜3件付けた |
