@@ -1,7 +1,10 @@
 #include "astelio/tip/guids.h"
 
 #include "astelio/dictionary_builder.h"
+#include "astelio/user_dictionary.h"
+#include "astelio/user_dictionary_io.h"
 #include "test_text_store.h"
+#include "user_dictionary_store.h"
 
 #include <windows.h>
 
@@ -19,7 +22,10 @@
 #include <iostream>
 #include <iterator>
 #include <memory>
+#include <optional>
 #include <string>
+#include <string_view>
+#include <vector>
 
 namespace {
 
@@ -400,12 +406,22 @@ protected:
         ASSERT_NE(use_settings_, nullptr);
         RegDeleteTreeW(HKEY_CURRENT_USER, kTestSettingsKey);
         use_settings_(kTestSettingsKey);
+        use_user_dictionary_ = reinterpret_cast<UseUserDictionaryFunction>(
+            GetProcAddress(GetModuleHandleW(TipPath().c_str()), "AstelioTipTestUseUserDictionary"));
+        ASSERT_NE(use_user_dictionary_, nullptr);
+        user_dictionary_path_ = std::wstring(directory) + L"astelio_tip_test_user_dictionary.tsv";
+        DeleteFileW(user_dictionary_path_.c_str());
+        use_user_dictionary_(user_dictionary_path_.c_str());
         ASSERT_HRESULT_SUCCEEDED(thread_mgr_->IsThreadFocus(&thread_focus_));
     }
 
     void TearDown() override
     {
         SetModifierState(false, false);
+        if (use_user_dictionary_ != nullptr) {
+            use_user_dictionary_(nullptr);
+            DeleteFileW(user_dictionary_path_.c_str());
+        }
         if (use_settings_ != nullptr) {
             use_settings_(nullptr);
             RegDeleteTreeW(HKEY_CURRENT_USER, kTestSettingsKey);
@@ -668,6 +684,9 @@ protected:
     std::wstring learning_path_;
     using UseSettingsFunction = void(WINAPI*)(const wchar_t*);
     UseSettingsFunction use_settings_ = nullptr;
+    using UseUserDictionaryFunction = void(WINAPI*)(const wchar_t*);
+    UseUserDictionaryFunction use_user_dictionary_ = nullptr;
+    std::wstring user_dictionary_path_;
     static constexpr wchar_t kTestSettingsKey[] = L"Software\\AstelioIME\\Tests";
     BOOL thread_focus_ = FALSE;
 };
@@ -1270,6 +1289,136 @@ TEST_F(TypingTest, SpaceWithoutADictionaryKeepsTheKana)
     EXPECT_TRUE(Press(VK_SPACE, 0x39));
     EXPECT_EQ(Text(), L"\u304B");
     EXPECT_EQ(CompositionCount(), 1);
+}
+
+// T-D02-2 (TIP): a word saved in the user dictionary comes first from the next input; when another app rewrites
+// or removes the file, the next input uses what the file holds now.
+TEST_F(TypingTest, SavedUserDictionaryIsUsedFromTheNextInput)
+{
+    const std::wstring path = WriteTestDictionary();
+    ASSERT_FALSE(path.empty());
+    ASSERT_HRESULT_SUCCEEDED(use_dictionary_(path.c_str()));
+    astelio::tip::UseUserDictionaryFile(user_dictionary_path_.c_str());
+    const auto save = [](std::u16string surface) {
+        astelio::UserDictionary words;
+        ASSERT_TRUE(words.Add({u"わたし", std::move(surface), astelio::UserDictionary::PartOfSpeech::Noun, u""}));
+        ASSERT_TRUE(astelio::tip::SaveUserDictionary(words));
+    };
+    const auto convert = [this] {
+        TypeLetters("watasi");
+        EXPECT_TRUE(Press(VK_SPACE, 0x39));
+        const std::wstring converted = Text();
+        EXPECT_TRUE(Press(VK_ESCAPE, 0x01));
+        EXPECT_TRUE(Press(VK_ESCAPE, 0x01));
+        EXPECT_EQ(Text(), L"");
+        return converted;
+    };
+
+    EXPECT_EQ(convert(), L"\u79C1") << "the system dictionary's word without a user dictionary";
+    save(u"綿紙");
+    EXPECT_EQ(convert(), L"\u7DBF\u7D19") << "the saved word comes first";
+    save(u"和多志");
+    EXPECT_EQ(convert(), L"\u548C\u591A\u5FD7") << "the file written by another app is read again";
+    ASSERT_TRUE(DeleteFileW(user_dictionary_path_.c_str()));
+    EXPECT_EQ(convert(), L"\u79C1") << "the file is gone";
+    astelio::tip::UseUserDictionaryFile(nullptr);
+}
+
+std::wstring TemporaryFile(const wchar_t* name)
+{
+    wchar_t directory[MAX_PATH] = {};
+    GetTempPathW(MAX_PATH, directory);
+    return std::wstring(directory) + name;
+}
+
+bool WriteBytes(const std::wstring& path, std::string_view bytes)
+{
+    std::ofstream file(path, std::ios::binary | std::ios::trunc);
+    file.write(bytes.data(), static_cast<std::streamsize>(bytes.size()));
+    return static_cast<bool>(file);
+}
+
+std::string ReadBytes(const std::wstring& path)
+{
+    std::ifstream file(path, std::ios::binary);
+    return std::string((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+}
+
+const std::vector<astelio::UserDictionary::Word> kExportedWords = {
+    {u"わたし", u"綿紙", astelio::UserDictionary::PartOfSpeech::Noun, u""},
+    {u"あすてりお", u"Astelio", astelio::UserDictionary::PartOfSpeech::Noun, u""},
+};
+
+// T-D03-3 (TIP): Shift_JIS files are read through code page 932, and words with no Shift_JIS code are refused
+// instead of being written as "?".
+TEST(UserDictionaryFile, ShiftJisIsReadThroughCodePage932)
+{
+    const std::optional<std::u16string> kana = astelio::tip::DecodeUserDictionaryFile("\x82\xED\x82\xBD\x82\xB5");
+    ASSERT_TRUE(kana.has_value());
+    EXPECT_TRUE(*kana == u"わたし");
+
+    const std::optional<std::string> bytes = astelio::tip::EncodeUserDictionaryFile(
+        astelio::ExportUserDictionary(kExportedWords, astelio::UserDictionaryFormat::GoogleIme),
+        astelio::TextEncoding::ShiftJis);
+    ASSERT_TRUE(bytes.has_value());
+    EXPECT_EQ(astelio::DetectEncoding(*bytes), astelio::TextEncoding::ShiftJis);
+    const std::wstring path = TemporaryFile(L"astelio_tip_test_sjis.txt");
+    ASSERT_TRUE(WriteBytes(path, *bytes));
+    astelio::UserDictionary dictionary;
+    const astelio::tip::UserDictionaryFileImport result = astelio::tip::ImportUserDictionaryFile(path, dictionary);
+    DeleteFileW(path.c_str());
+    EXPECT_TRUE(result.read);
+    EXPECT_TRUE(result.format.has_value());
+    EXPECT_EQ(result.added, kExportedWords.size());
+    EXPECT_EQ(result.skipped, 0u);
+    EXPECT_TRUE(dictionary.Words() == kExportedWords);
+
+    EXPECT_FALSE(astelio::tip::EncodeUserDictionaryFile(u"\U0001F436", astelio::TextEncoding::ShiftJis).has_value());
+}
+
+// T-D03-3 (TIP): an exported file is in the encoding its IME reads, and importing it gives the same words.
+TEST(UserDictionaryFile, ExportedFileImportsTheSameWords)
+{
+    for (const astelio::UserDictionaryFormat format :
+         {astelio::UserDictionaryFormat::GoogleIme, astelio::UserDictionaryFormat::MsIme,
+          astelio::UserDictionaryFormat::Atok, astelio::UserDictionaryFormat::Kotoeri,
+          astelio::UserDictionaryFormat::AstelioJson}) {
+        SCOPED_TRACE(static_cast<int>(format));
+        const std::wstring path = TemporaryFile(L"astelio_tip_test_export.txt");
+        ASSERT_EQ(astelio::tip::ExportUserDictionaryFile(path, kExportedWords, format),
+                  astelio::tip::UserDictionaryExport::Written);
+        EXPECT_EQ(astelio::DetectEncoding(ReadBytes(path)), astelio::ExportEncoding(format));
+        astelio::UserDictionary dictionary;
+        const astelio::tip::UserDictionaryFileImport result = astelio::tip::ImportUserDictionaryFile(path, dictionary);
+        DeleteFileW(path.c_str());
+        EXPECT_TRUE(result.read);
+        EXPECT_TRUE(result.format.has_value());
+        EXPECT_EQ(result.added, kExportedWords.size());
+        EXPECT_TRUE(dictionary.Words() == kExportedWords);
+    }
+}
+
+// F-04 (TIP): a file that cannot be read or is not a dictionary leaves the words as they are.
+TEST(UserDictionaryFile, BrokenFilesLeaveTheDictionaryAsItIs)
+{
+    astelio::UserDictionary dictionary;
+    ASSERT_TRUE(dictionary.Add(kExportedWords.front()));
+    const std::vector<astelio::UserDictionary::Word> before = dictionary.Words();
+    const std::wstring path = TemporaryFile(L"astelio_tip_test_broken.txt");
+
+    EXPECT_FALSE(astelio::tip::ImportUserDictionaryFile(path + L".missing", dictionary).read);
+    const std::string broken[] = {
+        std::string("\xFF\xFE\x00\xD8", 4),           // UTF-16LE with a lone surrogate
+        std::string("\x00\x01\x02\x03\xFF\x80\x81", 7), // binary
+        "no tabs here\njust text\n",
+    };
+    for (const std::string& bytes : broken) {
+        ASSERT_TRUE(WriteBytes(path, bytes));
+        const astelio::tip::UserDictionaryFileImport result = astelio::tip::ImportUserDictionaryFile(path, dictionary);
+        EXPECT_EQ(result.added, 0u);
+        EXPECT_TRUE(dictionary.Words() == before);
+    }
+    DeleteFileW(path.c_str());
 }
 
 } // namespace
