@@ -18,6 +18,7 @@ namespace astelio::tip {
 class CandidateWindow;
 class EmojiWindow;
 class LangBarButton;
+class ModeWindow;
 
 class TextService final : public ITfTextInputProcessorEx,
                           public ITfKeyEventSink,
@@ -65,12 +66,14 @@ public:
     void OnLearningCommand(LearningCommand command, HWND owner);
 
     // Runs inside an edit session: commits `commit`, then shows the session's uncommitted text.
-    HRESULT ApplyToDocument(TfEditCookie cookie, ITfContext* context, const std::u16string& commit);
+    HRESULT ApplyToDocument(TfEditCookie cookie, ITfContext* context, const std::u16string& commit,
+                            const std::u16string& undo);
 
     static HRESULT TestKey(ITfContext* context, WPARAM wparam, LPARAM lparam, BOOL key_up, BOOL* eaten);
     static HRESULT TestUseDictionary(const wchar_t* path);
     static HWND TestCandidateWindow();
     static HWND TestEmojiWindow();
+    static HWND TestModeWindow();
     static void TestUseLearningFile(const wchar_t* path);
 
 private:
@@ -78,6 +81,8 @@ private:
     ~TextService();
 
     void UseConverter(const Converter* converter);
+    // Whether the IME takes `key` in `context`.
+    bool WillHandle(ITfContext* context, const KeyEvent& key);
     // Loads the history again when another app (or the history window) changed the file.
     void RefreshLearning(bool force = false);
     // Sends the session's output to the document and saves the emoji history when it changed.
@@ -91,11 +96,14 @@ private:
     void ApplyDisplayAttributes(TfEditCookie cookie, ITfContext* context, ITfRange* composition);
     void ClearDisplayAttributes(TfEditCookie cookie, ITfContext* context, ITfRange* range);
 
-    HRESULT RequestEdit(ITfContext* context, std::u16string commit);
+    HRESULT RequestEdit(ITfContext* context, std::u16string commit, std::u16string undo = {});
+    // B-08: removes `text` when it is just before the caret; returns whether it did.
+    bool RemoveBeforeCaret(TfEditCookie cookie, ITfContext* context, const std::u16string& text);
     HRESULT StartComposition(TfEditCookie cookie, ITfContext* context);
     HRESULT EndComposition(TfEditCookie cookie);
     // Switches the mode, commits into `context` when leaving Japanese, and updates the indicators.
-    HRESULT SetMode(bool japanese, ITfContext* context);
+    // `show`: the user switched, so the new mode pops up near the caret (B-12).
+    HRESULT SetMode(bool japanese, ITfContext* context, bool show = false);
     Microsoft::WRL::ComPtr<ITfContext> FocusedContext() const;
     Microsoft::WRL::ComPtr<ITfCompartment> OpenCloseCompartment() const;
     void StartModeIndicators();
@@ -118,6 +126,7 @@ private:
     bool mode_button_added_ = false;
     std::unique_ptr<CandidateWindow> candidate_window_;
     std::unique_ptr<EmojiWindow> emoji_window_;
+    std::unique_ptr<ModeWindow> mode_window_;
     TfGuidAtom attribute_atoms_[3] = {TF_INVALID_GUIDATOM, TF_INVALID_GUIDATOM, TF_INVALID_GUIDATOM};
 };
 

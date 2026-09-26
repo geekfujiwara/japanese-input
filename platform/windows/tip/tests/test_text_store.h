@@ -2,6 +2,7 @@
 
 #include <windows.h>
 
+#include <InputScope.h>
 #include <msctf.h>
 #include <olectl.h>
 #include <textstor.h>
@@ -19,6 +20,8 @@ public:
     const std::wstring& Text() const { return text_; }
     LONG SelectionStart() const { return selection_start_; }
     LONG SelectionEnd() const { return selection_end_; }
+    // B-11: the InputScope the document reports for all its text (IS_DEFAULT reports none).
+    void SetInputScope(InputScope scope);
 
     // IUnknown
     STDMETHODIMP QueryInterface(REFIID riid, void** object) override;
@@ -71,6 +74,8 @@ private:
     std::wstring text_;
     LONG selection_start_ = 0;
     LONG selection_end_ = 0;
+    InputScope input_scope_ = IS_DEFAULT;
+    bool input_scope_requested_ = false;
 };
 
 } // namespace astelio::tip::testing
