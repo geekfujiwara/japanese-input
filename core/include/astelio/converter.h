@@ -2,6 +2,7 @@
 
 #include "astelio/dictionary.h"
 #include "astelio/special_candidates.h"
+#include "astelio/user_dictionary.h"
 
 #include <cstddef>
 #include <cstdint>
@@ -45,11 +46,16 @@ public:
     // The clock for date and time candidates (tests fix it); the system clock by default.
     void SetClock(std::function<LocalTime()> clock) { clock_ = std::move(clock); }
 
+    // D-02 / D-08: the user's words come first where their reading is a segment, and suppressed words are left
+    // out. `dictionary` must outlive the converter (or be replaced first); nullptr turns it off.
+    void SetUserDictionary(const UserDictionary* dictionary) { user_dictionary_ = dictionary; }
+
     const SystemDictionary& dictionary() const { return dictionary_; }
 
 private:
     const SystemDictionary& dictionary_;
     std::function<LocalTime()> clock_;
+    const UserDictionary* user_dictionary_ = nullptr;
 };
 
 std::u16string HiraganaToKatakana(std::u16string_view text);

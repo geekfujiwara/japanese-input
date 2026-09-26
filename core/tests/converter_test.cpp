@@ -1,5 +1,6 @@
 #include "astelio/converter.h"
 #include "astelio/dictionary_builder.h"
+#include "astelio/user_dictionary.h"
 
 #include <gtest/gtest.h>
 
@@ -228,6 +229,71 @@ TEST_F(ConverterTest, NumbersAndDatesGetSpecialCandidates)
     EXPECT_EQ(dates[0], u"今日は");
     EXPECT_NE(std::find(dates.begin(), dates.end(), u"2026/09/25は"), dates.end()) << "the particle is kept";
     EXPECT_NE(std::find(dates.begin(), dates.end(), u"9月25日(金)は"), dates.end());
+}
+
+using Pos = astelio::UserDictionary::PartOfSpeech;
+
+// T-D02-1 (engine part): a user word comes first where its reading is a segment, and is a noun in sentences.
+TEST_F(ConverterTest, UserDictionaryWordsComeFirst)
+{
+    astelio::UserDictionary user;
+    ASSERT_TRUE(user.Add({u"きょう", u"京", Pos::PlaceName, u""}));
+    ASSERT_TRUE(user.Add({u"あすてりお", u"Astelio", Pos::ProperNoun, u""}));
+    astelio::Converter converter(*dictionary_);
+    converter.SetUserDictionary(&user);
+
+    std::vector<ConvertedSegment> segments = converter.Convert(u"きょうは");
+    ASSERT_EQ(segments.size(), 1u);
+    EXPECT_EQ(segments[0].candidates.at(0), u"京は");
+    EXPECT_EQ(segments[0].candidates.at(1), u"今日は");
+
+    segments = converter.Convert(u"あすてりおはにほんごです");
+    EXPECT_EQ(Best(segments), u"Astelioは日本語です");
+    EXPECT_EQ(Readings(segments), (std::vector<std::u16string>{u"あすてりおは", u"にほんごです"}));
+    EXPECT_EQ(converter.Predict(u"あす", 9), (std::vector<std::u16string>{u"Astelio"}));
+
+    ASSERT_TRUE(user.Remove({u"きょう", u"京", Pos::PlaceName, u""}));
+    EXPECT_EQ(converter.Convert(u"きょうは").at(0).candidates.at(0), u"今日は");
+    converter.SetUserDictionary(nullptr);
+    EXPECT_EQ(Best(converter.Convert(u"あすてりお")), u"あすてりお");
+}
+
+// D-02: a shortcut reading (短縮よみ) converts only as a whole segment.
+TEST_F(ConverterTest, ShortcutReadingsOnlyAsAWholeSegment)
+{
+    astelio::UserDictionary user;
+    ASSERT_TRUE(user.Add({u"よろ", u"よろしくお願いします", Pos::Abbreviation, u""}));
+    astelio::Converter converter(*dictionary_);
+    converter.SetUserDictionary(&user);
+
+    std::vector<ConvertedSegment> segments = converter.Convert(u"よろ");
+    ASSERT_EQ(segments.size(), 1u);
+    EXPECT_EQ(segments[0].candidates.at(0), u"よろしくお願いします");
+    for (const ConvertedSegment& segment : converter.Convert(u"よろは")) {
+        for (const std::u16string& candidate : segment.candidates) {
+            EXPECT_EQ(candidate.find(u"よろしく"), std::u16string::npos) << "not inside a longer reading";
+        }
+    }
+}
+
+// T-D08-1 (engine part): a suppressed word is left out of the lattice, the candidates and the predictions.
+TEST_F(ConverterTest, SuppressedWordsAreLeftOut)
+{
+    astelio::UserDictionary user;
+    ASSERT_TRUE(user.Add({u"わたし", u"私", Pos::Suppressed, u""}));
+    astelio::Converter converter(*dictionary_);
+    converter.SetUserDictionary(&user);
+
+    const std::vector<ConvertedSegment> segments = converter.Convert(u"わたしはにほんごです");
+    EXPECT_EQ(Best(segments), u"渡しは日本語です") << "the next candidate";
+    ASSERT_FALSE(segments.empty());
+    for (const std::u16string& candidate : segments[0].candidates) {
+        EXPECT_EQ(candidate.find(u"私"), std::u16string::npos);
+    }
+    EXPECT_EQ(converter.Predict(u"わた", 9), (std::vector<std::u16string>{u"綿", u"渡し"}));
+
+    ASSERT_TRUE(user.Add({u"", u"綿", Pos::Suppressed, u""}));
+    EXPECT_EQ(converter.Predict(u"わた", 9), (std::vector<std::u16string>{u"渡し"})) << "for any reading";
 }
 
 TEST(TypoCorrection, CollapsesDoubledSmallKanaAndKeepsTheMapping)
