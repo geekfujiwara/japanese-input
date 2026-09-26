@@ -88,9 +88,9 @@ flowchart LR
 | 入力の履歴 | `%LOCALAPPDATA%\AstelioIME\learning.tsv` | 選んだ候補・語の組み合わせ・文節の区切り・予測（最大5000件、古いものから消す） |
 | ユーザー辞書 | `%APPDATA%\AstelioIME\user_dictionary.tsv` | 読み・表記・品詞・コメント（最大10000語） |
 | 使った絵文字 | `%LOCALAPPDATA%\AstelioIME\emoji_recent.txt` | 絵文字パレットの履歴 |
-| 設定 | `HKCU\Software\AstelioIME` | `LearningEnabled`（履歴を使う）、`LearningPaused`（記録の一時停止）、`NoLearningApps`（記録しないアプリのexe名）、`TypoSuggestions`（もしかして。0でオフ） |
+| 設定 | `HKCU\Software\AstelioIME`（設定アプリができたら `%APPDATA%\AstelioIME\settings.json` に移す） | `LearningEnabled`（履歴を使う）、`LearningPaused`（記録の一時停止）、`NoLearningApps`（記録しないアプリのexe名）、`DisabledApps`（IMEを使わないアプリのexe名）、`TypoSuggestions`（もしかして。0でオフ） |
 
-設定アプリ（フェーズ6）ができるまでは、タスクバーの「あ / A」の右クリックメニューとレジストリで切り替えます。
+設定アプリ（フェーズ6）ができるまでは、タスクバーの「あ / A」の右クリックメニューとレジストリで切り替えます。ゲームなどIMEが邪魔になるアプリでは「このアプリでは使わない」を選ぶと、キーもAltの単押しもそのままアプリに届きます。
 
 ## 試してみる（Windows）
 

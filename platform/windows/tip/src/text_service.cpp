@@ -400,6 +400,7 @@ STDMETHODIMP TextService::ActivateEx(ITfThreadMgr* thread_mgr, TfClientId client
     UseConverter(SharedConverter());
     session_.SetRecentEmoji(LoadRecentEmoji());
     app_name_ = CurrentAppName();
+    app_disabled_ = AppDisabled(app_name_);
     learning_on_ = LearningEnabled();
     RefreshLearning(true);
     RefreshUserDictionary(true);
@@ -445,13 +446,24 @@ STDMETHODIMP TextService::Deactivate()
 STDMETHODIMP TextService::OnSetFocus(BOOL /*foreground*/)
 {
     session_.ResetContext();
+    app_disabled_ = AppDisabled(app_name_); // another window of this app may have changed it
     return S_OK;
 }
 
 bool TextService::WillHandle(ITfContext* context, const KeyEvent& key)
 {
-    // Outside a composition, a key starts one; not in a password field (B-11).
-    return session_.WillHandle(key) && (session_.Composing() || !CaretInPasswordField(client_id_, context));
+    // Outside a composition, a key starts one; not in a password field (B-11) or an app left out (C-09).
+    return !app_disabled_ && session_.WillHandle(key) &&
+           (session_.Composing() || !CaretInPasswordField(client_id_, context));
+}
+
+void TextService::ToggleAppDisabled()
+{
+    app_disabled_ = !app_disabled_;
+    SetAppDisabled(app_name_, app_disabled_);
+    if (app_disabled_) {
+        SetMode(false, FocusedContext().Get(), true); // commits what is typed; the app gets direct input
+    }
 }
 
 STDMETHODIMP TextService::OnTestKeyDown(ITfContext* context, WPARAM wparam, LPARAM lparam, BOOL* eaten)
@@ -488,7 +500,7 @@ STDMETHODIMP TextService::OnTestKeyUp(ITfContext* /*context*/, WPARAM wparam, LP
     *eaten = FALSE;
     try {
         if (const std::optional<ModifierSide> side = AltSide(wparam, lparam)) {
-            if (alt_taps_.Release(*side, Now())) {
+            if (alt_taps_.Release(*side, Now()) && !app_disabled_) {
                 pending_alt_tap_ = *side;
                 *eaten = TRUE;
             }
@@ -614,7 +626,7 @@ STDMETHODIMP TextService::OnChange(REFGUID compartment_guid)
 HRESULT TextService::ToggleMode()
 {
     try {
-        return SetMode(!JapaneseMode(), FocusedContext().Get(), true);
+        return app_disabled_ ? S_OK : SetMode(!JapaneseMode(), FocusedContext().Get(), true);
     } catch (...) {
         return E_UNEXPECTED;
     }
@@ -1215,6 +1227,7 @@ void TextService::TestUseSettingsKey(const wchar_t* key)
     UseSettingsKey(key);
     if (TextService* service = g_active_service) {
         service->learning_on_ = LearningEnabled();
+        service->app_disabled_ = AppDisabled(service->app_name_);
         service->session_.SetTypoSuggestions(TypoSuggestionsEnabled());
         service->RefreshLearning(true);
     }

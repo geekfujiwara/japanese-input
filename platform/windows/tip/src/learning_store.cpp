@@ -15,6 +15,7 @@ constexpr wchar_t kDefaultSettingsKey[] = L"Software\\AstelioIME";
 constexpr wchar_t kEnabledValue[] = L"LearningEnabled";
 constexpr wchar_t kPausedValue[] = L"LearningPaused";
 constexpr wchar_t kExcludedAppsValue[] = L"NoLearningApps";
+constexpr wchar_t kDisabledAppsValue[] = L"DisabledApps";
 
 std::mutex g_mutex;
 std::wstring g_override;
@@ -44,18 +45,19 @@ void WriteFlag(const wchar_t* name, bool on)
     RegSetKeyValueW(HKEY_CURRENT_USER, SettingsKey().c_str(), name, REG_DWORD, &value, sizeof(value));
 }
 
-std::vector<std::wstring> ExcludedApps()
+// A REG_MULTI_SZ list of exe file names under the settings key.
+std::vector<std::wstring> ReadApps(const wchar_t* value)
 {
     const std::wstring key = SettingsKey();
     DWORD bytes = 0;
-    if (RegGetValueW(HKEY_CURRENT_USER, key.c_str(), kExcludedAppsValue, RRF_RT_REG_MULTI_SZ, nullptr, nullptr,
-                     &bytes) != ERROR_SUCCESS ||
+    if (RegGetValueW(HKEY_CURRENT_USER, key.c_str(), value, RRF_RT_REG_MULTI_SZ, nullptr, nullptr, &bytes) !=
+            ERROR_SUCCESS ||
         bytes == 0 || bytes > 64 * 1024) {
         return {};
     }
     std::wstring buffer(bytes / sizeof(wchar_t) + 1, L'\0');
-    if (RegGetValueW(HKEY_CURRENT_USER, key.c_str(), kExcludedAppsValue, RRF_RT_REG_MULTI_SZ, nullptr,
-                     buffer.data(), &bytes) != ERROR_SUCCESS) {
+    if (RegGetValueW(HKEY_CURRENT_USER, key.c_str(), value, RRF_RT_REG_MULTI_SZ, nullptr, buffer.data(), &bytes) !=
+        ERROR_SUCCESS) {
         return {};
     }
     std::vector<std::wstring> apps;
@@ -63,6 +65,37 @@ std::vector<std::wstring> ExcludedApps()
         apps.emplace_back(name);
     }
     return apps;
+}
+
+bool AppListed(const wchar_t* value, const std::wstring& app)
+{
+    const std::vector<std::wstring> apps = ReadApps(value);
+    return !app.empty() && std::find(apps.begin(), apps.end(), app) != apps.end();
+}
+
+void SetAppListed(const wchar_t* value, const std::wstring& app, bool listed)
+{
+    if (app.empty()) {
+        return;
+    }
+    std::vector<std::wstring> apps = ReadApps(value);
+    std::erase(apps, app);
+    if (listed) {
+        apps.push_back(app);
+    }
+    const std::wstring key = SettingsKey();
+    if (apps.empty()) {
+        RegDeleteKeyValueW(HKEY_CURRENT_USER, key.c_str(), value);
+        return;
+    }
+    std::wstring list;
+    for (const std::wstring& name : apps) {
+        list += name;
+        list += L'\0';
+    }
+    list += L'\0';
+    RegSetKeyValueW(HKEY_CURRENT_USER, key.c_str(), value, REG_MULTI_SZ, list.data(),
+                    static_cast<DWORD>(list.size() * sizeof(wchar_t)));
 }
 
 std::wstring LearningPath()
@@ -199,33 +232,22 @@ void SetLearningPaused(bool paused)
 
 bool AppLearningExcluded(const std::wstring& app)
 {
-    const std::vector<std::wstring> apps = ExcludedApps();
-    return !app.empty() && std::find(apps.begin(), apps.end(), app) != apps.end();
+    return AppListed(kExcludedAppsValue, app);
 }
 
 void SetAppLearningExcluded(const std::wstring& app, bool excluded)
 {
-    if (app.empty()) {
-        return;
-    }
-    std::vector<std::wstring> apps = ExcludedApps();
-    std::erase(apps, app);
-    if (excluded) {
-        apps.push_back(app);
-    }
-    const std::wstring key = SettingsKey();
-    if (apps.empty()) {
-        RegDeleteKeyValueW(HKEY_CURRENT_USER, key.c_str(), kExcludedAppsValue);
-        return;
-    }
-    std::wstring list;
-    for (const std::wstring& name : apps) {
-        list += name;
-        list += L'\0';
-    }
-    list += L'\0';
-    RegSetKeyValueW(HKEY_CURRENT_USER, key.c_str(), kExcludedAppsValue, REG_MULTI_SZ, list.data(),
-                    static_cast<DWORD>(list.size() * sizeof(wchar_t)));
+    SetAppListed(kExcludedAppsValue, app, excluded);
+}
+
+bool AppDisabled(const std::wstring& app)
+{
+    return AppListed(kDisabledAppsValue, app);
+}
+
+void SetAppDisabled(const std::wstring& app, bool disabled)
+{
+    SetAppListed(kDisabledAppsValue, app, disabled);
 }
 
 } // namespace astelio::tip
