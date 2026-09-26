@@ -452,8 +452,8 @@ int main(int argc, char** argv)
         }
     }
     std::size_t synthetic_hit_total = 0;
-    for (const std::size_t count : synthetic_hits) {
-        synthetic_hit_total += count;
+    for (const std::size_t hits_of_kind : synthetic_hits) {
+        synthetic_hit_total += hits_of_kind;
     }
 
     const long long p50 = Percentile(micros, 50);
