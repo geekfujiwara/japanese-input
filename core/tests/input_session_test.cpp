@@ -503,6 +503,70 @@ TEST_F(ConversionTest, ChosenPredictionComesFirstAndCanBeForgotten)
     EXPECT_EQ(session_.Predictions().front(), u"ありがとう");
 }
 
+KeyEvent ControlKey(KeyKind kind)
+{
+    KeyEvent key{kind, 0};
+    key.control = true;
+    return key;
+}
+
+// T-B06-2: Ctrl+Down commits up to the focused segment and keeps the rest converted.
+TEST_F(ConversionTest, ControlDownCommitsUpToTheFocusedSegment)
+{
+    Type(session_, u"watasihanihongodesu");
+    session_.Handle(Key(KeyKind::Space));
+    session_.Handle(Key(KeyKind::Space)); // 渡しは
+    const SessionOutput partial = session_.Handle(ControlKey(KeyKind::Down));
+    EXPECT_EQ(partial.commit, u"渡しは");
+    ASSERT_TRUE(session_.Converting());
+    EXPECT_EQ(Readings(), (std::vector<std::u16string>{u"にほんごです"}));
+    EXPECT_EQ(session_.CompositionText(), u"日本語です");
+    EXPECT_EQ(session_.FocusedSegment(), 0u);
+    EXPECT_EQ(session_.Handle(Key(KeyKind::Enter)).commit, u"日本語です");
+    EXPECT_FALSE(session_.Composing());
+
+    Type(session_, u"nihongo");
+    session_.Handle(Key(KeyKind::Space));
+    EXPECT_EQ(session_.Handle(ControlKey(KeyKind::Down)).commit, u"日本語") << "the last segment commits all";
+    EXPECT_FALSE(session_.Composing());
+}
+
+// T-B08-1: Ctrl+Backspace right after a commit brings the conversion back, until another key is pressed.
+TEST_F(ConversionTest, ControlBackspaceUndoesTheCommit)
+{
+    EXPECT_FALSE(session_.WillHandle(ControlKey(KeyKind::Backspace))) << "nothing committed yet";
+    Type(session_, u"watasihanihongodesu");
+    session_.Handle(Key(KeyKind::Space));
+    session_.Handle(Key(KeyKind::Space)); // 渡しは
+    session_.Handle(Arrow(KeyKind::Right));
+    ASSERT_EQ(session_.Handle(Key(KeyKind::Enter)).commit, u"渡しは日本語です");
+
+    ASSERT_TRUE(session_.WillHandle(ControlKey(KeyKind::Backspace)));
+    const SessionOutput undone = session_.Handle(ControlKey(KeyKind::Backspace));
+    EXPECT_EQ(undone.undo_commit, u"渡しは日本語です");
+    EXPECT_TRUE(undone.composition_changed);
+    ASSERT_TRUE(session_.Converting());
+    EXPECT_EQ(session_.CompositionText(), u"渡しは日本語です") << "the choices are kept";
+    EXPECT_EQ(session_.FocusedSegment(), 1u);
+    session_.Handle(Key(KeyKind::Escape));
+    EXPECT_EQ(session_.CompositionText(), u"わたしはにほんごです");
+    session_.Handle(Key(KeyKind::Escape));
+    EXPECT_FALSE(session_.WillHandle(ControlKey(KeyKind::Backspace))) << "only once";
+
+    Type(session_, u"nihongo");
+    session_.Handle(Key(KeyKind::Space));
+    session_.Handle(Key(KeyKind::Enter));
+    session_.ResetContext(); // the caret moved
+    EXPECT_FALSE(session_.WillHandle(ControlKey(KeyKind::Backspace)));
+
+    Type(session_, u"nihongo");
+    session_.Handle(Key(KeyKind::Space));
+    session_.Handle(Key(KeyKind::Enter));
+    Type(session_, u"a");
+    session_.Handle(Key(KeyKind::Enter));
+    EXPECT_FALSE(session_.WillHandle(ControlKey(KeyKind::Backspace))) << "kana committed after it";
+}
+
 // T-D04-2: segments split by hand are split the same way the next time.
 TEST_F(ConversionTest, ResizedSegmentsAreLearned)
 {

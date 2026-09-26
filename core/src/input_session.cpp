@@ -61,6 +61,7 @@ bool InputSession::WillHandle(const KeyEvent& key) const
     case KeyKind::Enter:
     case KeyKind::Escape:
     case KeyKind::Backspace:
+        return Composing() || (key.kind == KeyKind::Backspace && key.control && last_commit_.has_value());
     case KeyKind::Delete:
     case KeyKind::Left:
     case KeyKind::Right:
@@ -93,6 +94,12 @@ SessionOutput InputSession::Handle(const KeyEvent& key)
         UpdatePredictions();
         return output;
     }
+    if (key.kind == KeyKind::Backspace && key.control && !Composing()) {
+        SessionOutput output = UndoCommit();
+        UpdatePredictions();
+        return output;
+    }
+    last_commit_.reset();
     const bool was_converting = converting_;
     SessionOutput output = converting_ ? HandleConversion(key) : HandleComposition(key);
     if (key.kind == KeyKind::Character && !converting_) {
@@ -108,6 +115,8 @@ SessionOutput InputSession::Handle(const KeyEvent& key)
     if (!Composing()) {
         typed_keys_.clear();
         typed_keys_valid_ = true;
+    } else {
+        last_commit_.reset(); // a new composition started after the commit
     }
     UpdatePredictions();
     return output;
@@ -309,6 +318,9 @@ SessionOutput InputSession::HandleConversion(const KeyEvent& key)
         output.learning_changed = ForgetSelectedCandidate();
         output.composition_changed = output.learning_changed;
         return output;
+    }
+    if (key.kind == KeyKind::Down && key.control) {
+        return CommitUpToFocus();
     }
     if (HandleCandidateList(key)) {
         return output;
@@ -556,8 +568,40 @@ bool InputSession::ForgetSelectedCandidate()
 std::u16string InputSession::CommitConversion(SessionOutput& output)
 {
     std::u16string text = ConvertedText();
-    if (learning_ != nullptr && recording_) {
+    // B-08: what Ctrl+Backspace right after the commit brings back.
+    std::optional<CommittedConversion> undo;
+    if (!predicting_ && !segments_.empty()) {
+        undo.emplace();
+        undo->text = text;
+        undo->reading = reading_;
         for (std::size_t i = 0; i < segments_.size(); ++i) {
+            undo->lengths.push_back(segments_[i].reading.size());
+            undo->chosen.push_back(segments_[i].candidates[selected_[i]]);
+        }
+        undo->focus = focus_;
+        undo->context_right_id = context_right_id_;
+        undo->previous_surface = previous_surface_;
+    }
+    RecordChoices(output, segments_.size());
+    // T-D04-2: segments split by hand (or taken from the history) are kept for the reading.
+    if (learning_ != nullptr && recording_ && !predicting_ && (segments_resized_ || segments_learned_)) {
+        std::vector<std::u16string> readings;
+        for (const ConvertedSegment& segment : segments_) {
+            readings.push_back(segment.reading);
+        }
+        if (learning_->Record(LearningHistory::Kind::Segmentation, reading_, LearningHistory::JoinSegments(readings))) {
+            output.learning_changed = true;
+        }
+    }
+    EndConversion();
+    last_commit_ = std::move(undo);
+    return text;
+}
+
+void InputSession::RecordChoices(SessionOutput& output, std::size_t end)
+{
+    if (learning_ != nullptr && recording_) {
+        for (std::size_t i = 0; i < end; ++i) {
             const ConvertedSegment& segment = segments_[i];
             const std::u16string& chosen = segment.candidates[selected_[i]];
             if (predicting_) {
@@ -584,28 +628,81 @@ std::u16string InputSession::CommitConversion(SessionOutput& output)
                 output.learning_changed = true;
             }
         }
-        // T-D04-2: segments split by hand (or taken from the history) are kept for the reading.
-        if (!predicting_ && (segments_resized_ || segments_learned_)) {
-            std::vector<std::u16string> readings;
-            for (const ConvertedSegment& segment : segments_) {
-                readings.push_back(segment.reading);
-            }
-            if (learning_->Record(LearningHistory::Kind::Segmentation, reading_,
-                                  LearningHistory::JoinSegments(readings))) {
-                output.learning_changed = true;
-            }
-        }
     }
-    previous_surface_ = segments_.empty() ? std::u16string() : segments_.back().candidates[selected_.back()];
+    if (end == 0) {
+        return;
+    }
+    const std::size_t last = end - 1;
+    previous_surface_ = segments_[last].candidates[selected_[last]];
     // The next conversion continues from the last word, when it is the dictionary's best one (its id is known).
     context_right_id_.reset();
-    if (!predicting_ && !segments_.empty() && base_candidates_.size() == segments_.size() &&
-        !base_candidates_.back().empty() &&
-        segments_.back().candidates[selected_.back()] == base_candidates_.back().front()) {
-        context_right_id_ = segments_.back().right_id;
+    if (!predicting_ && last < base_candidates_.size() && !base_candidates_[last].empty() &&
+        segments_[last].candidates[selected_[last]] == base_candidates_[last].front()) {
+        context_right_id_ = segments_[last].right_id;
     }
-    EndConversion();
-    return text;
+}
+
+// B-06: commits the segments up to the focused one; the rest stays converted.
+SessionOutput InputSession::CommitUpToFocus()
+{
+    SessionOutput output;
+    output.composition_changed = true;
+    const std::size_t end = focus_ + 1;
+    if (predicting_ || end >= segments_.size()) {
+        output.commit = CommitConversion(output);
+        return output;
+    }
+    RecordChoices(output, end);
+    std::size_t consumed = 0;
+    for (std::size_t i = 0; i < end; ++i) {
+        output.commit += segments_[i].candidates[selected_[i]];
+        consumed += segments_[i].reading.size();
+    }
+    const auto first = static_cast<std::ptrdiff_t>(end);
+    segments_.erase(segments_.begin(), segments_.begin() + first);
+    selected_.erase(selected_.begin(), selected_.begin() + first);
+    if (base_candidates_.size() >= end) {
+        base_candidates_.erase(base_candidates_.begin(), base_candidates_.begin() + first);
+    }
+    if (typo_surfaces_.size() >= end) {
+        typo_surfaces_.erase(typo_surfaces_.begin(), typo_surfaces_.begin() + first);
+    }
+    reading_.erase(0, consumed);
+    focus_ = 0;
+    segments_resized_ = false;
+    segments_learned_ = false;
+    candidate_list_visible_ = false;
+    return output;
+}
+
+// B-08: brings the conversion committed last back, for the platform to remove its text from the document.
+SessionOutput InputSession::UndoCommit()
+{
+    SessionOutput output;
+    if (!last_commit_ || converter_ == nullptr) {
+        return output;
+    }
+    CommittedConversion undo = std::move(*last_commit_);
+    last_commit_.reset();
+    context_right_id_ = undo.context_right_id;
+    previous_surface_ = undo.previous_surface;
+    reading_ = undo.reading;
+    Convert(undo.lengths);
+    for (std::size_t i = 0; i < segments_.size() && i < undo.chosen.size(); ++i) {
+        const std::vector<std::u16string>& candidates = segments_[i].candidates;
+        const auto found = std::find(candidates.begin(), candidates.end(), undo.chosen[i]);
+        if (found != candidates.end()) {
+            selected_[i] = static_cast<std::size_t>(found - candidates.begin());
+        } else {
+            segments_[i].candidates.insert(segments_[i].candidates.begin(), undo.chosen[i]);
+            selected_[i] = 0;
+        }
+    }
+    focus_ = std::min(undo.focus, segments_.empty() ? 0 : segments_.size() - 1);
+    candidate_list_visible_ = false;
+    output.undo_commit = std::move(undo.text);
+    output.composition_changed = true;
+    return output;
 }
 
 std::u16string InputSession::ConvertedText() const
