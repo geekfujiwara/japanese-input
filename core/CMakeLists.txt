@@ -11,6 +11,7 @@ add_library(astelio_core STATIC
     src/romaji_table.cpp
     src/romaji_table_io.cpp
     src/special_candidates.cpp
+    src/typo_candidates.cpp
     src/utf.cpp
     src/version.cpp
 )

@@ -10,6 +10,7 @@ add_executable(astelio_core_tests
     modifier_tap_tracker_test.cpp
     romaji_table_io_test.cpp
     special_candidates_test.cpp
+    typo_candidates_test.cpp
     utf_test.cpp
     version_test.cpp
 )

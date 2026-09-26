@@ -5,7 +5,10 @@ target_link_libraries(astelio_eval_lib PUBLIC astelio_core)
 add_executable(astelio_eval src/main.cpp)
 target_link_libraries(astelio_eval PRIVATE astelio_eval_lib)
 
-foreach(target astelio_eval_lib astelio_eval)
+add_executable(astelio_typo src/typo_main.cpp)
+target_link_libraries(astelio_typo PRIVATE astelio_core)
+
+foreach(target astelio_eval_lib astelio_eval astelio_typo)
     if(MSVC)
         target_compile_options(${target} PRIVATE /W4 /WX /utf-8 /permissive-)
     else()

@@ -1,6 +1,7 @@
 name: SLM comparison
 
-# T-S06: compares the bundled-SLM candidates (plan 4.5.3) on the "もしかして" typo corpus.
+# T-S06: compares "もしかして" methods: the dictionary proposes words one key slip away, then an algorithm or a
+# bundled-SLM candidate (plan 4.5.3) picks one or none.
 on:
   workflow_dispatch:
   schedule:
@@ -8,6 +9,8 @@ on:
   pull_request:
     paths:
       - 'slm/**'
+      - 'core/src/typo_candidates.cpp'
+      - 'eval/src/typo_main.cpp'
       - '.github/workflows/slm-eval.yml'
 
 permissions:
@@ -18,8 +21,48 @@ env:
   LLAMA_SHA256: ecf99c49b7626fed1d699e789e31d7cd5a20ddd08222b0fdc65f61208f20e3bc
 
 jobs:
+  candidates:
+    name: Typo candidates and algorithms
+    runs-on: ubuntu-latest
+    env:
+      AZOOKEY_COMMIT: 4d418525b090cf49c219819d05a7e3cc2a4346eb
+      AZOOKEY_SHA256: 9a4f66c3f4b6a80d59471eb7890209faf49a6c856e7a72c1a6f9b862266aa026
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Build the system dictionary
+        run: |
+          curl -fsSL -o azookey.tar.gz "https://github.com/azooKey/azooKey_dictionary_storage/archive/${AZOOKEY_COMMIT}.tar.gz"
+          echo "${AZOOKEY_SHA256}  azookey.tar.gz" | sha256sum -c -
+          mkdir -p build/azookey
+          tar -xzf azookey.tar.gz -C build/azookey --strip-components=1
+          cmake -S . -B build/tools -DCMAKE_BUILD_TYPE=Release -DASTELIO_BUILD_TESTS=OFF
+          cmake --build build/tools --target astelio_dicbuild astelio_typo
+          build/tools/dictionary/tools/astelio_dicbuild import-azookey build/azookey/Dictionary build/words.tsv build/connection.tsv
+          build/tools/dictionary/tools/astelio_dicbuild build build/connection.tsv build/system.dic build/words.tsv
+      - name: Find the typo candidates
+        run: build/tools/eval/astelio_typo build/system.dic slm/corpus/typo.tsv candidates.json
+      - name: Score the algorithms (no SLM)
+        run: |
+          mkdir -p results
+          for method in algo-cost algo-margin; do
+            python3 slm/evaluate.py --method "$method" --name "$method" --candidates candidates.json --output "results/${method}.json"
+          done
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: slm-candidates
+          path: candidates.json
+          retention-days: 30
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: slm-result-algorithms
+          path: results/
+          retention-days: 30
+
   evaluate:
     name: Evaluate (${{ matrix.model }})
+    needs: candidates
     runs-on: ubuntu-latest
     timeout-minutes: 60
     strategy:
@@ -27,6 +70,7 @@ jobs:
       matrix:
         model:
           - sarashina2.2-0.5b
+          - sarashina2.2-0.5b-q4
           - sarashina2.2-1b
           - qwen2.5-0.5b
           - qwen2.5-1.5b
@@ -40,6 +84,9 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: slm-candidates
       - name: Download llama.cpp
         run: |
           curl -fsSL -o llama.tar.gz "https://github.com/ggml-org/llama.cpp/releases/download/${LLAMA_TAG}/llama-${LLAMA_TAG}-bin-ubuntu-x64.tar.gz"
@@ -59,7 +106,8 @@ jobs:
           echo "MODEL_BYTES=${bytes}" >> "$GITHUB_ENV"
       - name: Evaluate
         run: |
-          "$LLAMA_SERVER" -m model.gguf --jinja -c 4096 --host 127.0.0.1 --port 8080 -t "$(nproc)" > server.log 2>&1 &
+          # 2 threads, as the IME would use so typing and other apps keep the other cores.
+          "$LLAMA_SERVER" -m model.gguf --jinja -c 2048 --host 127.0.0.1 --port 8080 -t 2 > server.log 2>&1 &
           pid=$!
           for i in $(seq 1 150); do
             if curl -fs http://127.0.0.1:8080/health > /dev/null; then break; fi
@@ -67,7 +115,7 @@ jobs:
             sleep 2
           done
           mkdir -p results
-          python3 slm/evaluate.py --name "$MODEL" --corpus slm/corpus/typo.tsv --output "results/${MODEL}.json" \
+          python3 slm/evaluate.py --method slm --name "$MODEL" --candidates candidates.json --output "results/${MODEL}.json" \
             --server-pid "$pid" --model-bytes "$MODEL_BYTES"
           kill "$pid"
       - name: Show the server log
@@ -83,7 +131,7 @@ jobs:
 
   summary:
     name: Summary
-    needs: evaluate
+    needs: [candidates, evaluate]
     if: always()
     runs-on: ubuntu-latest
     steps:

@@ -137,6 +137,18 @@ std::u16string ToFullWidthAscii(std::u16string_view text)
 
 std::u16string KanaToRomaji(std::u16string_view text, const RomajiTable& table)
 {
+    // Symbols the character rules make from US keys (not in the romaji table).
+    const auto SymbolKey = [](char16_t c) -> char16_t {
+        switch (c) {
+        case u'\u30FC': return u'-'; // ー
+        case u'\u3001': return u','; // 、
+        case u'\u3002': return u'.'; // 。
+        case u'\u30FB': return u'/'; // ・
+        case u'\u300C': return u'['; // 「
+        case u'\u300D': return u']'; // 」
+        default: return 0;
+        }
+    };
     // kana output -> spelling, for rules that finish on their own (no pending input).
     std::map<std::u16string, std::u16string, std::less<>> spellings;
     std::size_t longest = 1;
@@ -168,7 +180,8 @@ std::u16string KanaToRomaji(std::u16string_view text, const RomajiTable& table)
                 result += u"xtu";
                 sokuon = false;
             }
-            result.push_back(text[i]);
+            const char16_t key = SymbolKey(text[i]);
+            result.push_back(key != 0 ? key : text[i]);
             ++i;
             continue;
         }

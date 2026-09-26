@@ -31,6 +31,7 @@ TEST(KanaForms, KanaToRomajiTypesBackToTheSameKana)
     EXPECT_EQ(KanaToRomaji(u"ほんや", table), u"honnya");
     EXPECT_EQ(KanaToRomaji(u"あっ", table), u"axtu");
     EXPECT_EQ(KanaToRomaji(u"iPhoneを", table), u"iPhonewo");
+    EXPECT_EQ(KanaToRomaji(u"ゆーざー、でーた。", table), u"yu-za-,de-ta.") << "long vowels and punctuation";
 }
 
 } // namespace
