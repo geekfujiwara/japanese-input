@@ -104,7 +104,7 @@ TIPの結合テスト（登録を伴う）は `ASTELIO_TIP_INTEGRATION=1` のと
 | [platform/windows/tip/](platform/windows/tip) | Windows TIP（TSF） |
 | [dictionary/tools/](dictionary/tools) | 辞書の変換・作成・確認ツール |
 | [eval/](eval) | 変換精度の評価コーパスと評価ツール（CIで正解率を記録） |
-| [docs/](docs) | [計画書](docs/astelio-ime-plan.md)、[テスト計画書](docs/astelio-ime-test-plan.md) |
+| [docs/](docs) | [計画書](docs/astelio-ime-plan.md)、[テスト計画書](docs/astelio-ime-test-plan.md)、[申し送り事項](docs/handover.md) |
 | [src/](src)、[tests/](tests) | 旧版（キーフック方式、.NET）。設定アプリとして作り直す予定 |
 
 ## ロードマップ
@@ -112,7 +112,7 @@ TIPの結合テスト（登録を伴う）は `ASTELIO_TIP_INTEGRATION=1` のと
 - [x] フェーズ0〜1: 開発環境、ローマ字変換・未確定文字列（Core）
 - [x] フェーズ2: Windows TIP（入力、左右Alt、モード表示、登録）
 - [x] フェーズ3: かな漢字変換、候補ウィンドウ、予測、F6〜F10、数字・日付、入力ミスの補正、絵文字パレット
-- [ ] フェーズ3の残り: 評価コーパスでの正解率・性能の計測
+- [ ] フェーズ3の残り: 性能の計測（評価コーパスでの正解率はCIで記録済み。積み残しは[申し送り事項](docs/handover.md)）
 - [ ] フェーズ4: 変換サーバー（アプリ間での学習の共有、アプリを巻き込まない）
 - [ ] フェーズ5: 学習、ユーザー辞書、ローカルの言語モデルによる辞書の自動補強
 - [ ] フェーズ6〜8: 設定アプリ、macOS版、インストーラーと署名
