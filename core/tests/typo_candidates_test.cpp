@@ -64,8 +64,9 @@ TEST_F(TypoCandidatesTest, NeverOffersTheReadingAsTyped)
     for (const TypoCandidate& candidate : found) {
         EXPECT_NE(candidate.reading, u"てんき");
     }
-    ASSERT_FALSE(found.empty());
-    EXPECT_EQ(found[0].surface, u"電気") << "d is next to t";
+    EXPECT_TRUE(found.empty()) << "電気 needs d, which is not next to t";
+    EXPECT_EQ(Find(u"fenki").at(0).surface, u"天気") << "f is next to both t and d; 天気 is cheaper";
+    EXPECT_EQ(Find(u"fenki").at(1).surface, u"電気");
     EXPECT_TRUE(Find(u"xyzxyz").empty());
     EXPECT_TRUE(Find(u"").empty());
     EXPECT_EQ(Find(u"tenki", 0).size(), 0u);
