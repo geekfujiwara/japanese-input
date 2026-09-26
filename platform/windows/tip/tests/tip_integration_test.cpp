@@ -283,6 +283,7 @@ std::wstring WriteTestDictionary()
     builder.Add({u"えもじ", u"絵文字", 1, 1, 0, 400});
     builder.Add({u"いぬ", u"🐶", 1, 1, 0, 900});
     builder.Add({u"ねこ", u"🐱", 1, 1, 0, 900});
+    builder.Add({u"ゆーざー", u"ユーザー", 1, 1, 0, 300});
     const std::vector<std::byte> bytes = builder.Build();
 
     wchar_t directory[MAX_PATH] = {};
@@ -1106,6 +1107,34 @@ TEST_F(TypingTest, ChosenCandidateIsLearnedAndControlDeleteForgetsIt)
     EXPECT_EQ(Text(), L"\u6E21\u3057\u306F\u79C1\u306F") << "back to the dictionary's order";
     EXPECT_TRUE(Press(VK_ESCAPE, 0x01));
     EXPECT_TRUE(Press(VK_ESCAPE, 0x01));
+}
+
+// T-B14-1 (TIP): a slipped key offers the word as もしかして in the candidate window, which opens at once.
+TEST_F(TypingTest, TypoSuggestionOpensTheCandidateWindow)
+{
+    const std::wstring path = WriteTestDictionary();
+    ASSERT_FALSE(path.empty());
+    ASSERT_HRESULT_SUCCEEDED(use_dictionary_(path.c_str()));
+    using CandidateWindowFunction = HWND(WINAPI*)();
+    const auto candidate_window = reinterpret_cast<CandidateWindowFunction>(
+        GetProcAddress(GetModuleHandleW(TipPath().c_str()), "AstelioTipTestCandidateWindow"));
+    ASSERT_NE(candidate_window, nullptr);
+
+    TypeLetters("yu");
+    Press(VK_OEM_MINUS, 0x0C);
+    TypeLetters("a");
+    Press(VK_OEM_MINUS, 0x0C);
+    ASSERT_EQ(Text(), L"\u3086\u30FC\u3042\u30FC");
+    EXPECT_TRUE(Press(VK_SPACE, 0x39));
+    EXPECT_EQ(Text(), L"\u3086\u30FC\u3042\u30FC") << "the text typed stays first";
+    const HWND window = candidate_window();
+    ASSERT_NE(window, nullptr);
+    EXPECT_TRUE(IsWindowVisible(window));
+    UpdateWindow(window); // paints the もしかして label
+    EXPECT_TRUE(Press(VK_SPACE, 0x39));
+    EXPECT_EQ(Text(), L"\u30E6\u30FC\u30B6\u30FC");
+    EXPECT_TRUE(Press(VK_RETURN, 0x1C));
+    EXPECT_EQ(CompositionCount(), 0);
 }
 
 // Without an installed dictionary typing still works and Space keeps the kana.

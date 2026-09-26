@@ -1,6 +1,7 @@
 #include "astelio/input_session.h"
 
 #include "astelio/kana_forms.h"
+#include "astelio/typo_candidates.h"
 
 #include <algorithm>
 #include <utility>
@@ -25,6 +26,7 @@ SessionOutput InputSession::SetJapaneseMode(bool enabled)
     }
     japanese_mode_ = enabled;
     predictions_.clear();
+    context_right_id_.reset();
     return output;
 }
 
@@ -34,6 +36,7 @@ void InputSession::AbandonComposition()
     composer_.Clear();
     EndConversion();
     predictions_.clear();
+    context_right_id_.reset();
 }
 
 std::u16string InputSession::CompositionText() const
@@ -213,6 +216,7 @@ SessionOutput InputSession::HandleComposition(const KeyEvent& key)
         break;
     case KeyKind::Enter:
         output.commit = composer_.Commit();
+        context_right_id_.reset();
         break;
     case KeyKind::Escape:
         composer_.Clear();
@@ -388,7 +392,15 @@ SessionOutput InputSession::HandleConversion(const KeyEvent& key)
 
 void InputSession::Convert(std::vector<std::size_t> fixed_lengths)
 {
-    segments_ = converter_->Convert(reading_, fixed_lengths);
+    segments_ = converter_->Convert(reading_, fixed_lengths, context_right_id_);
+    // A slipped key often leaves text the dictionary splits into pieces ("ゆーあー"); when the whole input is a
+    // word one slip away, keep it as one segment so the word can be offered for all of it.
+    if (typo_suggestions_ && segments_.size() > 1 && fixed_lengths.empty() && typed_keys_valid_ &&
+        !typed_keys_.empty() && typed_keys_.size() <= kMaxTypoKeys &&
+        SuggestTypoCorrection(typed_keys_, *table_, converter_->dictionary(), context_right_id_)) {
+        const std::size_t whole[] = {reading_.size()};
+        segments_ = converter_->Convert(reading_, whole, context_right_id_);
+    }
     selected_.assign(segments_.size(), 0);
     predicting_ = false;
     if (segments_.empty()) {
@@ -399,12 +411,61 @@ void InputSession::Convert(std::vector<std::size_t> fixed_lengths)
     base_candidates_.clear();
     for (std::size_t i = 0; i < segments_.size(); ++i) {
         base_candidates_.push_back(segments_[i].candidates);
+    }
+    AddTypoSuggestions();
+    for (std::size_t i = 0; i < segments_.size(); ++i) {
         ApplyLearning(i);
     }
     converting_ = true;
     if (focus_ >= segments_.size()) {
         focus_ = segments_.size() - 1;
     }
+    // Show the list at once, so the もしかして word is seen without a second Space.
+    if (fixed_lengths.empty() && !typo_surfaces_[focus_].empty()) {
+        candidate_list_visible_ = true;
+    }
+}
+
+// B-14: the もしかして word of each segment's head goes second, with the segment's particles after it.
+void InputSession::AddTypoSuggestions()
+{
+    typo_surfaces_.assign(segments_.size(), std::u16string());
+    if (!typo_suggestions_ || converter_ == nullptr) {
+        return;
+    }
+    for (std::size_t i = 0; i < segments_.size(); ++i) {
+        const ConvertedSegment& segment = segments_[i];
+        const std::size_t head_length = segment.head_length == 0 ? segment.reading.size() : segment.head_length;
+        const std::u16string head = segment.reading.substr(0, head_length);
+        // The keys as typed show the slip best; after editing or for later segments, spell the kana.
+        const bool typed = segments_.size() == 1 && head_length == segment.reading.size() && typed_keys_valid_ &&
+                           !typed_keys_.empty();
+        const std::u16string keys = typed ? typed_keys_ : KanaToRomaji(head, *table_);
+        if (keys.size() > kMaxTypoKeys) {
+            continue;
+        }
+        const std::optional<std::uint16_t> previous =
+            i == 0 ? context_right_id_ : std::optional<std::uint16_t>(segments_[i - 1].right_id);
+        const std::optional<TypoCandidate> suggestion =
+            SuggestTypoCorrection(keys, *table_, converter_->dictionary(), previous);
+        if (!suggestion) {
+            continue;
+        }
+        std::u16string text = suggestion->surface + segment.tail;
+        std::vector<std::u16string>& base = base_candidates_[i];
+        if (std::find(base.begin(), base.end(), text) != base.end()) {
+            continue; // the reading as typed converts to it anyway
+        }
+        base.insert(base.begin() + static_cast<std::ptrdiff_t>(std::min<std::size_t>(1, base.size())), text);
+        typo_surfaces_[i] = std::move(text);
+    }
+}
+
+bool InputSession::IsTypoCandidate(std::size_t segment, std::size_t index) const
+{
+    return segment < typo_surfaces_.size() && !typo_surfaces_[segment].empty() && segment < segments_.size() &&
+           index < segments_[segment].candidates.size() &&
+           segments_[segment].candidates[index] == typo_surfaces_[segment];
 }
 
 // The surfaces chosen before for the segment's reading come first, most recent first.
@@ -486,6 +547,13 @@ std::u16string InputSession::CommitConversion(SessionOutput& output)
             }
         }
     }
+    // The next conversion continues from the last word, when it is the dictionary's best one (its id is known).
+    context_right_id_.reset();
+    if (!predicting_ && !segments_.empty() && base_candidates_.size() == segments_.size() &&
+        !base_candidates_.back().empty() &&
+        segments_.back().candidates[selected_.back()] == base_candidates_.back().front()) {
+        context_right_id_ = segments_.back().right_id;
+    }
     EndConversion();
     return text;
 }
@@ -506,6 +574,7 @@ void InputSession::EndConversion()
     reading_.clear();
     segments_.clear();
     base_candidates_.clear();
+    typo_surfaces_.clear();
     selected_.clear();
     focus_ = 0;
     candidate_list_visible_ = false;

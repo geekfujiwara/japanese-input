@@ -64,6 +64,19 @@ std::uint64_t Now()
     return GetTickCount64();
 }
 
+// Keys the app gets that can move the caret or change the text around it (T-B02-5).
+bool MovesTheCaret(WPARAM wparam)
+{
+    switch (wparam) {
+    case VK_LEFT: case VK_RIGHT: case VK_UP: case VK_DOWN: case VK_HOME: case VK_END: case VK_PRIOR:
+    case VK_NEXT: case VK_BACK: case VK_DELETE: case VK_RETURN: case VK_TAB: case VK_ESCAPE:
+        return true;
+    default:
+        // Shortcuts such as Ctrl+V or Ctrl+Z change the text too.
+        return GetKeyState(VK_CONTROL) < 0 && wparam != VK_CONTROL && wparam != VK_LCONTROL && wparam != VK_RCONTROL;
+    }
+}
+
 HRESULT SetCaret(TfEditCookie cookie, ITfContext* context, ITfRange* range)
 {
     TF_SELECTION selection{};
@@ -267,6 +280,7 @@ STDMETHODIMP TextService::ActivateEx(ITfThreadMgr* thread_mgr, TfClientId client
     session_.SetRecentEmoji(LoadRecentEmoji());
     learning_on_ = LearningEnabled();
     RefreshLearning(true);
+    session_.SetTypoSuggestions(TypoSuggestionsEnabled());
     ComPtr<ITfCategoryMgr> categories;
     if (SUCCEEDED(CoCreateInstance(CLSID_TF_CategoryMgr, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&categories)))) {
         for (int index = 0; index < kDisplayAttributeCount; ++index) {
@@ -306,6 +320,7 @@ STDMETHODIMP TextService::Deactivate()
 
 STDMETHODIMP TextService::OnSetFocus(BOOL /*foreground*/)
 {
+    session_.ResetContext();
     return S_OK;
 }
 
@@ -373,6 +388,9 @@ STDMETHODIMP TextService::OnKeyDown(ITfContext* context, WPARAM wparam, LPARAM l
         }
         const std::optional<KeyEvent> key = Translate(wparam, lparam);
         if (!key || !session_.WillHandle(*key)) {
+            if (MovesTheCaret(wparam)) {
+                session_.ResetContext(); // the next word may not follow the last one
+            }
             return S_OK;
         }
         *eaten = TRUE;
@@ -824,7 +842,7 @@ void TextService::UpdateCandidateWindow(TfEditCookie cookie, ITfContext* context
     LONG length = Length(session_.CompositionText());
     const std::vector<std::u16string>* candidates = &session_.Predictions();
     std::size_t selected = CandidateWindow::kNoSelection;
-    std::vector<bool> learned;
+    std::vector<CandidateWindow::Mark> marks;
     if (!predicting) {
         const std::vector<ConvertedSegment>& segments = session_.Segments();
         const std::size_t focus = session_.FocusedSegment();
@@ -835,7 +853,9 @@ void TextService::UpdateCandidateWindow(TfEditCookie cookie, ITfContext* context
         candidates = &segments[focus].candidates;
         selected = session_.SelectedCandidate(focus);
         for (std::size_t i = 0; i < candidates->size(); ++i) {
-            learned.push_back(session_.IsLearnedCandidate(focus, i));
+            marks.push_back(session_.IsTypoCandidate(focus, i)      ? CandidateWindow::Mark::Typo
+                            : session_.IsLearnedCandidate(focus, i) ? CandidateWindow::Mark::Learned
+                                                                    : CandidateWindow::Mark::None);
         }
     }
 
@@ -845,7 +865,7 @@ void TextService::UpdateCandidateWindow(TfEditCookie cookie, ITfContext* context
         candidate_window_.reset(new (std::nothrow) CandidateWindow());
     }
     if (candidate_window_) {
-        candidate_window_->Show(*candidates, selected, anchor, learned);
+        candidate_window_->Show(*candidates, selected, anchor, marks);
     }
 }
 

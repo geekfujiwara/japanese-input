@@ -15,6 +15,18 @@ constexpr wchar_t kEnabledValue[] = L"LearningEnabled";
 std::mutex g_mutex;
 std::wstring g_override;
 
+// A DWORD setting under HKCU\Software\AstelioIME; on when missing.
+bool ReadFlag(const wchar_t* name)
+{
+    DWORD value = 1;
+    DWORD bytes = sizeof(value);
+    if (RegGetValueW(HKEY_CURRENT_USER, kSettingsKey, name, RRF_RT_REG_DWORD, nullptr, &value, &bytes) !=
+        ERROR_SUCCESS) {
+        return true;
+    }
+    return value != 0;
+}
+
 std::wstring LearningPath()
 {
     const std::lock_guard lock(g_mutex);
@@ -118,13 +130,12 @@ std::uint64_t LearningFileStamp()
 
 bool LearningEnabled()
 {
-    DWORD value = 1;
-    DWORD bytes = sizeof(value);
-    if (RegGetValueW(HKEY_CURRENT_USER, kSettingsKey, kEnabledValue, RRF_RT_REG_DWORD, nullptr, &value, &bytes) !=
-        ERROR_SUCCESS) {
-        return true;
-    }
-    return value != 0;
+    return ReadFlag(kEnabledValue);
+}
+
+bool TypoSuggestionsEnabled()
+{
+    return ReadFlag(L"TypoSuggestions");
 }
 
 void SetLearningEnabled(bool enabled)

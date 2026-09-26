@@ -503,5 +503,93 @@ TEST_F(ConversionTest, ChosenPredictionComesFirstAndCanBeForgotten)
     EXPECT_EQ(session_.Predictions().front(), u"ありがとう");
 }
 
+// A dictionary where the word before decides: 帰る at the start, 蛙 after a particle.
+class ContextTest : public ::testing::Test {
+protected:
+    void SetUp() override
+    {
+        constexpr std::uint16_t kIds = 4; // 0 edge, 1 noun, 2 particle, 3 verb
+        ConnectionMatrix matrix;
+        matrix.size = kIds;
+        matrix.costs.assign(kIds * kIds, 1000);
+        matrix.word_types = {WordType::Edge, WordType::Content, WordType::Suffix, WordType::Content};
+        matrix.unknown_id = 1;
+        matrix.costs[0 * kIds + 3] = 0; // start -> verb
+        matrix.costs[0 * kIds + 2] = 0; // start -> particle
+        matrix.costs[2 * kIds + 1] = 0; // particle -> noun
+        DictionaryBuilder builder(std::move(matrix));
+        builder.Add({u"かえる", u"蛙", 1, 1, 0, 400});
+        builder.Add({u"かえる", u"帰る", 3, 3, 0, 300});
+        builder.Add({u"は", u"は", 2, 2, 0, 50});
+        builder.Add({u"ゆーざー", u"ユーザー", 1, 1, 0, 300});
+        bytes_ = builder.Build();
+        dictionary_ = SystemDictionary::Open(bytes_);
+        ASSERT_TRUE(dictionary_);
+        converter_.emplace(*dictionary_);
+        session_.SetConverter(&*converter_);
+    }
+
+    std::u16string ConvertAndCommit(std::u16string_view keys)
+    {
+        Type(session_, keys);
+        session_.Handle(Key(KeyKind::Space));
+        return session_.Handle(Key(KeyKind::Enter)).commit;
+    }
+
+    std::vector<std::byte> bytes_;
+    std::optional<SystemDictionary> dictionary_;
+    std::optional<Converter> converter_;
+    InputSession session_ = MakeSession();
+};
+
+// T-B02-5: the last word committed is the context of the next conversion, until the caret may have moved.
+TEST_F(ContextTest, TheWordCommittedBeforeIsTheContext)
+{
+    EXPECT_EQ(ConvertAndCommit(u"kaeru"), u"帰る");
+    EXPECT_EQ(ConvertAndCommit(u"ha"), u"は");
+    EXPECT_EQ(ConvertAndCommit(u"kaeru"), u"蛙") << "a noun after the particle";
+    EXPECT_EQ(ConvertAndCommit(u"ha"), u"は");
+    session_.ResetContext();
+    EXPECT_EQ(ConvertAndCommit(u"kaeru"), u"帰る");
+
+    EXPECT_EQ(ConvertAndCommit(u"ha"), u"は");
+    Type(session_, u"a");
+    session_.Handle(Key(KeyKind::Enter)); // kana committed as typed: its word is unknown
+    EXPECT_EQ(ConvertAndCommit(u"kaeru"), u"帰る");
+}
+
+// T-B14-1: a slipped key offers the word as もしかして, second in the list, which opens at once.
+TEST_F(ContextTest, TypoSuggestionIsTheSecondCandidate)
+{
+    Type(session_, u"yu-a-");
+    session_.Handle(Key(KeyKind::Space));
+    ASSERT_EQ(session_.Segments().size(), 1u) << "one segment for the whole word";
+    EXPECT_EQ(session_.CompositionText(), u"ゆーあー") << "the text typed stays first";
+    ASSERT_GE(session_.Segments()[0].candidates.size(), 2u);
+    EXPECT_EQ(session_.Segments()[0].candidates[1], u"ユーザー");
+    EXPECT_TRUE(session_.IsTypoCandidate(0, 1));
+    EXPECT_FALSE(session_.IsTypoCandidate(0, 0));
+    EXPECT_TRUE(session_.CandidateListVisible());
+    session_.Handle(Key(KeyKind::Space));
+    EXPECT_EQ(session_.Handle(Key(KeyKind::Enter)).commit, u"ユーザー");
+
+    Type(session_, u"yu-za-");
+    session_.Handle(Key(KeyKind::Space));
+    EXPECT_EQ(session_.CompositionText(), u"ユーザー");
+    EXPECT_FALSE(session_.IsTypoCandidate(0, 1)) << "nothing for a correct reading";
+    EXPECT_FALSE(session_.CandidateListVisible());
+    session_.Handle(Key(KeyKind::Escape));
+    session_.Handle(Key(KeyKind::Escape));
+
+    session_.SetTypoSuggestions(false);
+    Type(session_, u"yu-a-");
+    session_.Handle(Key(KeyKind::Space));
+    for (std::size_t i = 0; i < session_.Segments().size(); ++i) {
+        for (std::size_t c = 0; c < session_.Segments()[i].candidates.size(); ++c) {
+            EXPECT_NE(session_.Segments()[i].candidates[c], u"ユーザー") << "off in the settings";
+        }
+    }
+}
+
 } // namespace
 } // namespace astelio
