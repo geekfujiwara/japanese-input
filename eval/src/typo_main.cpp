@@ -10,6 +10,8 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cstddef>
+#include <cstdint>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -137,7 +139,7 @@ std::map<std::string, double> ReadBaseline(const std::string& path)
 int Usage()
 {
     std::cerr << "usage: astelio_typo <system.dic> <typo.tsv> [--json file] [--report file] [--baseline file]"
-                 " [--frequent count]\n";
+                 " [--frequent count] [--synthetic count]\n";
     return 2;
 }
 
@@ -152,6 +154,7 @@ int main(int argc, char** argv)
     std::string report_path;
     std::string baseline_path;
     std::size_t frequent_count = 0;
+    std::size_t synthetic_count = 0;
     for (int i = 3; i < argc; ++i) {
         const std::string option = argv[i];
         if (i + 1 >= argc) {
@@ -166,6 +169,8 @@ int main(int argc, char** argv)
             baseline_path = value;
         } else if (option == "--frequent") {
             frequent_count = static_cast<std::size_t>(std::strtoul(value.c_str(), nullptr, 10));
+        } else if (option == "--synthetic") {
+            synthetic_count = static_cast<std::size_t>(std::strtoul(value.c_str(), nullptr, 10));
         } else {
             return Usage();
         }
@@ -338,6 +343,12 @@ int main(int argc, char** argv)
     });
     std::size_t frequent_checked = 0;
     std::size_t frequent_false = 0;
+    struct CheckedWord {
+        std::u16string reading;
+        std::u16string surface;
+        std::u16string keys;
+    };
+    std::vector<CheckedWord> checked_words;
     std::ostringstream frequent_misses;
     std::vector<std::u16string> seen;
     for (const Frequent& word : frequent) {
@@ -353,6 +364,7 @@ int main(int argc, char** argv)
             continue;
         }
         ++frequent_checked;
+        checked_words.push_back({word.reading, word.surface, keys});
         for (std::size_t m = 0; m < kMarginCount; ++m) {
             if (astelio::SuggestTypoCorrection(keys, table, *dictionary, std::nullopt, kMargins[m])) {
                 ++sweep_frequent_false[m];
@@ -370,6 +382,63 @@ int main(int argc, char** argv)
         }
     }
 
+    // One slip of each kind in turn, put into the common words at fixed pseudo-random places (the same every run).
+    constexpr const char* kSlipNames[] = {"隣のキー", "キーの抜け", "余分なキー", "入れ替わり"};
+    constexpr std::size_t kSlipKinds = std::size(kSlipNames);
+    std::size_t synthetic_tried[kSlipKinds] = {};
+    std::size_t synthetic_hits[kSlipKinds] = {};
+    std::uint32_t seed = 20260926u;
+    const auto next_random = [&seed](std::size_t bound) {
+        seed = seed * 1664525u + 1013904223u; // a fixed LCG, so every platform makes the same slips
+        return static_cast<std::size_t>((seed >> 8) % bound);
+    };
+    std::size_t synthetic_made = 0;
+    for (const CheckedWord& word : checked_words) {
+        if (synthetic_made >= synthetic_count) {
+            break;
+        }
+        if (word.reading.size() < 3 || word.keys.size() < 3) {
+            continue;
+        }
+        const std::size_t kind = synthetic_made % kSlipKinds;
+        std::u16string slipped = word.keys;
+        const std::size_t at = next_random(slipped.size());
+        if (kind == 0) {
+            const std::u16string_view neighbours = astelio::NeighbouringKeys(slipped[at]);
+            if (neighbours.empty()) {
+                continue;
+            }
+            slipped[at] = neighbours[next_random(neighbours.size())];
+        } else if (kind == 1) {
+            slipped.erase(at, 1);
+        } else if (kind == 2) {
+            const std::u16string_view neighbours = astelio::NeighbouringKeys(slipped[at]);
+            if (neighbours.empty()) {
+                continue;
+            }
+            slipped.insert(slipped.begin() + static_cast<std::ptrdiff_t>(at), neighbours[next_random(neighbours.size())]);
+        } else {
+            if (at + 1 >= slipped.size() || slipped[at] == slipped[at + 1]) {
+                continue;
+            }
+            std::swap(slipped[at], slipped[at + 1]);
+        }
+        if (ToKana(slipped) == word.reading) {
+            continue; // the slip did not change the kana
+        }
+        ++synthetic_made;
+        ++synthetic_tried[kind];
+        const std::optional<astelio::TypoCandidate> suggestion =
+            astelio::SuggestTypoCorrection(slipped, table, *dictionary);
+        if (suggestion && suggestion->surface == word.surface) {
+            ++synthetic_hits[kind];
+        }
+    }
+    std::size_t synthetic_hit_total = 0;
+    for (const std::size_t count : synthetic_hits) {
+        synthetic_hit_total += count;
+    }
+
     const long long p50 = Percentile(micros, 50);
     const long long p95 = Percentile(micros, 95);
     const double hit_rate = Rate(hits, typos);
@@ -385,7 +454,16 @@ int main(int argc, char** argv)
            << corrects << ") |\n"
            << "| よく使う語への誤提案率 | " << Percent(frequent_false, frequent_checked) << "% (" << frequent_false << "/"
            << frequent_checked << ") |\n"
-           << "| 提案の時間 p50 / p95 | " << p50 << " / " << p95 << " µs |\n\n";
+           << "| 提案の時間 p50 / p95 | " << p50 << " / " << p95 << " µs |\n";
+    if (synthetic_made > 0) {
+        report << "| よく使う語に機械的に入れた打ち間違いの的中率 | " << Percent(synthetic_hit_total, synthetic_made) << "% ("
+               << synthetic_hit_total << "/" << synthetic_made << ") |\n";
+        for (std::size_t kind = 0; kind < kSlipKinds; ++kind) {
+            report << "| 　うち「" << kSlipNames[kind] << "」 | " << Percent(synthetic_hits[kind], synthetic_tried[kind]) << "% ("
+                   << synthetic_hits[kind] << "/" << synthetic_tried[kind] << ") |\n";
+        }
+    }
+    report << "\n";
     report << "<details><summary>判定の余裕（打った語があるとき）ごとの比較（現在 " << astelio::kTypoSuggestMargin
            << "）</summary>\n\n| 余裕 | 的中率 | 正しい読みへの誤提案率 | よく使う語への誤提案率 |\n| ---: | ---: | ---: | ---: |\n";
     for (std::size_t m = 0; m < kMarginCount; ++m) {
@@ -424,6 +502,9 @@ int main(int argc, char** argv)
         check("typo_hit_rate", hit_rate, true);
         check("false_suggestion_rate", false_rate, false);
         check("frequent_false_rate", frequent_rate, false);
+        if (synthetic_made > 0 && baseline.count("synthetic_hit_rate") != 0) {
+            check("synthetic_hit_rate", Rate(synthetic_hit_total, synthetic_made), true);
+        }
     }
 
     std::cout << report.str();
