@@ -11,6 +11,7 @@
 #include "learning_store.h"
 #include "mode_window.h"
 #include "module.h"
+#include "user_dictionary_store.h"
 
 #include <InputScope.h>
 #include <oleauto.h>
@@ -401,6 +402,7 @@ STDMETHODIMP TextService::ActivateEx(ITfThreadMgr* thread_mgr, TfClientId client
     app_name_ = CurrentAppName();
     learning_on_ = LearningEnabled();
     RefreshLearning(true);
+    RefreshUserDictionary(true);
     session_.SetTypoSuggestions(TypoSuggestionsEnabled());
     ComPtr<ITfCategoryMgr> categories;
     if (SUCCEEDED(CoCreateInstance(CLSID_TF_CategoryMgr, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&categories)))) {
@@ -525,6 +527,7 @@ STDMETHODIMP TextService::OnKeyDown(ITfContext* context, WPARAM wparam, LPARAM l
         ++Diagnostics().eaten;
         if (!session_.Composing()) {
             RefreshLearning();
+            RefreshUserDictionary();
         }
         const bool offered = session_.EmojiPaletteOffered();
         SessionOutput output = session_.Handle(*key);
@@ -871,11 +874,17 @@ void TextService::HideCandidateWindow()
     }
 }
 
-void TextService::UseConverter(const Converter* converter)
+void TextService::UseConverter(const Converter* shared)
 {
-    session_.SetConverter(converter);
-    if (converter != nullptr) {
-        session_.SetEmojiCatalog([converter] { return EmojiCatalogFor(converter); });
+    session_.SetConverter(nullptr);
+    converter_.reset();
+    if (shared != nullptr) {
+        converter_.emplace(*shared);
+    }
+    PassUserDictionary();
+    session_.SetConverter(converter_ ? &*converter_ : nullptr);
+    if (shared != nullptr) {
+        session_.SetEmojiCatalog([shared] { return EmojiCatalogFor(shared); });
     } else {
         session_.SetEmojiCatalog(nullptr);
     }
@@ -893,6 +902,26 @@ void TextService::RefreshLearning(bool force)
         learning_ = LoadLearning();
         learning_stamp_ = stamp;
     }
+}
+
+void TextService::RefreshUserDictionary(bool force)
+{
+    const std::uint64_t stamp = UserDictionaryFileStamp();
+    if (!force && stamp == user_dictionary_stamp_) {
+        return;
+    }
+    user_dictionary_ = LoadUserDictionary();
+    user_dictionary_stamp_ = stamp;
+    PassUserDictionary();
+}
+
+void TextService::PassUserDictionary()
+{
+    const UserDictionary* words = user_dictionary_.Empty() ? nullptr : &user_dictionary_;
+    if (converter_) {
+        converter_->SetUserDictionary(words);
+    }
+    session_.SetUserDictionary(words);
 }
 
 void TextService::OnLearningCommand(LearningCommand command, HWND owner)
@@ -1191,6 +1220,14 @@ void TextService::TestUseSettingsKey(const wchar_t* key)
     }
 }
 
+void TextService::TestUseUserDictionaryFile(const wchar_t* path)
+{
+    UseUserDictionaryFile(path);
+    if (TextService* service = g_active_service) {
+        service->RefreshUserDictionary(true);
+    }
+}
+
 } // namespace astelio::tip
 
 // Test entry point: sends a key to the TSF-activated text service without OS keyboard focus.
@@ -1240,4 +1277,10 @@ extern "C" void WINAPI AstelioTipTestUseLearningHistory(const wchar_t* path)
 extern "C" void WINAPI AstelioTipTestUseSettingsKey(const wchar_t* key)
 {
     astelio::tip::TextService::TestUseSettingsKey(key);
+}
+
+// Test entry point: keeps the user dictionary in `path` instead of the user's profile (nullptr restores it).
+extern "C" void WINAPI AstelioTipTestUseUserDictionary(const wchar_t* path)
+{
+    astelio::tip::TextService::TestUseUserDictionaryFile(path);
 }

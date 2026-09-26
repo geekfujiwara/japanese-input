@@ -1,7 +1,9 @@
 #pragma once
 
+#include "astelio/converter.h"
 #include "astelio/input_session.h"
 #include "astelio/modifier_tap_tracker.h"
+#include "astelio/user_dictionary.h"
 
 #include <windows.h>
 
@@ -78,6 +80,7 @@ public:
     static HWND TestModeWindow();
     static void TestUseLearningFile(const wchar_t* path);
     static void TestUseSettingsKey(const wchar_t* key);
+    static void TestUseUserDictionaryFile(const wchar_t* path);
 
 private:
     TextService();
@@ -88,6 +91,10 @@ private:
     bool WillHandle(ITfContext* context, const KeyEvent& key);
     // Loads the history again when another app (or the history window) changed the file.
     void RefreshLearning(bool force = false);
+    // D-02: the same for the user dictionary, which the manager window or another app may have changed.
+    void RefreshUserDictionary(bool force = false);
+    // Gives the user dictionary to the converter and the session.
+    void PassUserDictionary();
     // Sends the session's output to the document and saves the emoji history when it changed.
     HRESULT Deliver(ITfContext* context, SessionOutput output);
     void OnEmojiClick(bool category, std::size_t index);
@@ -118,10 +125,14 @@ private:
     TfClientId client_id_ = TF_CLIENTID_NULL;
     bool key_sink_advised_ = false;
     InputSession session_;
+    // A copy of the process's shared converter, so that it can carry this service's user dictionary.
+    std::optional<Converter> converter_;
     LearningHistory learning_;
     std::uint64_t learning_stamp_ = 0;
     bool learning_on_ = true;
     bool recording_allowed_ = true; // not in secret mode, and this app is not left out (D-06)
+    UserDictionary user_dictionary_;
+    std::uint64_t user_dictionary_stamp_ = 0;
     std::wstring app_name_;
     Microsoft::WRL::ComPtr<ITfComposition> composition_;
     ModifierTapTracker alt_taps_;

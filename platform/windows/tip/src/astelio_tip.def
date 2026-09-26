@@ -9,6 +9,7 @@ EXPORTS
     AstelioTipTestUseEmojiHistory PRIVATE
     AstelioTipTestUseLearningHistory PRIVATE
     AstelioTipTestUseSettingsKey PRIVATE
+    AstelioTipTestUseUserDictionary PRIVATE
     DllCanUnloadNow PRIVATE
     DllGetClassObject PRIVATE
     DllRegisterServer PRIVATE

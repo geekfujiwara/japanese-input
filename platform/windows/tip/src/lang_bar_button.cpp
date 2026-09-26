@@ -4,6 +4,7 @@
 #include "learning_store.h"
 #include "module.h"
 #include "text_service.h"
+#include "user_dictionary_manager.h"
 
 #include <oleauto.h>
 #include <olectl.h>
@@ -204,10 +205,10 @@ STDMETHODIMP LangBarButton::OnClick(TfLBIClick click, POINT point, const RECT* /
     return S_OK;
 }
 
-// D-04 / D-05: right click shows the history menu.
+// D-02 / D-04 / D-05: right click shows the history and user dictionary menu.
 void LangBarButton::ShowMenu(POINT point)
 {
-    enum : UINT { kToggle = 1, kManage, kClear, kPause, kExcludeApp };
+    enum : UINT { kToggle = 1, kManage, kClear, kPause, kExcludeApp, kUserDictionary };
     HMENU menu = CreatePopupMenu();
     if (menu == nullptr) {
         return;
@@ -227,6 +228,8 @@ void LangBarButton::ShowMenu(POINT point)
     AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
     AppendMenuW(menu, MF_STRING, kManage, L"\u5165\u529B\u5C65\u6B74\u306E\u7BA1\u7406...");
     AppendMenuW(menu, MF_STRING, kClear, L"\u5165\u529B\u5C65\u6B74\u3092\u3059\u3079\u3066\u524A\u9664...");
+    AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
+    AppendMenuW(menu, MF_STRING, kUserDictionary, L"\u30E6\u30FC\u30B6\u30FC\u8F9E\u66F8..."); // ユーザー辞書...
 
     // Owned by the app's focused window, like Mozc: a window of another thread cannot track the menu, and
     // TPM_NONOTIFY keeps the owner from changing the menu.
@@ -259,6 +262,7 @@ void LangBarButton::ShowMenu(POINT point)
         case kClear: service_->OnLearningCommand(TextService::LearningCommand::Clear, owner); break;
         case kPause: service_->OnLearningCommand(TextService::LearningCommand::Pause, owner); break;
         case kExcludeApp: service_->OnLearningCommand(TextService::LearningCommand::ExcludeApp, owner); break;
+        case kUserDictionary: ShowUserDictionaryManager(); break;
         default: break;
         }
     }

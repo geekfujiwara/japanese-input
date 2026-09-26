@@ -4,7 +4,7 @@ add_executable(astelio_tip_tests
     tip_integration_test.cpp
 )
 
-target_link_libraries(astelio_tip_tests PRIVATE astelio_tip_keys GTest::gtest_main)
+target_link_libraries(astelio_tip_tests PRIVATE astelio_tip_keys astelio_tip_store GTest::gtest_main)
 target_include_directories(astelio_tip_tests PRIVATE ../include)
 target_compile_definitions(astelio_tip_tests PRIVATE
     UNICODE _UNICODE WIN32_LEAN_AND_MEAN NOMINMAX
