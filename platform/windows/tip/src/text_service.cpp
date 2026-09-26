@@ -87,10 +87,13 @@ HRESULT CollapseSelectionToEnd(TfEditCookie cookie, ITfContext* context, ITfRang
 }
 
 // B-11, D-06: whether the text at `range` is a password or PIN field (its InputScope says so).
+// GUID_PROP_INPUTSCOPE, which no import library defines.
+constexpr GUID kInputScopeProperty = {0x1713dd5a, 0x68e7, 0x4a5b, {0x9a, 0xf6, 0x59, 0x2a, 0x59, 0x5c, 0x77, 0x8d}};
+
 bool IsPasswordField(TfEditCookie cookie, ITfContext* context, ITfRange* range)
 {
     ComPtr<ITfReadOnlyProperty> property;
-    if (range == nullptr || FAILED(context->GetAppProperty(GUID_PROP_INPUTSCOPE, &property)) || !property) {
+    if (range == nullptr || FAILED(context->GetAppProperty(kInputScopeProperty, &property)) || !property) {
         return false;
     }
     VARIANT value;
