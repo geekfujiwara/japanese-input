@@ -1,5 +1,6 @@
 #pragma once
 
+#include "astelio/converter.h"
 #include "astelio/input_session.h"
 #include "astelio/modifier_tap_tracker.h"
 #include "astelio/user_dictionary.h"
@@ -92,6 +93,8 @@ private:
     void RefreshLearning(bool force = false);
     // D-02: the same for the user dictionary, which the manager window or another app may have changed.
     void RefreshUserDictionary(bool force = false);
+    // Gives the user dictionary to the converter and the session.
+    void PassUserDictionary();
     // Sends the session's output to the document and saves the emoji history when it changed.
     HRESULT Deliver(ITfContext* context, SessionOutput output);
     void OnEmojiClick(bool category, std::size_t index);
@@ -122,6 +125,8 @@ private:
     TfClientId client_id_ = TF_CLIENTID_NULL;
     bool key_sink_advised_ = false;
     InputSession session_;
+    // A copy of the process's shared converter, so that it can carry this service's user dictionary.
+    std::optional<Converter> converter_;
     LearningHistory learning_;
     std::uint64_t learning_stamp_ = 0;
     bool learning_on_ = true;

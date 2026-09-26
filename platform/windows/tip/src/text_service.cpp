@@ -874,11 +874,17 @@ void TextService::HideCandidateWindow()
     }
 }
 
-void TextService::UseConverter(const Converter* converter)
+void TextService::UseConverter(const Converter* shared)
 {
-    session_.SetConverter(converter);
-    if (converter != nullptr) {
-        session_.SetEmojiCatalog([converter] { return EmojiCatalogFor(converter); });
+    session_.SetConverter(nullptr);
+    converter_.reset();
+    if (shared != nullptr) {
+        converter_.emplace(*shared);
+    }
+    PassUserDictionary();
+    session_.SetConverter(converter_ ? &*converter_ : nullptr);
+    if (shared != nullptr) {
+        session_.SetEmojiCatalog([shared] { return EmojiCatalogFor(shared); });
     } else {
         session_.SetEmojiCatalog(nullptr);
     }
@@ -906,7 +912,16 @@ void TextService::RefreshUserDictionary(bool force)
     }
     user_dictionary_ = LoadUserDictionary();
     user_dictionary_stamp_ = stamp;
-    session_.SetUserDictionary(user_dictionary_.Empty() ? nullptr : &user_dictionary_);
+    PassUserDictionary();
+}
+
+void TextService::PassUserDictionary()
+{
+    const UserDictionary* words = user_dictionary_.Empty() ? nullptr : &user_dictionary_;
+    if (converter_) {
+        converter_->SetUserDictionary(words);
+    }
+    session_.SetUserDictionary(words);
 }
 
 void TextService::OnLearningCommand(LearningCommand command, HWND owner)
