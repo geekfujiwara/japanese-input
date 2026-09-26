@@ -60,9 +60,11 @@ public:
     // Mode button click: switches the mode in the focused document.
     HRESULT ToggleMode();
 
-    // D-04 / D-05: the history menu of the mode button.
-    enum class LearningCommand { Toggle, Manage, Clear };
+    // D-04 / D-05 / D-06: the history menu of the mode button.
+    enum class LearningCommand { Toggle, Manage, Clear, Pause, ExcludeApp };
     bool LearningOn() const { return learning_on_; }
+    // The exe file name the "not in this app" item names.
+    const std::wstring& AppName() const { return app_name_; }
     void OnLearningCommand(LearningCommand command, HWND owner);
 
     // Runs inside an edit session: commits `commit`, then shows the session's uncommitted text.
@@ -75,6 +77,7 @@ public:
     static HWND TestEmojiWindow();
     static HWND TestModeWindow();
     static void TestUseLearningFile(const wchar_t* path);
+    static void TestUseSettingsKey(const wchar_t* key);
 
 private:
     TextService();
@@ -118,6 +121,8 @@ private:
     LearningHistory learning_;
     std::uint64_t learning_stamp_ = 0;
     bool learning_on_ = true;
+    bool recording_allowed_ = true; // not in secret mode, and this app is not left out (D-06)
+    std::wstring app_name_;
     Microsoft::WRL::ComPtr<ITfComposition> composition_;
     ModifierTapTracker alt_taps_;
     std::optional<ModifierSide> pending_alt_tap_;

@@ -2,29 +2,67 @@
 
 #include <windows.h>
 
+#include <algorithm>
 #include <mutex>
 #include <string>
+#include <vector>
 
 namespace astelio::tip {
 namespace {
 
 constexpr DWORD kMaxFileBytes = 4 * 1024 * 1024;
-constexpr wchar_t kSettingsKey[] = L"Software\\AstelioIME";
+constexpr wchar_t kDefaultSettingsKey[] = L"Software\\AstelioIME";
 constexpr wchar_t kEnabledValue[] = L"LearningEnabled";
+constexpr wchar_t kPausedValue[] = L"LearningPaused";
+constexpr wchar_t kExcludedAppsValue[] = L"NoLearningApps";
 
 std::mutex g_mutex;
 std::wstring g_override;
+std::wstring g_settings_key = kDefaultSettingsKey;
 
-// A DWORD setting under HKCU\Software\AstelioIME; on when missing.
-bool ReadFlag(const wchar_t* name)
+std::wstring SettingsKey()
 {
-    DWORD value = 1;
+    const std::lock_guard lock(g_mutex);
+    return g_settings_key;
+}
+
+// A DWORD setting under HKCU\Software\AstelioIME; `fallback` when missing.
+bool ReadFlag(const wchar_t* name, bool fallback = true)
+{
+    DWORD value = fallback ? 1 : 0;
     DWORD bytes = sizeof(value);
-    if (RegGetValueW(HKEY_CURRENT_USER, kSettingsKey, name, RRF_RT_REG_DWORD, nullptr, &value, &bytes) !=
+    if (RegGetValueW(HKEY_CURRENT_USER, SettingsKey().c_str(), name, RRF_RT_REG_DWORD, nullptr, &value, &bytes) !=
         ERROR_SUCCESS) {
-        return true;
+        return fallback;
     }
     return value != 0;
+}
+
+void WriteFlag(const wchar_t* name, bool on)
+{
+    const DWORD value = on ? 1 : 0;
+    RegSetKeyValueW(HKEY_CURRENT_USER, SettingsKey().c_str(), name, REG_DWORD, &value, sizeof(value));
+}
+
+std::vector<std::wstring> ExcludedApps()
+{
+    const std::wstring key = SettingsKey();
+    DWORD bytes = 0;
+    if (RegGetValueW(HKEY_CURRENT_USER, key.c_str(), kExcludedAppsValue, RRF_RT_REG_MULTI_SZ, nullptr, nullptr,
+                     &bytes) != ERROR_SUCCESS ||
+        bytes == 0 || bytes > 64 * 1024) {
+        return {};
+    }
+    std::wstring buffer(bytes / sizeof(wchar_t) + 1, L'\0');
+    if (RegGetValueW(HKEY_CURRENT_USER, key.c_str(), kExcludedAppsValue, RRF_RT_REG_MULTI_SZ, nullptr,
+                     buffer.data(), &bytes) != ERROR_SUCCESS) {
+        return {};
+    }
+    std::vector<std::wstring> apps;
+    for (const wchar_t* name = buffer.c_str(); *name != L'\0'; name += wcslen(name) + 1) {
+        apps.emplace_back(name);
+    }
+    return apps;
 }
 
 std::wstring LearningPath()
@@ -47,6 +85,12 @@ void UseLearningFile(const wchar_t* path)
 {
     const std::lock_guard lock(g_mutex);
     g_override = path != nullptr ? path : L"";
+}
+
+void UseSettingsKey(const wchar_t* key)
+{
+    const std::lock_guard lock(g_mutex);
+    g_settings_key = key != nullptr ? key : kDefaultSettingsKey;
 }
 
 LearningHistory LoadLearning()
@@ -140,8 +184,48 @@ bool TypoSuggestionsEnabled()
 
 void SetLearningEnabled(bool enabled)
 {
-    const DWORD value = enabled ? 1 : 0;
-    RegSetKeyValueW(HKEY_CURRENT_USER, kSettingsKey, kEnabledValue, REG_DWORD, &value, sizeof(value));
+    WriteFlag(kEnabledValue, enabled);
+}
+
+bool LearningPaused()
+{
+    return ReadFlag(kPausedValue, false);
+}
+
+void SetLearningPaused(bool paused)
+{
+    WriteFlag(kPausedValue, paused);
+}
+
+bool AppLearningExcluded(const std::wstring& app)
+{
+    const std::vector<std::wstring> apps = ExcludedApps();
+    return !app.empty() && std::find(apps.begin(), apps.end(), app) != apps.end();
+}
+
+void SetAppLearningExcluded(const std::wstring& app, bool excluded)
+{
+    if (app.empty()) {
+        return;
+    }
+    std::vector<std::wstring> apps = ExcludedApps();
+    std::erase(apps, app);
+    if (excluded) {
+        apps.push_back(app);
+    }
+    const std::wstring key = SettingsKey();
+    if (apps.empty()) {
+        RegDeleteKeyValueW(HKEY_CURRENT_USER, key.c_str(), kExcludedAppsValue);
+        return;
+    }
+    std::wstring list;
+    for (const std::wstring& name : apps) {
+        list += name;
+        list += L'\0';
+    }
+    list += L'\0';
+    RegSetKeyValueW(HKEY_CURRENT_USER, key.c_str(), kExcludedAppsValue, REG_MULTI_SZ, list.data(),
+                    static_cast<DWORD>(list.size() * sizeof(wchar_t)));
 }
 
 } // namespace astelio::tip
