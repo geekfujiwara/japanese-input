@@ -158,6 +158,7 @@ void InputSession::ConvertToForm(KeyKind key)
 void InputSession::UpdatePredictions()
 {
     predictions_.clear();
+    typo_prediction_.clear();
     if (converting_ || emoji_active_ || converter_ == nullptr || composer_.Empty()) {
         return;
     }
@@ -171,6 +172,12 @@ void InputSession::UpdatePredictions()
         if (learning_ != nullptr) {
             // Words chosen before come first.
             std::vector<std::u16string> learned = learning_->Predictions(reading, kCandidatePageSize);
+            if (user_dictionary_ != nullptr) {
+                // The history keeps the kana typed, not the word's reading.
+                std::erase_if(learned, [this](const std::u16string& surface) {
+                    return user_dictionary_->Suppressed(u"", surface);
+                });
+            }
             for (std::u16string& prediction : predictions_) {
                 if (learned.size() >= kCandidatePageSize) {
                     break;
@@ -181,7 +188,30 @@ void InputSession::UpdatePredictions()
             }
             predictions_ = std::move(learned);
         }
+        AddTypoPrediction(reading.size() == composer_.Text().size());
     }
+}
+
+// B-14: the もしかして word goes second among the predictions, so it is seen before Space.
+void InputSession::AddTypoPrediction(bool keys_complete)
+{
+    if (!typo_suggestions_ || !keys_complete || !typed_keys_valid_ || typed_keys_.empty() ||
+        typed_keys_.size() > kMaxTypoKeys) {
+        return;
+    }
+    const std::optional<TypoCandidate> suggestion =
+        SuggestTypoCorrection(typed_keys_, *table_, converter_->dictionary(), context_right_id_);
+    if (!suggestion ||
+        (user_dictionary_ != nullptr && user_dictionary_->Suppressed(suggestion->reading, suggestion->surface)) ||
+        std::find(predictions_.begin(), predictions_.end(), suggestion->surface) != predictions_.end()) {
+        return;
+    }
+    const auto position = static_cast<std::ptrdiff_t>(std::min<std::size_t>(1, predictions_.size()));
+    predictions_.insert(predictions_.begin() + position, suggestion->surface);
+    if (predictions_.size() > kCandidatePageSize) {
+        predictions_.pop_back();
+    }
+    typo_prediction_ = suggestion->surface;
 }
 
 void InputSession::StartPrediction()
@@ -196,6 +226,7 @@ void InputSession::StartPrediction()
         }
     }
     base_candidates_ = {segment.candidates};
+    typo_surfaces_ = {typo_prediction_};
     segments_ = {std::move(segment)};
     selected_ = {0};
     focus_ = 0;
@@ -417,10 +448,13 @@ void InputSession::Convert(std::vector<std::size_t> fixed_lengths)
     // A slipped key often leaves text the dictionary splits into pieces ("ゆーあー"); when the whole input is a
     // word one slip away, keep it as one segment so the word can be offered for all of it.
     if (typo_suggestions_ && segments_.size() > 1 && fixed_lengths.empty() && typed_keys_valid_ &&
-        !typed_keys_.empty() && typed_keys_.size() <= kMaxTypoKeys &&
-        SuggestTypoCorrection(typed_keys_, *table_, converter_->dictionary(), context_right_id_)) {
-        const std::size_t whole[] = {reading_.size()};
-        segments_ = converter_->Convert(reading_, whole, context_right_id_);
+        !typed_keys_.empty() && typed_keys_.size() <= kMaxTypoKeys) {
+        const std::optional<TypoCandidate> whole =
+            SuggestTypoCorrection(typed_keys_, *table_, converter_->dictionary(), context_right_id_);
+        if (whole && (user_dictionary_ == nullptr || !user_dictionary_->Suppressed(whole->reading, whole->surface))) {
+            const std::size_t all[] = {reading_.size()};
+            segments_ = converter_->Convert(reading_, all, context_right_id_);
+        }
     }
     selected_.assign(segments_.size(), 0);
     predicting_ = false;
@@ -472,6 +506,9 @@ void InputSession::AddTypoSuggestions()
         if (!suggestion) {
             continue;
         }
+        if (user_dictionary_ != nullptr && user_dictionary_->Suppressed(suggestion->reading, suggestion->surface)) {
+            continue;
+        }
         std::u16string text = suggestion->surface + segment.tail;
         std::vector<std::u16string>& base = base_candidates_[i];
         if (std::find(base.begin(), base.end(), text) != base.end()) {
@@ -497,9 +534,12 @@ void InputSession::ApplyLearning(std::size_t segment)
     }
     std::vector<std::u16string> candidates;
     if (learning_ != nullptr && !predicting_) {
-        candidates = learning_->Pairs(SegmentContext(segment), segments_[segment].reading);
-        for (std::u16string& surface : learning_->Conversions(segments_[segment].reading)) {
-            if (std::find(candidates.begin(), candidates.end(), surface) == candidates.end()) {
+        const ConvertedSegment& current = segments_[segment];
+        candidates = learning_->Pairs(SegmentContext(segment), current.reading);
+        std::erase_if(candidates, [&](const std::u16string& surface) { return Hidden(current, surface); });
+        for (std::u16string& surface : learning_->Conversions(current.reading)) {
+            if (std::find(candidates.begin(), candidates.end(), surface) == candidates.end() &&
+                !Hidden(current, surface)) {
                 candidates.push_back(std::move(surface));
             }
         }
@@ -510,6 +550,24 @@ void InputSession::ApplyLearning(std::size_t segment)
         }
     }
     segments_[segment].candidates = std::move(candidates);
+}
+
+bool InputSession::Hidden(const ConvertedSegment& segment, std::u16string_view surface) const
+{
+    if (user_dictionary_ == nullptr) {
+        return false;
+    }
+    if (user_dictionary_->Suppressed(segment.reading, surface)) {
+        return true;
+    }
+    // A learned "私は" is hidden by a suppressed "私" for the head "わたし".
+    const std::u16string_view tail = segment.tail;
+    if (tail.empty() || surface.size() <= tail.size() || !surface.ends_with(tail)) {
+        return false;
+    }
+    const std::size_t head_length = segment.head_length == 0 ? segment.reading.size() : segment.head_length;
+    return user_dictionary_->Suppressed(std::u16string_view(segment.reading).substr(0, head_length),
+                                        surface.substr(0, surface.size() - tail.size()));
 }
 
 bool InputSession::IsLearnedCandidate(std::size_t segment, std::size_t index) const

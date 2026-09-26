@@ -1,0 +1,19 @@
+!Microsoft IME Dictionary Tool
+!Version:
+!Format:WORDLIST
+!User Dictionary Name: Astelio IMEのテスト
+!Output File Name: ms_ime.txt
+!DateTime: 2026/09/27 10:00:00
+
+あすてりお	Astelio	固有名詞
+ふじわら	藤原	姓
+たろう	太郎	名
+あすてりお	アステリオ	人名	読みの確認用
+よこはま	横浜	地名その他
+おつ	お疲れさまです	短縮よみ
+にこにこ	(^_^)	顔文字
+かえる	蛙	抑制単語
+ぎじゅつしょ	技術書	名詞
+てすと	テスト	さ変名詞
+しずか	静か	形容動詞
+ぐぐる	ググる	ら行五段

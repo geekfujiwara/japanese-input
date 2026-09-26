@@ -8,6 +8,7 @@
 #include <commctrl.h>
 #include <commdlg.h>
 
+#include <algorithm>
 #include <iterator>
 #include <new>
 #include <string>
@@ -146,6 +147,12 @@ Word WordFromFields(const State& state)
 {
     Word word;
     word.reading = TextOf(state.reading);
+    // Readings are matched against the hiragana typed; katakana entered here would never match.
+    for (char16_t& c : word.reading) {
+        if ((c >= u'\u30A1' && c <= u'\u30F6') || c == u'\u30FD' || c == u'\u30FE') {
+            c = static_cast<char16_t>(c - 0x60);
+        }
+    }
     word.surface = TextOf(state.surface);
     const LRESULT pos = SendMessageW(state.pos, CB_GETCURSEL, 0, 0);
     if (pos >= 0 && static_cast<std::size_t>(pos) < UserDictionary::kPartOfSpeechNames.size()) {
@@ -309,9 +316,15 @@ void Export(HWND window, State& state)
     state.dictionary = LoadUserDictionary();
     Fill(state);
     const std::vector<Word>& words = state.dictionary.Words();
-    switch (ExportUserDictionaryFile(path, words, kExportFormats[dialog.nFilterIndex - 1].format)) {
+    const UserDictionaryFormat format = kExportFormats[dialog.nFilterIndex - 1].format;
+    // ATOK and Kotoeri have no suppressed words, so those are left out of the file.
+    const bool drops_suppressed = format == UserDictionaryFormat::Atok || format == UserDictionaryFormat::Kotoeri;
+    const auto written = static_cast<std::size_t>(std::count_if(words.begin(), words.end(), [&](const Word& word) {
+        return !drops_suppressed || word.pos != UserDictionary::PartOfSpeech::Suppressed;
+    }));
+    switch (ExportUserDictionaryFile(path, words, format)) {
     case UserDictionaryExport::Written:
-        Tell(window, std::to_wstring(words.size()) + L"語を書き出しました。");
+        Tell(window, std::to_wstring(written) + L"語を書き出しました。");
         break;
     case UserDictionaryExport::NotEncodable:
         Tell(window,
