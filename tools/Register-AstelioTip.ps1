@@ -47,11 +47,20 @@ function Install-File([string]$Source, [string]$Destination) {
         Move-Item -LiteralPath $Destination -Destination "$Destination.$([DateTime]::Now.ToString('yyyyMMddHHmmss')).old" -Force
     }
     Copy-Item -LiteralPath $Source -Destination $Destination
+    if ((Get-FileHash -LiteralPath $Source).Hash -ne (Get-FileHash -LiteralPath $Destination).Hash) {
+        throw "Copying $Source to $Destination did not complete"
+    }
     Get-ChildItem -Path (Split-Path $Destination) -Filter '*.old' | Remove-Item -ErrorAction SilentlyContinue
 }
 
 if (-not $WhatIfPreference -and -not (Test-Administrator)) {
     throw 'Run this script from PowerShell started as administrator (registering a TIP writes HKLM).'
+}
+
+$buildFile = Join-Path $Path 'build.txt'
+if (-not $Unregister) {
+    $build = if (Test-Path $buildFile) { (Get-Content -LiteralPath $buildFile -Raw).Trim() } else { 'unknown build' }
+    Write-Host "Installing $build from $Path"
 }
 
 foreach ($target in $targets) {
@@ -94,4 +103,5 @@ if (-not $Unregister) {
         Write-Warning 'x64 apps running under emulation on ARM64 do not get Astelio yet (needs an ARM64X forwarder DLL).'
     }
     Write-Host 'Add "Astelio IME" under Settings > Time & language > Language & region > Japanese > Language options > Keyboards, then sign out and back in if it does not appear.'
+    Write-Host 'Apps that were already running keep the old TIP until they are restarted (or sign out and back in).'
 }

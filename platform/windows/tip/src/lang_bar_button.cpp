@@ -7,6 +7,7 @@
 #include <oleauto.h>
 #include <olectl.h>
 
+#include <algorithm>
 #include <cstdint>
 #include <new>
 #include <vector>
@@ -215,17 +216,29 @@ void LangBarButton::ShowMenu(POINT point)
     AppendMenuW(menu, MF_STRING, kManage, L"\u5165\u529B\u5C65\u6B74\u306E\u7BA1\u7406...");
     AppendMenuW(menu, MF_STRING, kClear, L"\u5165\u529B\u5C65\u6B74\u3092\u3059\u3079\u3066\u524A\u9664...");
 
-    // A popup menu needs a window of this thread to own it.
-    HWND owner = CreateWindowExW(WS_EX_TOOLWINDOW, L"STATIC", L"", WS_POPUP, point.x, point.y, 0, 0, nullptr,
-                                 nullptr, ModuleHandle(), nullptr);
+    // Owned by the app's focused window, like Mozc: a window of another thread cannot track the menu, and
+    // TPM_NONOTIFY keeps the owner from changing the menu.
+    HWND owner = GetFocus();
+    HWND temporary = nullptr;
+    if (owner == nullptr) {
+        temporary = CreateWindowExW(WS_EX_TOOLWINDOW, L"STATIC", L"", WS_POPUP, point.x, point.y, 0, 0, nullptr,
+                                    nullptr, ModuleHandle(), nullptr);
+        owner = temporary;
+    }
     if (owner == nullptr) {
         DestroyMenu(menu);
         return;
     }
-    SetForegroundWindow(owner);
-    const UINT chosen = static_cast<UINT>(TrackPopupMenuEx(
-        menu, TPM_RETURNCMD | TPM_NONOTIFY | TPM_RIGHTBUTTON | TPM_BOTTOMALIGN, point.x, point.y, owner, nullptr));
-    PostMessageW(owner, WM_NULL, 0, 0);
+    if (const HMONITOR monitor = MonitorFromPoint(point, MONITOR_DEFAULTTONEAREST)) {
+        MONITORINFO info{};
+        info.cbSize = sizeof(info);
+        if (GetMonitorInfoW(monitor, &info)) {
+            point.x = std::clamp(point.x, info.rcWork.left, info.rcWork.right);
+        }
+    }
+    const UINT chosen = static_cast<UINT>(TrackPopupMenu(
+        menu, TPM_NONOTIFY | TPM_RETURNCMD | TPM_LEFTALIGN | TPM_BOTTOMALIGN | TPM_RIGHTBUTTON, point.x, point.y, 0,
+        owner, nullptr));
     DestroyMenu(menu);
     if (service_ != nullptr) {
         switch (chosen) {
@@ -235,7 +248,9 @@ void LangBarButton::ShowMenu(POINT point)
         default: break;
         }
     }
-    DestroyWindow(owner);
+    if (temporary != nullptr) {
+        DestroyWindow(temporary);
+    }
 }
 
 STDMETHODIMP LangBarButton::InitMenu(ITfMenu* /*menu*/)
