@@ -76,8 +76,8 @@ TEST(KeyTranslation, ShortcutsAndOtherKeysAreNotHandled)
     EXPECT_FALSE(TranslateKey(VK_HOME, LParam(0x47, true), {}).has_value());
 }
 
-// D-05: Ctrl+Delete reaches the session, which uses it only while the candidate list is shown.
-TEST(KeyTranslation, ControlDeleteIsTheOnlyControlKey)
+// D-05, B-06, B-08: Ctrl+Delete, Ctrl+Down and Ctrl+Backspace reach the session; other Ctrl keys do not.
+TEST(KeyTranslation, OnlyTheControlKeysTheSessionUses)
 {
     const std::optional<KeyEvent> key = TranslateKey(VK_DELETE, LParam(0x53, true), {.control = true});
     ASSERT_TRUE(key.has_value());
@@ -85,7 +85,9 @@ TEST(KeyTranslation, ControlDeleteIsTheOnlyControlKey)
     EXPECT_TRUE(key->control);
     EXPECT_FALSE(TranslateKey(VK_DELETE, LParam(0x53, true), {})->control);
     EXPECT_FALSE(TranslateKey(VK_DELETE, LParam(0x53, true), {.control = true, .alt = true}).has_value());
-    EXPECT_FALSE(TranslateKey(VK_BACK, LParam(0x0E), {.control = true}).has_value());
+    EXPECT_TRUE(TranslateKey(VK_DOWN, LParam(0x50, true), {.control = true})->control);
+    EXPECT_EQ(TranslateKey(VK_BACK, LParam(0x0E), {.control = true})->kind, KeyKind::Backspace);
+    EXPECT_FALSE(TranslateKey(VK_LEFT, LParam(0x4B, true), {.control = true}).has_value());
 }
 
 } // namespace

@@ -1109,6 +1109,78 @@ TEST_F(TypingTest, ChosenCandidateIsLearnedAndControlDeleteForgetsIt)
     EXPECT_TRUE(Press(VK_ESCAPE, 0x01));
 }
 
+// T-B06-2, T-B08-1 (TIP): Ctrl+Down commits up to the focused segment; Ctrl+Backspace right after a commit takes
+// the committed text back into the conversion.
+TEST_F(TypingTest, ControlDownCommitsPartAndControlBackspaceUndoes)
+{
+    const std::wstring path = WriteTestDictionary();
+    ASSERT_FALSE(path.empty());
+    ASSERT_HRESULT_SUCCEEDED(use_dictionary_(path.c_str()));
+    const auto control_key = [this](UINT virtual_key, BYTE scan_code, bool extended) {
+        SetModifierState(false, true);
+        const bool eaten = SendKey(virtual_key, scan_code, false, extended);
+        SetModifierState(false, false);
+        return eaten;
+    };
+
+    TypeLetters("watasihanihongo");
+    EXPECT_TRUE(Press(VK_SPACE, 0x39));
+    ASSERT_EQ(Text(), L"\u79C1\u306F\u65E5\u672C\u8A9E");
+    EXPECT_TRUE(control_key(VK_DOWN, 0x50, true));
+    EXPECT_EQ(Text(), L"\u79C1\u306F\u65E5\u672C\u8A9E");
+    EXPECT_EQ(CompositionCount(), 1) << "日本語 stays uncommitted";
+    EXPECT_TRUE(IsEqualGUID(AttributeAt(0), GUID_NULL)) << "私は is committed";
+    EXPECT_TRUE(Press(VK_RETURN, 0x1C));
+    EXPECT_EQ(CompositionCount(), 0);
+
+    EXPECT_TRUE(control_key(VK_BACK, 0x0E, false));
+    EXPECT_EQ(Text(), L"\u79C1\u306F\u65E5\u672C\u8A9E");
+    EXPECT_EQ(CompositionCount(), 1) << "日本語 is uncommitted again";
+    EXPECT_TRUE(Press(VK_ESCAPE, 0x01));
+    EXPECT_EQ(Text(), L"\u79C1\u306F\u306B\u307B\u3093\u3054");
+    EXPECT_TRUE(Press(VK_ESCAPE, 0x01));
+    EXPECT_EQ(Text(), L"\u79C1\u306F");
+    EXPECT_FALSE(control_key(VK_BACK, 0x0E, false)) << "nothing to undo; the app gets Ctrl+Backspace";
+    EXPECT_EQ(Text(), L"\u79C1\u306F");
+}
+
+// T-B11-1 (TIP): in a password field the keys reach the app as they are.
+TEST_F(TypingTest, PasswordFieldGetsTheKeysAsTheyAre)
+{
+    store_->SetInputScope(IS_PASSWORD);
+    EXPECT_FALSE(Press('A', 0x1E));
+    EXPECT_FALSE(Press(VK_SPACE, 0x39));
+    EXPECT_EQ(Text(), L"");
+    EXPECT_EQ(CompositionCount(), 0);
+
+    store_->SetInputScope(IS_DEFAULT);
+    EXPECT_TRUE(Press('A', 0x1E));
+    EXPECT_EQ(Text(), L"\u3042");
+}
+
+// T-B12-1 (TIP): switching the mode by hand shows the new mode near the caret for a moment.
+TEST_F(TypingTest, ModeSwitchShowsTheModeNearTheCaret)
+{
+    using WindowFunction = HWND(WINAPI*)();
+    const auto mode_window = reinterpret_cast<WindowFunction>(
+        GetProcAddress(GetModuleHandleW(TipPath().c_str()), "AstelioTipTestModeWindow"));
+    ASSERT_NE(mode_window, nullptr);
+    EXPECT_EQ(mode_window(), nullptr) << "nothing shown before a switch";
+
+    EXPECT_TRUE(TapAlt(false));
+    const HWND window = mode_window();
+    ASSERT_NE(window, nullptr);
+    EXPECT_TRUE(IsWindowVisible(window));
+    RECT bounds{};
+    GetWindowRect(window, &bounds);
+    EXPECT_GT(bounds.right - bounds.left, 0);
+    UpdateWindow(window); // paints "A"
+
+    EXPECT_TRUE(TapAlt(true));
+    EXPECT_EQ(mode_window(), window) << "the same popup shows あ";
+    EXPECT_TRUE(IsWindowVisible(window));
+}
+
 // T-B14-1 (TIP): a slipped key offers the word as もしかして in the candidate window, which opens at once.
 TEST_F(TypingTest, TypoSuggestionOpensTheCandidateWindow)
 {

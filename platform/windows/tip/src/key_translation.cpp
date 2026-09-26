@@ -49,11 +49,17 @@ bool IsLetter(char16_t c)
 
 std::optional<KeyEvent> TranslateKey(std::uint32_t virtual_key, std::uint32_t lparam, const Modifiers& modifiers)
 {
-    // D-05: Ctrl+Delete removes the selected candidate from the history (only while composing).
-    if (modifiers.control && !modifiers.alt && !modifiers.windows && virtual_key == VK_DELETE) {
+    // D-05 / B-06 / B-08: Ctrl+Delete, Ctrl+Down and Ctrl+Backspace reach the session, which uses them only while
+    // they mean something (candidate list, conversion, right after a commit).
+    if (modifiers.control && !modifiers.alt && !modifiers.windows) {
         KeyEvent key{KeyKind::Delete, 0};
         key.control = true;
-        return key;
+        switch (virtual_key) {
+        case VK_DELETE: return key;
+        case VK_DOWN: key.kind = KeyKind::Down; return key;
+        case VK_BACK: key.kind = KeyKind::Backspace; return key;
+        default: return std::nullopt;
+        }
     }
     if (modifiers.control || modifiers.alt || modifiers.windows) {
         return std::nullopt;

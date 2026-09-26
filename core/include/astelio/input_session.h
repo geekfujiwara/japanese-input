@@ -42,7 +42,9 @@ struct KeyEvent {
     KeyKind kind = KeyKind::Character;
     char16_t character = 0;
     bool shift = false; // for the arrow keys (Shift+Left/Right resizes a segment)
-    bool control = false; // Ctrl+Delete removes the selected candidate from the history
+    // Ctrl+Delete forgets the selected candidate, Ctrl+Down commits up to the focused segment (B-06),
+    // Ctrl+Backspace right after a commit brings the conversion back (B-08).
+    bool control = false;
 };
 
 struct SessionOutput {
@@ -50,6 +52,8 @@ struct SessionOutput {
     bool composition_changed = false;
     bool recent_emoji_changed = false; // save RecentEmoji()
     bool learning_changed = false;     // save the LearningHistory
+    // B-08: remove this text just before the caret (the commit being undone) before showing the composition.
+    std::u16string undo_commit;
 };
 
 // B-13: what the emoji palette shows.
@@ -91,6 +95,7 @@ public:
     {
         context_right_id_.reset();
         previous_surface_.clear();
+        last_commit_.reset();
     }
 
     bool JapaneseMode() const { return japanese_mode_; }
@@ -154,6 +159,10 @@ private:
     std::u16string ConvertedText() const;
     // Records the choices, then returns the text to commit and ends the conversion.
     std::u16string CommitConversion(SessionOutput& output);
+    // Records the choices of segments [0, end) and makes the last of them the context of what follows.
+    void RecordChoices(SessionOutput& output, std::size_t end);
+    SessionOutput CommitUpToFocus();
+    SessionOutput UndoCommit();
     void ApplyLearning(std::size_t segment);
     // The word before segment `segment`: the previous segment as chosen, or the last word committed.
     std::u16string SegmentContext(std::size_t segment) const;
@@ -180,6 +189,16 @@ private:
     std::u16string previous_surface_; // the last segment committed, for the pairs of words (D-04)
     bool segments_resized_ = false;   // Shift+Left/Right changed the segments
     bool segments_learned_ = false;   // the segments came from the history
+    struct CommittedConversion {
+        std::u16string text;
+        std::u16string reading;
+        std::vector<std::size_t> lengths;
+        std::vector<std::u16string> chosen;
+        std::size_t focus; // no default initializer: clang then rejects std::optional of it in this class
+        std::optional<std::uint16_t> context_right_id;
+        std::u16string previous_surface;
+    };
+    std::optional<CommittedConversion> last_commit_; // until the next key or caret move
     std::vector<std::size_t> selected_;
     std::size_t focus_ = 0;
     bool candidate_list_visible_ = false;

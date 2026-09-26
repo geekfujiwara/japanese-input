@@ -9,11 +9,13 @@
 #include "lang_bar_button.h"
 #include "learning_manager.h"
 #include "learning_store.h"
+#include "mode_window.h"
 #include "module.h"
 
 #include <InputScope.h>
 #include <oleauto.h>
 
+#include <functional>
 #include <new>
 #include <optional>
 #include <utility>
@@ -129,10 +131,113 @@ bool IsPasswordField(TfEditCookie cookie, ITfContext* context, ITfRange* range)
     return password;
 }
 
+// Runs `function` in a synchronous read-only edit session.
+class ReadSession final : public ITfEditSession {
+public:
+    explicit ReadSession(std::function<void(TfEditCookie)> function) : function_(std::move(function)) {}
+
+    STDMETHODIMP QueryInterface(REFIID riid, void** object) override
+    {
+        if (object == nullptr) {
+            return E_POINTER;
+        }
+        if (riid == IID_IUnknown || riid == IID_ITfEditSession) {
+            *object = static_cast<ITfEditSession*>(this);
+            AddRef();
+            return S_OK;
+        }
+        *object = nullptr;
+        return E_NOINTERFACE;
+    }
+
+    STDMETHODIMP_(ULONG) AddRef() override { return static_cast<ULONG>(InterlockedIncrement(&ref_count_)); }
+
+    STDMETHODIMP_(ULONG) Release() override
+    {
+        const LONG count = InterlockedDecrement(&ref_count_);
+        if (count == 0) {
+            delete this;
+        }
+        return static_cast<ULONG>(count);
+    }
+
+    STDMETHODIMP DoEditSession(TfEditCookie cookie) override
+    {
+        try {
+            function_(cookie);
+            return S_OK;
+        } catch (...) {
+            return E_UNEXPECTED;
+        }
+    }
+
+private:
+    ~ReadSession() = default;
+
+    LONG ref_count_ = 1;
+    std::function<void(TfEditCookie)> function_;
+};
+
+// B-11: whether the caret is in a password field, where keys go to the app as they are.
+bool CaretInPasswordField(TfClientId client_id, ITfContext* context)
+{
+    bool password = false;
+    auto* session = new (std::nothrow) ReadSession([&](TfEditCookie cookie) {
+        TF_SELECTION selection{};
+        ULONG fetched = 0;
+        if (SUCCEEDED(context->GetSelection(cookie, TF_DEFAULT_SELECTION, 1, &selection, &fetched)) && fetched == 1 &&
+            selection.range != nullptr) {
+            password = IsPasswordField(cookie, context, selection.range);
+            selection.range->Release();
+        }
+    });
+    if (session == nullptr) {
+        return false;
+    }
+    HRESULT session_result = S_OK;
+    context->RequestEditSession(client_id, session, TF_ES_SYNC | TF_ES_READ, &session_result);
+    session->Release();
+    return password;
+}
+
+// B-12: the caret in screen coordinates, from the document or else from the system caret.
+bool CaretRect(TfClientId client_id, ITfContext* context, RECT* rect)
+{
+    bool found = false;
+    auto* session = context == nullptr ? nullptr : new (std::nothrow) ReadSession([&](TfEditCookie cookie) {
+        TF_SELECTION selection{};
+        ULONG fetched = 0;
+        if (FAILED(context->GetSelection(cookie, TF_DEFAULT_SELECTION, 1, &selection, &fetched)) || fetched != 1 ||
+            selection.range == nullptr) {
+            return;
+        }
+        ComPtr<ITfRange> range;
+        range.Attach(selection.range);
+        ComPtr<ITfContextView> view;
+        BOOL clipped = FALSE;
+        found = SUCCEEDED(context->GetActiveView(&view)) &&
+                SUCCEEDED(view->GetTextExt(cookie, range.Get(), rect, &clipped)) && rect->bottom > rect->top;
+    });
+    if (session != nullptr) {
+        HRESULT session_result = S_OK;
+        context->RequestEditSession(client_id, session, TF_ES_SYNC | TF_ES_READ, &session_result);
+        session->Release();
+    }
+    if (!found) {
+        GUITHREADINFO info{sizeof(info)};
+        if (GetGUIThreadInfo(0, &info) && info.hwndCaret != nullptr) {
+            *rect = info.rcCaret;
+            MapWindowPoints(info.hwndCaret, nullptr, reinterpret_cast<POINT*>(rect), 2);
+            found = true;
+        }
+    }
+    return found;
+}
+
 class EditSession final : public ITfEditSession {
 public:
-    EditSession(TextService* service, ITfContext* context, std::u16string commit)
-        : service_(service), context_(context), commit_(std::move(commit))
+    EditSession(TextService* service, ITfContext* context, std::u16string commit, std::u16string undo)
+        : service_(service), context_(context), commit_(std::move(commit)), undo_(std::move(undo))
     {
         service_->AddRef();
     }
@@ -165,7 +270,7 @@ public:
     STDMETHODIMP DoEditSession(TfEditCookie cookie) override
     {
         try {
-            return service_->ApplyToDocument(cookie, context_.Get(), commit_);
+            return service_->ApplyToDocument(cookie, context_.Get(), commit_, undo_);
         } catch (...) {
             return E_UNEXPECTED;
         }
@@ -178,6 +283,7 @@ private:
     TextService* service_;
     ComPtr<ITfContext> context_;
     std::u16string commit_;
+    std::u16string undo_;
 };
 
 } // namespace
@@ -304,6 +410,7 @@ STDMETHODIMP TextService::Deactivate()
     StopModeIndicators();
     candidate_window_.reset();
     emoji_window_.reset();
+    mode_window_.reset();
     if (key_sink_advised_ && thread_mgr_) {
         Microsoft::WRL::ComPtr<ITfKeystrokeMgr> keystroke_mgr;
         if (SUCCEEDED(thread_mgr_.As(&keystroke_mgr))) {
@@ -322,6 +429,12 @@ STDMETHODIMP TextService::OnSetFocus(BOOL /*foreground*/)
 {
     session_.ResetContext();
     return S_OK;
+}
+
+bool TextService::WillHandle(ITfContext* context, const KeyEvent& key)
+{
+    // Outside a composition, a key starts one; not in a password field (B-11).
+    return session_.WillHandle(key) && (session_.Composing() || !CaretInPasswordField(client_id_, context));
 }
 
 STDMETHODIMP TextService::OnTestKeyDown(ITfContext* context, WPARAM wparam, LPARAM lparam, BOOL* eaten)
@@ -343,7 +456,7 @@ STDMETHODIMP TextService::OnTestKeyDown(ITfContext* context, WPARAM wparam, LPAR
             return S_OK;
         }
         const std::optional<KeyEvent> key = Translate(wparam, lparam);
-        *eaten = key && session_.WillHandle(*key) ? TRUE : FALSE;
+        *eaten = key && WillHandle(context, *key) ? TRUE : FALSE;
     } catch (...) {
         *eaten = FALSE;
     }
@@ -387,7 +500,7 @@ STDMETHODIMP TextService::OnKeyDown(ITfContext* context, WPARAM wparam, LPARAM l
             return S_OK;
         }
         const std::optional<KeyEvent> key = Translate(wparam, lparam);
-        if (!key || !session_.WillHandle(*key)) {
+        if (!key || !WillHandle(context, *key)) {
             if (MovesTheCaret(wparam)) {
                 session_.ResetContext(); // the next word may not follow the last one
             }
@@ -430,7 +543,7 @@ STDMETHODIMP TextService::OnKeyUp(ITfContext* context, WPARAM wparam, LPARAM lpa
         }
         // R-03: left Alt tap switches to English, right Alt tap to Japanese.
         *eaten = TRUE;
-        return SetMode(*side == ModifierSide::Right, context);
+        return SetMode(*side == ModifierSide::Right, context, true);
     } catch (...) {
         return E_UNEXPECTED;
     }
@@ -483,13 +596,13 @@ STDMETHODIMP TextService::OnChange(REFGUID compartment_guid)
 HRESULT TextService::ToggleMode()
 {
     try {
-        return SetMode(!JapaneseMode(), FocusedContext().Get());
+        return SetMode(!JapaneseMode(), FocusedContext().Get(), true);
     } catch (...) {
         return E_UNEXPECTED;
     }
 }
 
-HRESULT TextService::SetMode(bool japanese, ITfContext* context)
+HRESULT TextService::SetMode(bool japanese, ITfContext* context, bool show)
 {
     SessionOutput output = session_.SetJapaneseMode(japanese);
     HRESULT hr = S_OK;
@@ -500,6 +613,13 @@ HRESULT TextService::SetMode(bool japanese, ITfContext* context)
         HideCandidateWindow();
     }
     PublishMode();
+    RECT caret{};
+    if (show && CaretRect(client_id_, context, &caret)) {
+        if (!mode_window_) {
+            mode_window_ = std::make_unique<ModeWindow>();
+        }
+        mode_window_->Show(JapaneseMode(), caret);
+    }
     return hr;
 }
 
@@ -590,9 +710,9 @@ void TextService::PublishMode()
     }
 }
 
-HRESULT TextService::RequestEdit(ITfContext* context, std::u16string commit)
+HRESULT TextService::RequestEdit(ITfContext* context, std::u16string commit, std::u16string undo)
 {
-    auto* edit = new (std::nothrow) EditSession(this, context, std::move(commit));
+    auto* edit = new (std::nothrow) EditSession(this, context, std::move(commit), std::move(undo));
     if (edit == nullptr) {
         return E_OUTOFMEMORY;
     }
@@ -602,6 +722,32 @@ HRESULT TextService::RequestEdit(ITfContext* context, std::u16string commit)
         context->RequestEditSession(client_id_, edit, TF_ES_ASYNCDONTCARE | TF_ES_READWRITE, &session_result);
     edit->Release();
     return FAILED(hr) ? hr : (session_result == TF_S_ASYNC ? S_OK : session_result);
+}
+
+bool TextService::RemoveBeforeCaret(TfEditCookie cookie, ITfContext* context, const std::u16string& text)
+{
+    TF_SELECTION selection{};
+    ULONG fetched = 0;
+    if (composition_ || FAILED(context->GetSelection(cookie, TF_DEFAULT_SELECTION, 1, &selection, &fetched)) ||
+        fetched != 1 || selection.range == nullptr) {
+        return false;
+    }
+    ComPtr<ITfRange> range;
+    range.Attach(selection.range);
+    LONG shifted = 0;
+    const LONG length = Length(text);
+    if (FAILED(range->Collapse(cookie, TF_ANCHOR_START)) ||
+        FAILED(range->ShiftStart(cookie, -length, &shifted, nullptr)) || shifted != -length) {
+        return false;
+    }
+    std::u16string before(text.size() + 1, u'\0');
+    ULONG read = 0;
+    if (FAILED(range->GetText(cookie, 0, reinterpret_cast<WCHAR*>(before.data()), static_cast<ULONG>(before.size()),
+                              &read)) ||
+        before.substr(0, read) != text) {
+        return false;
+    }
+    return SUCCEEDED(range->SetText(cookie, 0, L"", 0)) && SUCCEEDED(SetCaret(cookie, context, range.Get()));
 }
 
 HRESULT TextService::StartComposition(TfEditCookie cookie, ITfContext* context)
@@ -635,8 +781,12 @@ HRESULT TextService::EndComposition(TfEditCookie cookie)
     return hr;
 }
 
-HRESULT TextService::ApplyToDocument(TfEditCookie cookie, ITfContext* context, const std::u16string& commit)
+HRESULT TextService::ApplyToDocument(TfEditCookie cookie, ITfContext* context, const std::u16string& commit,
+                                     const std::u16string& undo)
 {
+    if (!undo.empty() && !RemoveBeforeCaret(cookie, context, undo)) {
+        session_.AbandonComposition(); // the text before the caret changed; keep the document as it is
+    }
     const HRESULT hr = ApplyText(cookie, context, commit);
     UpdateCandidateWindow(cookie, context);
     return hr;
@@ -768,7 +918,7 @@ HRESULT TextService::Deliver(ITfContext* context, SessionOutput output)
         learning_stamp_ = LearningFileStamp();
     }
     if (context != nullptr && (output.composition_changed || !output.commit.empty())) {
-        return RequestEdit(context, std::move(output.commit));
+        return RequestEdit(context, std::move(output.commit), std::move(output.undo_commit));
     }
     return S_OK;
 }
@@ -989,6 +1139,12 @@ HWND TextService::TestEmojiWindow()
     return service != nullptr && service->emoji_window_ ? service->emoji_window_->window() : nullptr;
 }
 
+HWND TextService::TestModeWindow()
+{
+    TextService* service = g_active_service;
+    return service != nullptr && service->mode_window_ ? service->mode_window_->window() : nullptr;
+}
+
 void TextService::TestUseLearningFile(const wchar_t* path)
 {
     UseLearningFile(path);
@@ -1022,6 +1178,12 @@ extern "C" HWND WINAPI AstelioTipTestCandidateWindow()
 extern "C" HWND WINAPI AstelioTipTestEmojiWindow()
 {
     return astelio::tip::TextService::TestEmojiWindow();
+}
+
+// Test entry point: the mode popup (B-12) of the active text service, or nullptr.
+extern "C" HWND WINAPI AstelioTipTestModeWindow()
+{
+    return astelio::tip::TextService::TestModeWindow();
 }
 
 // Test entry point: keeps the emoji history in `path` instead of the user's profile (nullptr restores it).

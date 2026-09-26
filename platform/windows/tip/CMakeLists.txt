@@ -17,6 +17,7 @@ add_library(astelio_tip SHARED
     src/lang_bar_button.cpp
     src/learning_manager.cpp
     src/learning_store.cpp
+    src/mode_window.cpp
     src/popup_window.cpp
     src/registration.cpp
     src/text_service.cpp

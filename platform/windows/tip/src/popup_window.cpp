@@ -20,6 +20,7 @@ constexpr int kCornerRound = 2;
 constexpr int kBackdropNone = 1;
 constexpr int kBackdropTransientWindow = 3; // acrylic, but solid while the window is inactive
 constexpr float kGap = 4.0f;
+constexpr UINT_PTR kHideTimer = 1;
 
 // SetWindowCompositionAttribute (user32, undocumented but stable since Windows 10): the only way to get an
 // acrylic blur on a window that is never activated. Looked up at run time; missing means no blur.
@@ -255,8 +256,18 @@ void PopupWindow::Place(SIZE size_dips, float left_inset_dips, const RECT& ancho
 
 void PopupWindow::Hide()
 {
+    if (window_ != nullptr) {
+        KillTimer(window_, kHideTimer);
+    }
     if (window_ != nullptr && IsWindowVisible(window_)) {
         ShowWindow(window_, SW_HIDE);
+    }
+}
+
+void PopupWindow::HideAfter(UINT milliseconds)
+{
+    if (window_ != nullptr) {
+        SetTimer(window_, kHideTimer, milliseconds, nullptr);
     }
 }
 
@@ -320,6 +331,13 @@ LRESULT CALLBACK PopupWindow::WindowProc(HWND window, UINT message, WPARAM wpara
             } catch (...) {
                 // A failed click changes nothing.
             }
+            return 0;
+        }
+        break;
+    case WM_TIMER:
+        if (wparam == kHideTimer) {
+            KillTimer(window, kHideTimer);
+            ShowWindow(window, SW_HIDE);
             return 0;
         }
         break;

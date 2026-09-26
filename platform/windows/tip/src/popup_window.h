@@ -48,6 +48,8 @@ protected:
     UINT Dpi() const;
     Palette MakePalette() const;
     IDWriteFactory* DWrite() const;
+    // Hides the window after `milliseconds` (Hide or showing again with a new call replaces the timer).
+    void HideAfter(UINT milliseconds);
 
     // Draws the content between BeginDraw and EndDraw; `width` is in DIPs.
     virtual void Render(ID2D1RenderTarget* target, ID2D1SolidColorBrush* brush, const Palette& palette,

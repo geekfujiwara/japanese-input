@@ -1,8 +1,82 @@
 #include "test_text_store.h"
 
 #include <algorithm>
+#include <new>
 
 namespace astelio::tip::testing {
+namespace {
+
+// GUID_PROP_INPUTSCOPE, which no import library defines.
+constexpr GUID kInputScopeAttribute = {0x1713dd5a, 0x68e7, 0x4a5b, {0x9a, 0xf6, 0x59, 0x2a, 0x59, 0x5c, 0x77, 0x8d}};
+
+bool AsksForInputScope(ULONG count, const TS_ATTRID* attributes)
+{
+    return attributes != nullptr &&
+           std::any_of(attributes, attributes + count, [](const TS_ATTRID& id) { return id == kInputScopeAttribute; });
+}
+
+class TestInputScope final : public ITfInputScope {
+public:
+    explicit TestInputScope(InputScope scope) : scope_(scope) {}
+
+    STDMETHODIMP QueryInterface(REFIID riid, void** object) override
+    {
+        if (object == nullptr) {
+            return E_POINTER;
+        }
+        if (riid == IID_IUnknown || riid == __uuidof(ITfInputScope)) {
+            *object = static_cast<ITfInputScope*>(this);
+            AddRef();
+            return S_OK;
+        }
+        *object = nullptr;
+        return E_NOINTERFACE;
+    }
+    STDMETHODIMP_(ULONG) AddRef() override { return static_cast<ULONG>(InterlockedIncrement(&ref_count_)); }
+    STDMETHODIMP_(ULONG) Release() override
+    {
+        const LONG count = InterlockedDecrement(&ref_count_);
+        if (count == 0) {
+            delete this;
+        }
+        return static_cast<ULONG>(count);
+    }
+
+    STDMETHODIMP GetInputScopes(InputScope** scopes, UINT* count) override
+    {
+        if (scopes == nullptr || count == nullptr) {
+            return E_INVALIDARG;
+        }
+        *scopes = static_cast<InputScope*>(CoTaskMemAlloc(sizeof(InputScope)));
+        if (*scopes == nullptr) {
+            *count = 0;
+            return E_OUTOFMEMORY;
+        }
+        **scopes = scope_;
+        *count = 1;
+        return S_OK;
+    }
+    STDMETHODIMP GetPhrase(BSTR** /*phrases*/, UINT* /*count*/) override { return E_NOTIMPL; }
+    STDMETHODIMP GetRegularExpression(BSTR* /*expression*/) override { return E_NOTIMPL; }
+    STDMETHODIMP GetSRGS(BSTR* /*srgs*/) override { return E_NOTIMPL; }
+    STDMETHODIMP GetXML(BSTR* /*xml*/) override { return E_NOTIMPL; }
+
+private:
+    ~TestInputScope() = default;
+
+    LONG ref_count_ = 1;
+    InputScope scope_;
+};
+
+} // namespace
+
+void TestTextStore::SetInputScope(InputScope scope)
+{
+    input_scope_ = scope;
+    if (sink_) {
+        sink_->OnAttrsChange(0, static_cast<LONG>(text_.size()), 1, &kInputScopeAttribute);
+    }
+}
 
 STDMETHODIMP TestTextStore::QueryInterface(REFIID riid, void** object)
 {
@@ -225,20 +299,23 @@ STDMETHODIMP TestTextStore::InsertEmbedded(DWORD /*flags*/, LONG /*start*/, LONG
     return E_NOTIMPL;
 }
 
-STDMETHODIMP TestTextStore::RequestSupportedAttrs(DWORD /*flags*/, ULONG /*count*/, const TS_ATTRID* /*attributes*/)
+STDMETHODIMP TestTextStore::RequestSupportedAttrs(DWORD /*flags*/, ULONG count, const TS_ATTRID* attributes)
 {
+    input_scope_requested_ = AsksForInputScope(count, attributes);
     return S_OK;
 }
 
-STDMETHODIMP TestTextStore::RequestAttrsAtPosition(LONG /*position*/, ULONG /*count*/,
-                                                   const TS_ATTRID* /*attributes*/, DWORD /*flags*/)
+STDMETHODIMP TestTextStore::RequestAttrsAtPosition(LONG /*position*/, ULONG count, const TS_ATTRID* attributes,
+                                                   DWORD /*flags*/)
 {
+    input_scope_requested_ = AsksForInputScope(count, attributes);
     return S_OK;
 }
 
 STDMETHODIMP TestTextStore::RequestAttrsTransitioningAtPosition(LONG /*position*/, ULONG /*count*/,
                                                                 const TS_ATTRID* /*attributes*/, DWORD /*flags*/)
 {
+    input_scope_requested_ = false;
     return S_OK;
 }
 
@@ -255,12 +332,27 @@ STDMETHODIMP TestTextStore::FindNextAttrTransition(LONG /*start*/, LONG halt, UL
     return S_OK;
 }
 
-STDMETHODIMP TestTextStore::RetrieveRequestedAttrs(ULONG /*count*/, TS_ATTRVAL* /*values*/, ULONG* fetched)
+STDMETHODIMP TestTextStore::RetrieveRequestedAttrs(ULONG count, TS_ATTRVAL* values, ULONG* fetched)
 {
     if (fetched == nullptr) {
         return E_INVALIDARG;
     }
     *fetched = 0;
+    const bool requested = input_scope_requested_;
+    input_scope_requested_ = false;
+    if (!requested || count == 0 || values == nullptr || input_scope_ == IS_DEFAULT) {
+        return S_OK;
+    }
+    auto* scope = new (std::nothrow) TestInputScope(input_scope_);
+    if (scope == nullptr) {
+        return E_OUTOFMEMORY;
+    }
+    values[0].idAttr = kInputScopeAttribute;
+    values[0].dwOverlapId = 0;
+    VariantInit(&values[0].varValue);
+    values[0].varValue.vt = VT_UNKNOWN;
+    values[0].varValue.punkVal = static_cast<ITfInputScope*>(scope); // the caller releases it
+    *fetched = 1;
     return S_OK;
 }
 
