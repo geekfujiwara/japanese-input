@@ -8,6 +8,7 @@
 #include <msctf.h>
 #include <wrl/client.h>
 
+#include <cstdint>
 #include <memory>
 #include <optional>
 #include <string>
@@ -58,6 +59,11 @@ public:
     // Mode button click: switches the mode in the focused document.
     HRESULT ToggleMode();
 
+    // D-04 / D-05: the history menu of the mode button.
+    enum class LearningCommand { Toggle, Manage, Clear };
+    bool LearningOn() const { return learning_on_; }
+    void OnLearningCommand(LearningCommand command, HWND owner);
+
     // Runs inside an edit session: commits `commit`, then shows the session's uncommitted text.
     HRESULT ApplyToDocument(TfEditCookie cookie, ITfContext* context, const std::u16string& commit);
 
@@ -65,12 +71,15 @@ public:
     static HRESULT TestUseDictionary(const wchar_t* path);
     static HWND TestCandidateWindow();
     static HWND TestEmojiWindow();
+    static void TestUseLearningFile(const wchar_t* path);
 
 private:
     TextService();
     ~TextService();
 
     void UseConverter(const Converter* converter);
+    // Loads the history again when another app (or the history window) changed the file.
+    void RefreshLearning(bool force = false);
     // Sends the session's output to the document and saves the emoji history when it changed.
     HRESULT Deliver(ITfContext* context, SessionOutput output);
     void OnEmojiClick(bool category, std::size_t index);
@@ -98,6 +107,9 @@ private:
     TfClientId client_id_ = TF_CLIENTID_NULL;
     bool key_sink_advised_ = false;
     InputSession session_;
+    LearningHistory learning_;
+    std::uint64_t learning_stamp_ = 0;
+    bool learning_on_ = true;
     Microsoft::WRL::ComPtr<ITfComposition> composition_;
     ModifierTapTracker alt_taps_;
     std::optional<ModifierSide> pending_alt_tap_;

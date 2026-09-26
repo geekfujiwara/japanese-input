@@ -7,6 +7,7 @@ add_library(astelio_core STATIC
     src/emoji.cpp
     src/input_session.cpp
     src/kana_forms.cpp
+    src/learning.cpp
     src/modifier_tap_tracker.cpp
     src/romaji_table.cpp
     src/romaji_table_io.cpp

@@ -7,8 +7,11 @@
 #include "key_translation.h"
 #include "dictionary_loader.h"
 #include "lang_bar_button.h"
+#include "learning_manager.h"
+#include "learning_store.h"
 #include "module.h"
 
+#include <InputScope.h>
 #include <oleauto.h>
 
 #include <new>
@@ -81,6 +84,33 @@ HRESULT CollapseSelectionToEnd(TfEditCookie cookie, ITfContext* context, ITfRang
         hr = SetCaret(cookie, context, caret.Get());
     }
     return hr;
+}
+
+// B-11, D-06: whether the text at `range` is a password or PIN field (its InputScope says so).
+bool IsPasswordField(TfEditCookie cookie, ITfContext* context, ITfRange* range)
+{
+    ComPtr<ITfReadOnlyProperty> property;
+    if (range == nullptr || FAILED(context->GetAppProperty(GUID_PROP_INPUTSCOPE, &property)) || !property) {
+        return false;
+    }
+    VARIANT value;
+    VariantInit(&value);
+    bool password = false;
+    if (SUCCEEDED(property->GetValue(cookie, range, &value)) && value.vt == VT_UNKNOWN && value.punkVal != nullptr) {
+        ComPtr<ITfInputScope> scope;
+        InputScope* scopes = nullptr;
+        UINT count = 0;
+        if (SUCCEEDED(value.punkVal->QueryInterface(IID_PPV_ARGS(&scope))) &&
+            SUCCEEDED(scope->GetInputScopes(&scopes, &count)) && scopes != nullptr) {
+            for (UINT i = 0; i < count; ++i) {
+                password = password || scopes[i] == IS_PASSWORD || scopes[i] == IS_NUMERIC_PASSWORD ||
+                           scopes[i] == IS_NUMERIC_PIN || scopes[i] == IS_ALPHANUMERIC_PIN;
+            }
+            CoTaskMemFree(scopes);
+        }
+    }
+    VariantClear(&value);
+    return password;
 }
 
 class EditSession final : public ITfEditSession {
@@ -232,6 +262,8 @@ STDMETHODIMP TextService::ActivateEx(ITfThreadMgr* thread_mgr, TfClientId client
     g_active_service = this;
     UseConverter(SharedConverter());
     session_.SetRecentEmoji(LoadRecentEmoji());
+    learning_on_ = LearningEnabled();
+    RefreshLearning(true);
     ComPtr<ITfCategoryMgr> categories;
     if (SUCCEEDED(CoCreateInstance(CLSID_TF_CategoryMgr, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&categories)))) {
         for (int index = 0; index < kDisplayAttributeCount; ++index) {
@@ -342,6 +374,9 @@ STDMETHODIMP TextService::OnKeyDown(ITfContext* context, WPARAM wparam, LPARAM l
         }
         *eaten = TRUE;
         ++Diagnostics().eaten;
+        if (!session_.Composing()) {
+            RefreshLearning();
+        }
         const bool offered = session_.EmojiPaletteOffered();
         SessionOutput output = session_.Handle(*key);
         if (!offered && session_.EmojiPaletteOffered()) {
@@ -564,6 +599,8 @@ HRESULT TextService::StartComposition(TfEditCookie cookie, ITfContext* context)
         hr = compositions->StartComposition(cookie, range.Get(), static_cast<ITfCompositionSink*>(this),
                                             composition_.ReleaseAndGetAddressOf());
     }
+    // Nothing typed in a password field is learned (D-06).
+    session_.SetRecording(!IsPasswordField(cookie, context, range.Get()));
     return SUCCEEDED(hr) && !composition_ ? E_FAIL : hr;
 }
 
@@ -658,6 +695,42 @@ void TextService::UseConverter(const Converter* converter)
     }
 }
 
+void TextService::RefreshLearning(bool force)
+{
+    session_.SetLearning(learning_on_ ? &learning_ : nullptr);
+    if (!learning_on_) {
+        return;
+    }
+    const std::uint64_t stamp = LearningFileStamp();
+    if (force || stamp != learning_stamp_) {
+        learning_ = LoadLearning();
+        learning_stamp_ = stamp;
+    }
+}
+
+void TextService::OnLearningCommand(LearningCommand command, HWND owner)
+{
+    switch (command) {
+    case LearningCommand::Toggle:
+        learning_on_ = !learning_on_;
+        SetLearningEnabled(learning_on_);
+        RefreshLearning(true);
+        break;
+    case LearningCommand::Manage:
+        ShowLearningManager();
+        break;
+    case LearningCommand::Clear:
+        // 入力履歴をすべて削除しますか？
+        if (MessageBoxW(owner, L"\u5165\u529B\u5C65\u6B74\u3092\u3059\u3079\u3066\u524A\u9664\u3057\u307E\u3059\u304B\uFF1F",
+                        L"Astelio IME", MB_YESNO | MB_ICONWARNING | MB_DEFBUTTON2 | MB_SETFOREGROUND) == IDYES) {
+            learning_.Clear();
+            SaveLearning(learning_);
+            learning_stamp_ = LearningFileStamp();
+        }
+        break;
+    }
+}
+
 HRESULT TextService::Deliver(ITfContext* context, SessionOutput output)
 {
     if (output.recent_emoji_changed && !session_.RecentEmoji().empty()) {
@@ -668,6 +741,10 @@ HRESULT TextService::Deliver(ITfContext* context, SessionOutput output)
         recent.insert(recent.begin(), newest);
         session_.SetRecentEmoji(std::move(recent));
         SaveRecentEmoji(session_.RecentEmoji());
+    }
+    if (output.learning_changed && learning_on_) {
+        SaveLearning(learning_);
+        learning_stamp_ = LearningFileStamp();
     }
     if (context != nullptr && (output.composition_changed || !output.commit.empty())) {
         return RequestEdit(context, std::move(output.commit));
@@ -744,6 +821,7 @@ void TextService::UpdateCandidateWindow(TfEditCookie cookie, ITfContext* context
     LONG length = Length(session_.CompositionText());
     const std::vector<std::u16string>* candidates = &session_.Predictions();
     std::size_t selected = CandidateWindow::kNoSelection;
+    std::vector<bool> learned;
     if (!predicting) {
         const std::vector<ConvertedSegment>& segments = session_.Segments();
         const std::size_t focus = session_.FocusedSegment();
@@ -753,6 +831,9 @@ void TextService::UpdateCandidateWindow(TfEditCookie cookie, ITfContext* context
         length = Length(segments[focus].candidates[session_.SelectedCandidate(focus)]);
         candidates = &segments[focus].candidates;
         selected = session_.SelectedCandidate(focus);
+        for (std::size_t i = 0; i < candidates->size(); ++i) {
+            learned.push_back(session_.IsLearnedCandidate(focus, i));
+        }
     }
 
     RECT anchor{};
@@ -761,7 +842,7 @@ void TextService::UpdateCandidateWindow(TfEditCookie cookie, ITfContext* context
         candidate_window_.reset(new (std::nothrow) CandidateWindow());
     }
     if (candidate_window_) {
-        candidate_window_->Show(*candidates, selected, anchor);
+        candidate_window_->Show(*candidates, selected, anchor, learned);
     }
 }
 
@@ -885,6 +966,14 @@ HWND TextService::TestEmojiWindow()
     return service != nullptr && service->emoji_window_ ? service->emoji_window_->window() : nullptr;
 }
 
+void TextService::TestUseLearningFile(const wchar_t* path)
+{
+    UseLearningFile(path);
+    if (TextService* service = g_active_service) {
+        service->RefreshLearning(true);
+    }
+}
+
 } // namespace astelio::tip
 
 // Test entry point: sends a key to the TSF-activated text service without OS keyboard focus.
@@ -916,4 +1005,10 @@ extern "C" HWND WINAPI AstelioTipTestEmojiWindow()
 extern "C" void WINAPI AstelioTipTestUseEmojiHistory(const wchar_t* path)
 {
     astelio::tip::UseRecentEmojiFile(path);
+}
+
+// Test entry point: keeps the learning history in `path` instead of the user's profile (nullptr restores it).
+extern "C" void WINAPI AstelioTipTestUseLearningHistory(const wchar_t* path)
+{
+    astelio::tip::TextService::TestUseLearningFile(path);
 }

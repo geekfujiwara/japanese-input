@@ -7,6 +7,7 @@ add_executable(astelio_core_tests
     emoji_test.cpp
     input_session_test.cpp
     kana_forms_test.cpp
+    learning_test.cpp
     modifier_tap_tracker_test.cpp
     romaji_table_io_test.cpp
     special_candidates_test.cpp

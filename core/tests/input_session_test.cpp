@@ -408,5 +408,100 @@ TEST_F(ConversionTest, ArrowKeysWhileComposingDoNotReachTheApp)
     EXPECT_FALSE(session_.Handle(Arrow(KeyKind::Down)).composition_changed);
 }
 
+KeyEvent ControlDelete()
+{
+    KeyEvent key{KeyKind::Delete, 0};
+    key.control = true;
+    return key;
+}
+
+// T-D04-1: a candidate chosen once comes first the next time.
+TEST_F(ConversionTest, ChosenCandidateComesFirstNextTime)
+{
+    LearningHistory history;
+    session_.SetLearning(&history);
+    Type(session_, u"watasi");
+    session_.Handle(Key(KeyKind::Space));
+    EXPECT_FALSE(session_.Handle(Key(KeyKind::Enter)).learning_changed) << "the first candidate is not learned";
+    EXPECT_TRUE(history.Empty());
+
+    Type(session_, u"watasi");
+    session_.Handle(Key(KeyKind::Space));
+    session_.Handle(Key(KeyKind::Space));
+    ASSERT_EQ(session_.CompositionText(), u"渡し");
+    EXPECT_FALSE(session_.IsLearnedCandidate(0, 1));
+    const SessionOutput committed = session_.Handle(Key(KeyKind::Enter));
+    EXPECT_EQ(committed.commit, u"渡し");
+    EXPECT_TRUE(committed.learning_changed);
+
+    Type(session_, u"watasi");
+    session_.Handle(Key(KeyKind::Space));
+    EXPECT_EQ(session_.CompositionText(), u"渡し");
+    EXPECT_TRUE(session_.IsLearnedCandidate(0, 0));
+    EXPECT_EQ(session_.Segments()[0].candidates.at(1), u"私");
+    EXPECT_TRUE(session_.Handle(Key(KeyKind::Enter)).learning_changed) << "a learned word is refreshed";
+}
+
+// T-D05-1: Ctrl+Delete in the candidate list forgets the word; the order is as before learning.
+TEST_F(ConversionTest, ControlDeleteForgetsTheSelectedCandidate)
+{
+    LearningHistory history;
+    history.Record(LearningHistory::Kind::Conversion, u"わたし", u"渡し");
+    session_.SetLearning(&history);
+    Type(session_, u"watasi");
+    session_.Handle(Key(KeyKind::Space));
+    EXPECT_FALSE(session_.Handle(ControlDelete()).learning_changed) << "only while the list is shown";
+    session_.Handle(Key(KeyKind::Space));
+    session_.Handle(Arrow(KeyKind::Up));
+    ASSERT_TRUE(session_.CandidateListVisible());
+    ASSERT_EQ(session_.CompositionText(), u"渡し");
+
+    const SessionOutput forgotten = session_.Handle(ControlDelete());
+    EXPECT_TRUE(forgotten.learning_changed);
+    EXPECT_TRUE(history.Empty());
+    EXPECT_EQ(session_.Segments()[0].candidates.front(), u"私");
+    EXPECT_EQ(session_.CompositionText(), u"渡し") << "the selection stays on the word";
+    EXPECT_FALSE(session_.IsLearnedCandidate(0, session_.SelectedCandidate(0)));
+    EXPECT_FALSE(session_.Handle(ControlDelete()).learning_changed) << "not in the history any more";
+}
+
+// T-D06-1, T-B11-1: with recording off (password fields, secret mode) nothing is learned.
+TEST_F(ConversionTest, NothingIsRecordedWhileRecordingIsOff)
+{
+    LearningHistory history;
+    session_.SetLearning(&history);
+    session_.SetRecording(false);
+    Type(session_, u"watasi");
+    session_.Handle(Key(KeyKind::Space));
+    session_.Handle(Key(KeyKind::Space));
+    EXPECT_FALSE(session_.Handle(Key(KeyKind::Enter)).learning_changed);
+    EXPECT_TRUE(history.Empty());
+}
+
+// T-D04-1 (predictions): a prediction chosen once is offered first.
+TEST_F(ConversionTest, ChosenPredictionComesFirstAndCanBeForgotten)
+{
+    LearningHistory history;
+    session_.SetLearning(&history);
+    Type(session_, u"ari");
+    session_.Handle(Key(KeyKind::Tab));
+    session_.Handle(Key(KeyKind::Tab));
+    ASSERT_EQ(session_.CompositionText(), u"有り難い");
+    EXPECT_TRUE(session_.Handle(Key(KeyKind::Enter)).learning_changed);
+
+    Type(session_, u"ari");
+    ASSERT_FALSE(session_.Predictions().empty());
+    EXPECT_EQ(session_.Predictions().front(), u"有り難い");
+    session_.Handle(Key(KeyKind::Tab));
+    EXPECT_TRUE(session_.IsLearnedCandidate(0, 0));
+    EXPECT_TRUE(session_.Handle(ControlDelete()).learning_changed);
+    EXPECT_TRUE(history.Empty());
+    session_.Handle(Key(KeyKind::Escape));
+    session_.Handle(Key(KeyKind::Escape));
+
+    Type(session_, u"ari");
+    EXPECT_EQ(session_.Predictions().front(), u"ありがとう");
+}
+
 } // namespace
 } // namespace astelio

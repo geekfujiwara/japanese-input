@@ -4,6 +4,7 @@
 #include "astelio/composer.h"
 #include "astelio/converter.h"
 #include "astelio/emoji.h"
+#include "astelio/learning.h"
 #include "astelio/romaji_table.h"
 
 #include <cstddef>
@@ -40,12 +41,14 @@ struct KeyEvent {
     KeyKind kind = KeyKind::Character;
     char16_t character = 0;
     bool shift = false; // for the arrow keys (Shift+Left/Right resizes a segment)
+    bool control = false; // Ctrl+Delete removes the selected candidate from the history
 };
 
 struct SessionOutput {
     std::u16string commit;
     bool composition_changed = false;
     bool recent_emoji_changed = false; // save RecentEmoji()
+    bool learning_changed = false;     // save the LearningHistory
 };
 
 // B-13: what the emoji palette shows.
@@ -66,6 +69,13 @@ public:
 
     // Enables kana-kanji conversion with Space. `converter` must outlive the session; nullptr disables it.
     void SetConverter(const Converter* converter) { converter_ = converter; }
+
+    // D-04: the words chosen before come first. `history` must outlive the session; nullptr turns the history off.
+    // With recording off (password fields, secret mode) the history is used but nothing new is recorded.
+    void SetLearning(LearningHistory* history) { learning_ = history; }
+    void SetRecording(bool enabled) { recording_ = enabled; }
+    // Whether candidate `index` of `segment` is shown because it was chosen before (marked in the window).
+    bool IsLearnedCandidate(std::size_t segment, std::size_t index) const;
 
     bool JapaneseMode() const { return japanese_mode_; }
     // Leaving Japanese mode commits the uncommitted text.
@@ -126,16 +136,25 @@ private:
     void ConvertToForm(KeyKind key);
     void Convert(std::vector<std::size_t> fixed_lengths);
     std::u16string ConvertedText() const;
+    // Records the choices, then returns the text to commit and ends the conversion.
+    std::u16string CommitConversion(SessionOutput& output);
+    void ApplyLearning(std::size_t segment);
+    bool ForgetSelectedCandidate();
     void EndConversion();
 
     Composer composer_;
     CharacterSettings settings_;
     const RomajiTable* table_;
     const Converter* converter_ = nullptr;
+    LearningHistory* learning_ = nullptr;
+    bool recording_ = true;
     bool japanese_mode_ = true;
     bool converting_ = false;
+    bool predicting_ = false; // the conversion is the list of predictions (Tab or Down while typing)
     std::u16string reading_;
     std::vector<ConvertedSegment> segments_;
+    // The candidates of each segment before the history reordered them.
+    std::vector<std::vector<std::u16string>> base_candidates_;
     std::vector<std::size_t> selected_;
     std::size_t focus_ = 0;
     bool candidate_list_visible_ = false;

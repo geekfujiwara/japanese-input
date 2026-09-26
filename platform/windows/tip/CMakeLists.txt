@@ -15,13 +15,15 @@ add_library(astelio_tip SHARED
     src/emoji_history.cpp
     src/emoji_window.cpp
     src/lang_bar_button.cpp
+    src/learning_manager.cpp
+    src/learning_store.cpp
     src/popup_window.cpp
     src/registration.cpp
     src/text_service.cpp
 )
 
 target_include_directories(astelio_tip PUBLIC include PRIVATE src)
-target_link_libraries(astelio_tip PRIVATE astelio_tip_keys d2d1 dwrite dwmapi)
+target_link_libraries(astelio_tip PRIVATE astelio_tip_keys d2d1 dwrite dwmapi comctl32)
 target_compile_options(astelio_tip PRIVATE /W4 /WX /utf-8 /permissive- /EHsc)
 
 if(ASTELIO_BUILD_TESTS)

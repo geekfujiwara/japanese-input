@@ -49,6 +49,12 @@ bool IsLetter(char16_t c)
 
 std::optional<KeyEvent> TranslateKey(std::uint32_t virtual_key, std::uint32_t lparam, const Modifiers& modifiers)
 {
+    // D-05: Ctrl+Delete removes the selected candidate from the history (only while composing).
+    if (modifiers.control && !modifiers.alt && !modifiers.windows && virtual_key == VK_DELETE) {
+        KeyEvent key{KeyKind::Delete, 0};
+        key.control = true;
+        return key;
+    }
     if (modifiers.control || modifiers.alt || modifiers.windows) {
         return std::nullopt;
     }
