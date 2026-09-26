@@ -1250,6 +1250,11 @@ TEST_F(TypingTest, TypoSuggestionOpensTheCandidateWindow)
     TypeLetters("a");
     Press(VK_OEM_MINUS, 0x0C);
     ASSERT_EQ(Text(), L"\u3086\u30FC\u3042\u30FC");
+    // T-B14-5: offered among the predictions before Space.
+    const HWND typing = candidate_window();
+    ASSERT_NE(typing, nullptr);
+    EXPECT_TRUE(IsWindowVisible(typing)) << "もしかして is shown while typing";
+    UpdateWindow(typing);
     EXPECT_TRUE(Press(VK_SPACE, 0x39));
     EXPECT_EQ(Text(), L"\u3086\u30FC\u3042\u30FC") << "the text typed stays first";
     const HWND window = candidate_window();
