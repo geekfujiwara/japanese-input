@@ -189,10 +189,12 @@ TEST(Composer, FullWidthLettersSetting)
 // T-R02-1
 TEST(Composer, ShiftSymbolsAreHalfWidth)
 {
-    EXPECT_EQ(Typed(u"+"), u"+");
-    EXPECT_EQ(Typed(u"("), u"(");
-    EXPECT_EQ(Typed(u")"), u")");
-    EXPECT_EQ(Typed(u"a+b"), u"あ+b");
+    CharacterSettings settings;
+    settings.auto_close_brackets = false; // this test is about the characters; R-11 is tested below
+    EXPECT_EQ(Typed(u"+", settings), u"+");
+    EXPECT_EQ(Typed(u"(", settings), u"(");
+    EXPECT_EQ(Typed(u")", settings), u")");
+    EXPECT_EQ(Typed(u"a+b", settings), u"あ+b");
 }
 
 // T-R02-2
