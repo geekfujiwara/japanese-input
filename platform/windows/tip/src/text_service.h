@@ -71,7 +71,7 @@ public:
     bool AppDisabledHere() const { return app_disabled_; }
     void ToggleAppDisabled();
     // R-10 / R-11 from the menu: saved, and used from the next key in every app.
-    enum class InputOption { ListNumberPeriod, AutoCloseBrackets };
+    enum class InputOption { ListNumberPeriod, AutoCloseBrackets, SharedMode };
     void ToggleInputOption(InputOption option);
     void OnLearningCommand(LearningCommand command, HWND owner);
 
@@ -124,6 +124,10 @@ private:
     HRESULT SetMode(bool japanese, ITfContext* context, bool show = false);
     Microsoft::WRL::ComPtr<ITfContext> FocusedContext() const;
     Microsoft::WRL::ComPtr<ITfCompartment> OpenCloseCompartment() const;
+    // C-14: the mode shared between apps (nullptr when sharing is off or TSF has no global compartment).
+    Microsoft::WRL::ComPtr<ITfCompartment> SharedModeCompartment() const;
+    // Takes the shared mode, when there is one and it differs.
+    void FollowSharedMode();
     void StartModeIndicators();
     void StopModeIndicators();
     void PublishMode();
@@ -147,6 +151,8 @@ private:
     ModifierTapTracker alt_taps_;
     std::optional<ModifierSide> pending_alt_tap_;
     DWORD compartment_cookie_ = TF_INVALID_COOKIE;
+    DWORD shared_mode_cookie_ = TF_INVALID_COOKIE;
+    bool share_mode_ = true;
     LangBarButton* mode_button_ = nullptr;
     bool mode_button_added_ = false;
     std::unique_ptr<CandidateWindow> candidate_window_;

@@ -209,7 +209,8 @@ STDMETHODIMP LangBarButton::OnClick(TfLBIClick click, POINT point, const RECT* /
 void LangBarButton::ShowMenu(POINT point)
 {
     enum : UINT {
-        kToggle = 1, kManage, kClear, kPause, kExcludeApp, kUserDictionary, kDisableApp, kListPeriod, kAutoClose
+        kToggle = 1, kManage, kClear, kPause, kExcludeApp, kUserDictionary, kDisableApp, kListPeriod, kAutoClose,
+        kSharedMode
     };
     HMENU menu = CreatePopupMenu();
     if (menu == nullptr) {
@@ -222,6 +223,9 @@ void LangBarButton::ShowMenu(POINT point)
                                        L"\uFF09\u3067\u306F\u4F7F\u308F\u306A\u3044";
     AppendMenuW(menu, MF_STRING | (service_->AppDisabledHere() ? MF_CHECKED : MF_UNCHECKED) | app_known, kDisableApp,
                 disable_label.c_str());
+    // 入力モードをアプリ間で共有する
+    AppendMenuW(menu, MF_STRING | (SharedInputModeEnabled() ? MF_CHECKED : MF_UNCHECKED), kSharedMode,
+                L"\u5165\u529B\u30E2\u30FC\u30C9\u3092\u30A2\u30D7\u30EA\u9593\u3067\u5171\u6709\u3059\u308B");
     AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
     // 数字の後のピリオドを「. 」にする / 括弧を自動で閉じる
     AppendMenuW(menu, MF_STRING | (ListNumberPeriodEnabled() ? MF_CHECKED : MF_UNCHECKED), kListPeriod,
@@ -280,6 +284,7 @@ void LangBarButton::ShowMenu(POINT point)
         case kDisableApp: service_->ToggleAppDisabled(); break;
         case kListPeriod: service_->ToggleInputOption(TextService::InputOption::ListNumberPeriod); break;
         case kAutoClose: service_->ToggleInputOption(TextService::InputOption::AutoCloseBrackets); break;
+        case kSharedMode: service_->ToggleInputOption(TextService::InputOption::SharedMode); break;
         default: break;
         }
     }

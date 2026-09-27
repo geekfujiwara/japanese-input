@@ -14,6 +14,8 @@
 #include "user_dictionary_manager.h"
 #include "user_dictionary_store.h"
 
+#include "astelio/tip/guids.h"
+
 #include <InputScope.h>
 #include <oleauto.h>
 
@@ -402,6 +404,7 @@ STDMETHODIMP TextService::ActivateEx(ITfThreadMgr* thread_mgr, TfClientId client
     session_.SetRecentEmoji(LoadRecentEmoji());
     app_name_ = CurrentAppName();
     app_disabled_ = AppDisabled(app_name_);
+    share_mode_ = SharedInputModeEnabled();
     learning_on_ = LearningEnabled();
     RefreshLearning(true);
     RefreshUserDictionary(true);
@@ -445,10 +448,18 @@ STDMETHODIMP TextService::Deactivate()
     return S_OK;
 }
 
-STDMETHODIMP TextService::OnSetFocus(BOOL /*foreground*/)
+STDMETHODIMP TextService::OnSetFocus(BOOL foreground)
 {
     session_.ResetContext();
     app_disabled_ = AppDisabled(app_name_); // another window of this app may have changed it
+    share_mode_ = SharedInputModeEnabled();
+    if (foreground) {
+        try {
+            FollowSharedMode();
+        } catch (...) {
+            // The mode stays as it was.
+        }
+    }
     return S_OK;
 }
 
@@ -473,6 +484,11 @@ void TextService::ToggleInputOption(InputOption option)
     switch (option) {
     case InputOption::ListNumberPeriod: SetListNumberPeriodEnabled(!ListNumberPeriodEnabled()); break;
     case InputOption::AutoCloseBrackets: SetAutoCloseBracketsEnabled(!AutoCloseBracketsEnabled()); break;
+    case InputOption::SharedMode:
+        share_mode_ = !SharedInputModeEnabled();
+        SetSharedInputModeEnabled(share_mode_);
+        PublishMode();
+        return;
     }
     if (!session_.Composing()) {
         ApplyCharacterSettings();
@@ -624,6 +640,14 @@ STDMETHODIMP TextService::OnCompositionTerminated(TfEditCookie /*cookie*/, ITfCo
 // Another component (the taskbar, an app, the IME on/off key) changed the keyboard open state.
 STDMETHODIMP TextService::OnChange(REFGUID compartment_guid)
 {
+    if (IsEqualGUID(compartment_guid, kSharedModeCompartmentGuid)) {
+        try {
+            FollowSharedMode();
+        } catch (...) {
+            return E_UNEXPECTED;
+        }
+        return S_OK;
+    }
     if (!IsEqualGUID(compartment_guid, GUID_COMPARTMENT_KEYBOARD_OPENCLOSE)) {
         return S_OK;
     }
@@ -704,13 +728,57 @@ ComPtr<ITfCompartment> TextService::OpenCloseCompartment() const
     return compartment;
 }
 
+ComPtr<ITfCompartment> TextService::SharedModeCompartment() const
+{
+    ComPtr<ITfCompartmentMgr> global;
+    ComPtr<ITfCompartment> compartment;
+    if (thread_mgr_ && SUCCEEDED(thread_mgr_->GetGlobalCompartment(&global)) && global) {
+        global->GetCompartment(kSharedModeCompartmentGuid, &compartment);
+    }
+    return compartment;
+}
+
+// -1 when no app has set the shared mode yet.
+static long SharedModeValue(ITfCompartment* compartment)
+{
+    VARIANT value;
+    VariantInit(&value);
+    const long result =
+        compartment != nullptr && SUCCEEDED(compartment->GetValue(&value)) && value.vt == VT_I4 ? value.lVal : -1;
+    VariantClear(&value);
+    return result;
+}
+
+void TextService::FollowSharedMode()
+{
+    if (!share_mode_ || app_disabled_) {
+        return;
+    }
+    const long shared = SharedModeValue(SharedModeCompartment().Get());
+    if (shared >= 0 && (shared != 0) != JapaneseMode()) {
+        static_cast<void>(SetMode(shared != 0, FocusedContext().Get()));
+    }
+}
+
 void TextService::StartModeIndicators()
 {
+    const ComPtr<ITfCompartment> shared = SharedModeCompartment();
+    if (shared) {
+        ComPtr<ITfSource> source;
+        if (FAILED(shared.As(&source)) ||
+            FAILED(source->AdviseSink(IID_ITfCompartmentEventSink, static_cast<ITfCompartmentEventSink*>(this),
+                                      &shared_mode_cookie_))) {
+            shared_mode_cookie_ = TF_INVALID_COOKIE;
+        }
+    }
     if (const ComPtr<ITfCompartment> compartment = OpenCloseCompartment()) {
         VARIANT value;
         VariantInit(&value);
-        // Keep the open state from an earlier activation on this thread.
-        if (SUCCEEDED(compartment->GetValue(&value)) && value.vt == VT_I4) {
+        // Keep the open state from an earlier activation on this thread, or take the mode of the other apps.
+        const long shared_value = share_mode_ ? SharedModeValue(shared.Get()) : -1;
+        if (shared_value >= 0) {
+            static_cast<void>(session_.SetJapaneseMode(shared_value != 0));
+        } else if (SUCCEEDED(compartment->GetValue(&value)) && value.vt == VT_I4) {
             static_cast<void>(session_.SetJapaneseMode(value.lVal != 0));
         }
         VariantClear(&value);
@@ -731,6 +799,13 @@ void TextService::StartModeIndicators()
 
 void TextService::StopModeIndicators()
 {
+    if (shared_mode_cookie_ != TF_INVALID_COOKIE) {
+        ComPtr<ITfSource> source;
+        if (const ComPtr<ITfCompartment> shared = SharedModeCompartment(); shared && SUCCEEDED(shared.As(&source))) {
+            source->UnadviseSink(shared_mode_cookie_);
+        }
+        shared_mode_cookie_ = TF_INVALID_COOKIE;
+    }
     if (compartment_cookie_ != TF_INVALID_COOKIE) {
         ComPtr<ITfSource> source;
         if (const ComPtr<ITfCompartment> compartment = OpenCloseCompartment();
@@ -759,6 +834,16 @@ void TextService::PublishMode()
         value.vt = VT_I4;
         value.lVal = JapaneseMode() ? 1 : 0;
         compartment->SetValue(client_id_, &value);
+    }
+    if (share_mode_) {
+        if (const ComPtr<ITfCompartment> shared = SharedModeCompartment();
+            shared && SharedModeValue(shared.Get()) != (JapaneseMode() ? 1 : 0)) {
+            VARIANT value;
+            VariantInit(&value);
+            value.vt = VT_I4;
+            value.lVal = JapaneseMode() ? 1 : 0;
+            shared->SetValue(client_id_, &value);
+        }
     }
     if (mode_button_ != nullptr) {
         mode_button_->NotifyModeChanged();
@@ -1254,6 +1339,7 @@ void TextService::TestUseSettingsKey(const wchar_t* key)
     if (TextService* service = g_active_service) {
         service->learning_on_ = LearningEnabled();
         service->app_disabled_ = AppDisabled(service->app_name_);
+        service->share_mode_ = SharedInputModeEnabled();
         service->session_.SetTypoSuggestions(TypoSuggestionsEnabled());
         service->ApplyCharacterSettings();
         service->RefreshLearning(true);

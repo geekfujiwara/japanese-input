@@ -235,6 +235,16 @@ void SetAutoCloseBracketsEnabled(bool enabled)
     WriteFlag(L"AutoCloseBrackets", enabled);
 }
 
+bool SharedInputModeEnabled()
+{
+    return ReadFlag(L"SharedInputMode");
+}
+
+void SetSharedInputModeEnabled(bool enabled)
+{
+    WriteFlag(L"SharedInputMode", enabled);
+}
+
 DateFormat PreferredDateFormat()
 {
     wchar_t buffer[64] = {};
