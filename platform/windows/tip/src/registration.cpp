@@ -5,6 +5,7 @@
 #include <msctf.h>
 #include <wrl/client.h>
 
+#include <cstdio>
 #include <cwchar>
 #include <iterator>
 
@@ -94,9 +95,13 @@ HRESULT RegisterProfile()
     if (FAILED(hr)) {
         return hr;
     }
+    // The icon of the input method lists (Win+Space, Settings) is the first icon in this DLL.
+    wchar_t module_path[MAX_PATH] = {};
+    const DWORD length = GetModuleFileNameW(ModuleHandle(), module_path, MAX_PATH);
+    const bool has_path = length > 0 && length < MAX_PATH;
     return profiles->RegisterProfile(kTextServiceClsid, kJapaneseLangId, kJapaneseProfileGuid, kDescription,
-                                     static_cast<ULONG>(std::size(kDescription) - 1), nullptr, 0, 0, nullptr, 0,
-                                     TRUE, 0);
+                                     static_cast<ULONG>(std::size(kDescription) - 1), has_path ? module_path : nullptr,
+                                     has_path ? length : 0, 0, nullptr, 0, TRUE, 0);
 }
 
 HRESULT UnregisterProfile()
@@ -157,6 +162,31 @@ HRESULT UnregisterTextService()
     UnregisterCategories();
     UnregisterProfile();
     return UnregisterComServer();
+}
+
+bool EnableForCurrentUser()
+{
+    wchar_t clsid[40] = {};
+    wchar_t profile[40] = {};
+    if (StringFromGUID2(kTextServiceClsid, clsid, static_cast<int>(std::size(clsid))) == 0 ||
+        StringFromGUID2(kJapaneseProfileGuid, profile, static_cast<int>(std::size(profile))) == 0) {
+        return false;
+    }
+    // "0411:{CLSID}{profile}", the form InstallLayoutOrTip takes for a text service.
+    wchar_t item[96] = {};
+    if (swprintf_s(item, std::size(item), L"%04X:%s%s", kJapaneseLangId, clsid, profile) < 0) {
+        return false;
+    }
+    const HMODULE input = LoadLibraryExW(L"input.dll", nullptr, LOAD_LIBRARY_SEARCH_SYSTEM32);
+    if (input == nullptr) {
+        return false;
+    }
+    using InstallLayoutOrTipFunction = BOOL(WINAPI*)(LPCWSTR, DWORD);
+    const auto install =
+        reinterpret_cast<InstallLayoutOrTipFunction>(GetProcAddress(input, "InstallLayoutOrTip"));
+    const bool added = install != nullptr && install(item, 0) != FALSE;
+    FreeLibrary(input);
+    return added;
 }
 
 } // namespace astelio::tip

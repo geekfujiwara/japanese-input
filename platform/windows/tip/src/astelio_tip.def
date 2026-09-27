@@ -1,5 +1,6 @@
 LIBRARY astelio_tip
 EXPORTS
+    AstelioTipEnableForUser PRIVATE
     AstelioTipKeyDiagnostics PRIVATE
     AstelioTipTestCandidateWindow PRIVATE
     AstelioTipTestEmojiWindow PRIVATE

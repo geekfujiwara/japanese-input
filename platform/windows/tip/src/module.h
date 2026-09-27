@@ -11,6 +11,8 @@ bool CanUnloadModule();
 
 HRESULT RegisterTextService();
 HRESULT UnregisterTextService();
+// Adds the Japanese profile to the current user's keyboards (Settings > Language > Japanese > Keyboards).
+bool EnableForCurrentUser();
 
 // Key event counters for diagnosing routing in integration tests.
 struct KeyDiagnostics {

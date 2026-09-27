@@ -146,3 +146,10 @@ STDAPI DllUnregisterServer()
 {
     return astelio::tip::UnregisterTextService();
 }
+
+// For the installer: rundll32 astelio_tip.dll,AstelioTipEnableForUser (run as the user, after registering).
+extern "C" void CALLBACK AstelioTipEnableForUser(HWND /*window*/, HINSTANCE /*instance*/, LPSTR /*command*/,
+                                                 int /*show*/)
+{
+    astelio::tip::EnableForCurrentUser();
+}
