@@ -632,6 +632,33 @@ TEST_F(ConversionTest, ControlBackspaceUndoesTheCommit)
     EXPECT_FALSE(session_.WillHandle(ControlKey(KeyKind::Backspace))) << "kana committed after it";
 }
 
+// T-B08-2: undoing a commit also forgets what that commit taught the history; words learned before stay.
+TEST_F(ConversionTest, UndoingACommitForgetsWhatItTaught)
+{
+    LearningHistory history;
+    session_.SetLearning(&history);
+    Type(session_, u"watasi");
+    session_.Handle(Key(KeyKind::Space));
+    session_.Handle(Key(KeyKind::Space)); // 渡し
+    ASSERT_TRUE(session_.Handle(Key(KeyKind::Enter)).learning_changed);
+    ASSERT_TRUE(history.Contains(LearningHistory::Kind::Conversion, u"わたし", u"渡し"));
+
+    const SessionOutput undone = session_.Handle(ControlKey(KeyKind::Backspace));
+    EXPECT_TRUE(undone.learning_changed);
+    EXPECT_TRUE(history.Empty()) << "the commit that was taken back taught nothing";
+    EXPECT_EQ(session_.CompositionText(), u"渡し") << "the choice itself comes back";
+    session_.Handle(Key(KeyKind::Escape));
+    session_.Handle(Key(KeyKind::Escape));
+
+    history.Record(LearningHistory::Kind::Conversion, u"わたし", u"渡し");
+    Type(session_, u"watasi");
+    session_.Handle(Key(KeyKind::Space));
+    ASSERT_EQ(session_.CompositionText(), u"渡し");
+    session_.Handle(Key(KeyKind::Enter));
+    EXPECT_FALSE(session_.Handle(ControlKey(KeyKind::Backspace)).learning_changed);
+    EXPECT_TRUE(history.Contains(LearningHistory::Kind::Conversion, u"わたし", u"渡し")) << "learned before, kept";
+}
+
 // T-D04-2: segments split by hand are split the same way the next time.
 TEST_F(ConversionTest, ResizedSegmentsAreLearned)
 {
