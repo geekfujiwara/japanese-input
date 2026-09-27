@@ -50,7 +50,7 @@ internal sealed class WindowsInstaller(string msiPath, string logPath) : IInstal
         _owner = owner;
         _handler = OnMessage;
         MsiEnableLog(LogMessages, logPath, LogFlushEachLine);
-        int previousLevel = MsiSetInternalUI(InstallUiLevelNone | InstallUiLevelUacOnly, owner);
+        int previousLevel = SetUiLevel(InstallUiLevelNone | InstallUiLevelUacOnly, owner);
         MsiSetExternalUI(_handler, FilterMessages, IntPtr.Zero);
         try
         {
@@ -60,7 +60,7 @@ internal sealed class WindowsInstaller(string msiPath, string logPath) : IInstal
         finally
         {
             MsiSetExternalUI(null, 0, IntPtr.Zero);
-            MsiSetInternalUI(previousLevel, IntPtr.Zero);
+            SetUiLevel(previousLevel, IntPtr.Zero);
             GC.KeepAlive(_handler);
         }
         return code switch
@@ -73,6 +73,13 @@ internal sealed class WindowsInstaller(string msiPath, string logPath) : IInstal
     }
 
     public void Cancel() => _cancel = true;
+
+    /// <summary>Sets the UI level of Windows Installer for this process; returns the previous one.</summary>
+    internal static int SetUiLevel(int level, IntPtr owner)
+    {
+        IntPtr window = owner;
+        return MsiSetInternalUI(level, ref window);
+    }
 
     private int OnMessage(IntPtr context, uint type, string? message)
     {
@@ -110,8 +117,9 @@ internal sealed class WindowsInstaller(string msiPath, string logPath) : IInstal
     [DllImport("msi.dll", CharSet = CharSet.Unicode, EntryPoint = "MsiInstallProductW")]
     private static extern uint MsiInstallProduct(string packagePath, string commandLine);
 
+    // The second parameter is HWND*: the owner goes in, the previous owner comes back.
     [DllImport("msi.dll")]
-    private static extern int MsiSetInternalUI(int uiLevel, IntPtr window);
+    private static extern int MsiSetInternalUI(int uiLevel, ref IntPtr window);
 
     [DllImport("msi.dll", CharSet = CharSet.Unicode, EntryPoint = "MsiSetExternalUIW")]
     private static extern IntPtr MsiSetExternalUI(InstallUiHandler? handler, uint messageFilter, IntPtr context);

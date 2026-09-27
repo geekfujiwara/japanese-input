@@ -52,6 +52,16 @@ public sealed class SetupPayloadTests : IDisposable
 
 public sealed class MsiProgressTests
 {
+    // v0.2.0 passed the window handle where Windows Installer wants a pointer to it and crashed (0xc0000005).
+    [Fact]
+    public void UiLevelIsSetWithTheOwnerWindowAndRestored()
+    {
+        int previous = WindowsInstaller.SetUiLevel(2 | 0x200, new IntPtr(0x12345));
+        int ours = WindowsInstaller.SetUiLevel(previous, IntPtr.Zero);
+
+        Assert.Equal(2 | 0x200, ours);
+    }
+
     [Fact]
     public void FollowsTheScriptAndTheExecution()
     {

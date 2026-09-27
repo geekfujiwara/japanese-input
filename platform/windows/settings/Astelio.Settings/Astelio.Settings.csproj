@@ -15,7 +15,7 @@
     <Authors>Geek Fujiwara</Authors>
     <Company>Geek Fujiwara</Company>
     <Copyright>Copyright © 2026 Geek Fujiwara</Copyright>
-    <Version>0.2.0</Version>
+    <Version>0.2.1</Version>
     <ApplicationIcon>..\..\..\..\assets\icon\AstelioIME.ico</ApplicationIcon>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <!-- The Fluent theme (ThemeMode) is marked experimental in WPF. -->
