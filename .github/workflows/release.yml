@@ -1,0 +1,189 @@
+name: Release
+
+# Builds the TIPs, the system dictionary and the installers (MSI for ARM64 and x64) from a tag, and publishes them
+# as a GitHub Release. The tag (vX.Y.Z) must match project(... VERSION X.Y.Z) in CMakeLists.txt.
+on:
+  push:
+    tags: ['v*.*.*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'An existing tag to build and release (vX.Y.Z)'
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.event.inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
+env:
+  RELEASE_TAG: ${{ github.event.inputs.tag || github.ref_name }}
+
+jobs:
+  version:
+    name: Version
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.check.outputs.version }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ env.RELEASE_TAG }}
+          persist-credentials: false
+      - name: Check the tag against the project version
+        id: check
+        run: |
+          case "$RELEASE_TAG" in
+            v[0-9]*.[0-9]*.[0-9]*) ;;
+            *) echo "The tag must look like v1.2.3: $RELEASE_TAG"; exit 1 ;;
+          esac
+          version="${RELEASE_TAG#v}"
+          project="$(sed -n 's/^project(AstelioIME VERSION \([0-9.]*\).*/\1/p' CMakeLists.txt)"
+          if [ "$version" != "$project" ]; then
+            echo "The tag is $version but CMakeLists.txt says $project"; exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+  tip:
+    name: TIP (${{ matrix.preset }})
+    needs: version
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - runner: windows-11-arm
+            preset: windows-arm64
+          - runner: windows-latest
+            preset: windows-x64
+          - runner: windows-latest
+            preset: windows-x86
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ env.RELEASE_TAG }}
+          persist-credentials: false
+      - name: Build
+        run: |
+          cmake --preset ${{ matrix.preset }} -DASTELIO_BUILD_TESTS=OFF
+          cmake --build --preset ${{ matrix.preset }} --target astelio_tip
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: astelio-tip-${{ matrix.preset }}
+          path: build/${{ matrix.preset }}/platform/windows/tip/Release/astelio_tip.dll
+          if-no-files-found: error
+          retention-days: 7
+
+  dictionary:
+    name: System dictionary
+    needs: version
+    runs-on: ubuntu-latest
+    env:
+      AZOOKEY_COMMIT: 4d418525b090cf49c219819d05a7e3cc2a4346eb
+      AZOOKEY_SHA256: 9a4f66c3f4b6a80d59471eb7890209faf49a6c856e7a72c1a6f9b862266aa026
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ env.RELEASE_TAG }}
+          persist-credentials: false
+      - name: Build the system dictionary
+        run: |
+          curl -fsSL -o azookey.tar.gz "https://github.com/azooKey/azooKey_dictionary_storage/archive/${AZOOKEY_COMMIT}.tar.gz"
+          echo "${AZOOKEY_SHA256}  azookey.tar.gz" | sha256sum -c -
+          mkdir -p build/azookey build/dictionary/out
+          tar -xzf azookey.tar.gz -C build/azookey --strip-components=1
+          cmake -S . -B build/dictionary -DCMAKE_BUILD_TYPE=Release -DASTELIO_BUILD_TESTS=OFF
+          cmake --build build/dictionary --target astelio_dicbuild
+          tool=build/dictionary/dictionary/tools/astelio_dicbuild
+          $tool import-azookey build/azookey/Dictionary build/dictionary/words.tsv build/dictionary/connection.tsv
+          $tool build build/dictionary/connection.tsv build/dictionary/out/system.dic build/dictionary/words.tsv
+          $tool convert build/dictionary/out/system.dic わたしはにほんごです 私は日本語です
+          cp build/azookey/LICENSE build/dictionary/out/LICENSE-azooKey_dictionary_storage.txt
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: astelio-dictionary
+          path: build/dictionary/out/
+          if-no-files-found: error
+          retention-days: 7
+
+  installer:
+    name: Installer (${{ matrix.arch }})
+    needs: [version, tip, dictionary]
+    runs-on: windows-latest
+    strategy:
+      fail-fast: true
+      matrix:
+        arch: [arm64, x64]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ env.RELEASE_TAG }}
+          persist-credentials: false
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: astelio-*
+          path: artifacts/tip
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          dotnet-version: 10.0.x
+      - name: Build the MSI
+        shell: pwsh
+        run: ./tools/Build-Installer.ps1 -Arch ${{ matrix.arch }} -Artifacts artifacts/tip -Version ${{ needs.version.outputs.version }} -OutputDirectory artifacts/installer
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: installer-${{ matrix.arch }}
+          path: artifacts/installer/*.msi
+          if-no-files-found: error
+          retention-days: 7
+
+  release:
+    name: GitHub Release
+    needs: [version, installer]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ env.RELEASE_TAG }}
+          persist-credentials: false
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: installer-*
+          path: dist
+          merge-multiple: true
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          cd dist
+          sha256sum *.msi > SHA256SUMS.txt
+          {
+            echo "Astelio IME ${VERSION} のプレビュー版です（Windows 11 / 英語配列キーボード）。"
+            echo
+            echo "## インストール"
+            echo
+            echo "- ARM64 の PC（Snapdragon など）: \`AstelioIME-${VERSION}-arm64.msi\`"
+            echo "- x64 の PC（Intel / AMD）: \`AstelioIME-${VERSION}-x64.msi\`"
+            echo
+            echo "ダウンロードした MSI を開き、画面の案内に従ってください（管理者の確認が出ます）。"
+            echo "インストールが終わると、キーボードの一覧に「Astelio IME」が入り、使い方のページが開きます。"
+            echo "すでに起動していたアプリは、起動し直すと使えます。右Altの単押しで日本語、左Altの単押しで英語です。"
+            echo
+            echo "> [!NOTE]"
+            echo "> まだコード署名をしていないため、「Windows によって PC が保護されました」と表示されることがあります。"
+            echo "> その場合は「詳細情報」→「実行」を選んでください。SHA-256 は \`SHA256SUMS.txt\` で確かめられます。"
+            echo
+            echo "アンインストールは［設定］→［アプリ］→［インストールされているアプリ］の「Astelio IME」から行います。"
+            echo "不具合の報告や変換の要望は [Issue](https://github.com/${GH_REPO}/issues/new/choose) で受け付けています。"
+          } > notes.md
+          if gh release view "$RELEASE_TAG" > /dev/null 2>&1; then
+            gh release upload "$RELEASE_TAG" *.msi SHA256SUMS.txt --clobber
+          else
+            gh release create "$RELEASE_TAG" *.msi SHA256SUMS.txt --prerelease --verify-tag \
+              --title "Astelio IME ${VERSION}（プレビュー）" --notes-file notes.md
+          fi

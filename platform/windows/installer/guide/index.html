@@ -1,0 +1,380 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src 'self' file: data:; style-src 'unsafe-inline'; script-src 'unsafe-inline'">
+<title>Astelio IME の使い方</title>
+<style>
+  :root {
+    --bg: #f5f6fb; --card: #ffffff; --text: #1b1d2e; --muted: #5d6178; --line: #e3e5ef;
+    --accent: #6b3fe6; --accent2: #12c8e6; --deep: #1a1b5e; --warm: #ff6a5c;
+    --comp: #1b1d2e; --shadow: 0 10px 30px rgba(26, 27, 94, .12);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #11121c; --card: #1b1d2b; --text: #eceefa; --muted: #a3a7c2; --line: #2c2f45;
+            --comp: #eceefa; --shadow: 0 10px 30px rgba(0, 0, 0, .45); }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: "Yu Gothic UI", "Segoe UI", system-ui, sans-serif; background: var(--bg);
+         color: var(--text); line-height: 1.7; }
+  header { background: linear-gradient(135deg, var(--deep), var(--accent) 55%, var(--accent2)); color: #fff;
+           padding: 56px 24px 64px; text-align: center; overflow: hidden; position: relative; }
+  header img { width: 112px; height: 112px; filter: drop-shadow(0 12px 24px rgba(0,0,0,.35));
+               animation: float 6s ease-in-out infinite; }
+  header h1 { margin: 16px 0 4px; font-size: 34px; letter-spacing: .02em; }
+  header p { margin: 0; opacity: .9; }
+  @keyframes float { 50% { transform: translateY(-8px) rotate(4deg); } }
+  nav { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin-top: 24px; }
+  nav a { color: #fff; text-decoration: none; padding: 6px 14px; border-radius: 999px;
+          background: rgba(255,255,255,.16); backdrop-filter: blur(6px); font-size: 14px; }
+  nav a:hover { background: rgba(255,255,255,.28); }
+  main { max-width: 980px; margin: -32px auto 48px; padding: 0 16px; }
+  section { background: var(--card); border-radius: 20px; box-shadow: var(--shadow); padding: 28px;
+            margin-bottom: 24px; display: grid; grid-template-columns: 1fr 1.15fr; gap: 28px; align-items: center; }
+  @media (max-width: 760px) { section { grid-template-columns: 1fr; } }
+  section h2 { margin: 0 0 8px; font-size: 22px; }
+  section h2 span { display: inline-block; width: 30px; height: 30px; border-radius: 50%; text-align: center;
+                    line-height: 30px; font-size: 15px; color: #fff; margin-right: 10px;
+                    background: linear-gradient(135deg, var(--accent), var(--accent2)); }
+  section p, section li { color: var(--muted); }
+  section ul { padding-left: 20px; margin: 8px 0 0; }
+  kbd { display: inline-block; min-width: 26px; padding: 1px 7px; border-radius: 6px; border: 1px solid var(--line);
+        border-bottom-width: 3px; background: var(--bg); color: var(--text); font: 13px "Segoe UI", sans-serif;
+        text-align: center; }
+  .stage { background: linear-gradient(160deg, rgba(107,63,230,.10), rgba(18,200,230,.10)); border-radius: 16px;
+           padding: 46px 18px 104px; min-height: 400px; position: relative; overflow: hidden; }
+  .screen { background: var(--card); border-radius: 12px; border: 1px solid var(--line); padding: 14px 16px;
+            min-height: 58px; font-size: 20px; position: relative; }
+  .screen .caret { display: inline-block; width: 2px; height: 1.1em; background: var(--accent); vertical-align: -3px;
+                   animation: blink 1s steps(1) infinite; }
+  @keyframes blink { 50% { opacity: 0; } }
+  .comp { color: var(--comp); border-bottom: 2px dotted var(--muted); }
+  .comp.converted { border-bottom: 2px solid var(--muted); }
+  .comp .focus { border-bottom: 3px solid var(--accent); }
+  .cands { position: absolute; margin-top: 8px; display: none; gap: 0; border-radius: 12px; padding: 6px;
+           background: color-mix(in srgb, var(--card) 82%, transparent); backdrop-filter: blur(12px);
+           border: 1px solid var(--line); box-shadow: var(--shadow); font-size: 16px; z-index: 2; }
+  .cands.show { display: flex; animation: pop .18s ease-out; }
+  @keyframes pop { from { opacity: 0; transform: translateY(-4px); } }
+  .col { display: flex; flex-direction: column; min-width: 96px; }
+  .col + .col { margin-left: 4px; }
+  .col.emoji { border-left: 1px solid var(--line); padding-left: 4px; min-width: 56px; }
+  .col.note { border-left: 1px solid var(--line); padding: 6px 10px; max-width: 170px; font-size: 13px;
+              color: var(--muted); }
+  .row { display: flex; gap: 8px; padding: 3px 10px; border-radius: 6px; white-space: nowrap; }
+  .row i { font-style: normal; color: var(--muted); font-size: 12px; width: 10px; }
+  .row.sel { background: linear-gradient(135deg, var(--accent), #8a63ff); color: #fff; }
+  .row.sel i { color: #fff; }
+  .row em { font-style: normal; font-size: 11px; margin-left: auto; opacity: .75; }
+  .keys { display: flex; gap: 8px; flex-wrap: wrap; min-height: 40px; align-items: center; position: absolute;
+          left: 18px; bottom: 50px; }
+  .key { padding: 6px 12px; border-radius: 8px; background: var(--card); border: 1px solid var(--line);
+         border-bottom-width: 4px; font: 14px "Segoe UI", sans-serif; transition: transform .1s; }
+  .key.down { transform: translateY(2px); border-bottom-width: 2px; background: var(--accent); color: #fff;
+              border-color: var(--accent); }
+  .caption { position: absolute; left: 18px; right: 64px; bottom: 16px; font-size: 14px; color: var(--muted);
+             min-height: 24px; }
+  .mode { position: absolute; right: 16px; bottom: 14px; width: 34px; height: 34px; border-radius: 8px;
+          background: var(--card); border: 1px solid var(--line); display: grid; place-items: center;
+          font-weight: 700; box-shadow: var(--shadow); }
+  .mode.flash { animation: flash .8s ease-out; }
+  @keyframes flash { 0% { transform: scale(1.5); background: var(--accent); color: #fff; } }
+  .replay { position: absolute; right: 12px; top: 10px; border: 0; border-radius: 999px; padding: 4px 12px;
+            background: rgba(107,63,230,.14); color: var(--accent); cursor: pointer; font: 12px inherit; }
+  .steps { counter-reset: s; list-style: none; padding: 0; }
+  .steps li { counter-increment: s; padding-left: 36px; position: relative; margin: 10px 0; }
+  .steps li::before { content: counter(s); position: absolute; left: 0; top: 2px; width: 24px; height: 24px;
+                      border-radius: 50%; background: var(--accent); color: #fff; text-align: center;
+                      line-height: 24px; font-size: 13px; }
+  footer { text-align: center; color: var(--muted); font-size: 13px; padding: 0 16px 40px; }
+  footer a { color: var(--accent); }
+  @media (prefers-reduced-motion: reduce) {
+    header img, .screen .caret, .cands.show, .mode.flash { animation: none; }
+  }
+</style>
+</head>
+<body>
+<header>
+  <img src="AstelioIME.png" alt="">
+  <h1>Astelio IME の使い方</h1>
+  <p>英語配列キーボードのための日本語入力。アニメーションで操作を紹介します。</p>
+  <nav>
+    <a href="#setup">はじめに</a><a href="#mode">日本語と英語</a><a href="#convert">入力と変換</a>
+    <a href="#candidates">候補の選び方</a><a href="#predict">予測ともしかして</a><a href="#extras">便利な機能</a>
+    <a href="#menu">設定</a>
+  </nav>
+</header>
+<main>
+
+<section id="setup">
+  <div>
+    <h2><span>1</span>はじめに</h2>
+    <p>インストールすると、キーボードの一覧に「Astelio IME」が入ります。</p>
+    <ol class="steps">
+      <li>すでに起動していたアプリは、起動し直すと使えるようになります（サインアウトして入り直すと確実です）。</li>
+      <li>タスクバーの「あ / A」が Astelio IME の入力モードです。ほかの入力方式から切り替えるときは <kbd>Win</kbd>+<kbd>Space</kbd>。</li>
+      <li>一覧に出ないときは、［設定］→［時刻と言語］→［言語と地域］→［日本語］→［言語のオプション］→［キーボードの追加］で「Astelio IME」を選びます。</li>
+    </ol>
+  </div>
+  <div class="stage" data-demo="setup"></div>
+</section>
+
+<section id="mode">
+  <div>
+    <h2><span>2</span>日本語と英語の切り替え</h2>
+    <p><kbd>右Alt</kbd> を1回押して離すと日本語、<kbd>左Alt</kbd> を1回押して離すと英語になります。</p>
+    <ul>
+      <li>Alt を単独で押しても、アプリのメニューは開きません。</li>
+      <li>切り替えたときは、入力位置の近くに「あ」「A」が少し表示されます。</li>
+      <li>入力モードはアプリの間で共有されます（メモ帳で日本語にすると、ブラウザーも日本語）。</li>
+    </ul>
+  </div>
+  <div class="stage" data-demo="mode"></div>
+</section>
+
+<section id="convert">
+  <div>
+    <h2><span>3</span>入力と変換</h2>
+    <p>ローマ字で打つと、点線の下線の付いた「未確定の文字」になります。<kbd>Space</kbd> で変換、<kbd>Enter</kbd> で確定します。</p>
+    <ul>
+      <li><kbd>Shift</kbd>+英字は半角英字のまま未確定になり、かなと一緒に変換できます（iPhoneを買う）。</li>
+      <li>変換中は <kbd>←</kbd><kbd>→</kbd> で文節を移動、<kbd>Shift</kbd>+<kbd>←</kbd><kbd>→</kbd> で区切りを変えます。</li>
+      <li><kbd>Esc</kbd> で変換前のかなに戻ります。確定の直後なら <kbd>Ctrl</kbd>+<kbd>BackSpace</kbd> で確定を取り消せます。</li>
+    </ul>
+  </div>
+  <div class="stage" data-demo="convert"></div>
+</section>
+
+<section id="candidates">
+  <div>
+    <h2><span>4</span>候補の選び方</h2>
+    <p>もう一度 <kbd>Space</kbd> を押すと候補の一覧が開きます。<kbd>↓</kbd><kbd>↑</kbd> で選び、数字キーでも選べます。</p>
+    <ul>
+      <li>候補が多いときは最大3列に広がります。<kbd>←</kbd><kbd>→</kbd> で列を移動します。</li>
+      <li>右端の列は、読みに関連する絵文字です。最後の列から <kbd>→</kbd> で移って選べます。</li>
+      <li>「あつい → 暑い / 熱い」のような語には、使い分けの説明を出す予定です。</li>
+    </ul>
+  </div>
+  <div class="stage" data-demo="candidates"></div>
+</section>
+
+<section id="predict">
+  <div>
+    <h2><span>5</span>予測ともしかして</h2>
+    <p>2文字ほど打つと、入力中から候補が出ます。<kbd>Tab</kbd> で選び、<kbd>Enter</kbd> で確定します。</p>
+    <ul>
+      <li>打ち間違えたときは「もしかして」として正しい語を出します（ゆーあー → ユーザー）。</li>
+      <li>一度選んだ語は、次から先に出ます。候補の一覧で <kbd>Ctrl</kbd>+<kbd>Delete</kbd> を押すと、その履歴を消せます。</li>
+    </ul>
+  </div>
+  <div class="stage" data-demo="predict"></div>
+</section>
+
+<section id="extras">
+  <div>
+    <h2><span>6</span>便利な機能</h2>
+    <ul>
+      <li>「きょう」「あした」を変換すると日付に（2026-09-27、2026/09/27、9/27 など）。</li>
+      <li>文の頭で <kbd>1</kbd><kbd>.</kbd> と打つと「1. 」（箇条書きの番号）。</li>
+      <li><kbd>[</kbd> を打つと「」が入り、カーソルは括弧の中に。</li>
+      <li>「えもじ」と打って <kbd>Tab</kbd> で絵文字の一覧。読みで探せます（いぬ → 🐶）。</li>
+      <li><kbd>F6</kbd>〜<kbd>F10</kbd> でひらがな・カタカナ・半角カナ・全角英数・半角英数。</li>
+    </ul>
+  </div>
+  <div class="stage" data-demo="extras"></div>
+</section>
+
+<section id="menu">
+  <div>
+    <h2><span>7</span>設定と困ったとき</h2>
+    <p>タスクバーの「あ / A」を右クリックすると、次の設定ができます。</p>
+    <ul>
+      <li>入力モードの共有、数字の後のピリオド、括弧の自動補完、アプリごとに使わない設定</li>
+      <li>入力の履歴（使う・一時停止・削除）、ユーザー辞書</li>
+    </ul>
+    <p>パスワード欄では日本語入力にならず、履歴も残りません。入力した内容を外部に送ることはありません。</p>
+  </div>
+  <div class="stage" data-demo="menu"></div>
+</section>
+
+</main>
+<footer>
+  Astelio IME — Copyright © 2026 Geek Fujiwara（MIT License）<br>
+  不具合の報告や変換の要望は <a href="https://github.com/geekfujiwara/japanese-input/issues/new/choose">GitHub の Issue</a> で受け付けています。
+</footer>
+
+<script>
+(() => {
+  'use strict';
+  const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const today = new Date();
+  const pad = n => String(n).padStart(2, '0');
+  const iso = `${today.getFullYear()}-${pad(today.getMonth() + 1)}-${pad(today.getDate())}`;
+  const slash = `${today.getFullYear()}/${pad(today.getMonth() + 1)}/${pad(today.getDate())}`;
+  const short = `${today.getMonth() + 1}/${today.getDate()}`;
+
+  // Typing helper: [key, composition] pairs become frames.
+  const typing = (committed, pairs, caption) =>
+    pairs.map(([key, comp]) => ({ committed, comp, key, caption, ms: 260 }));
+
+  const demos = {
+    setup: [
+      { committed: '', comp: '', caption: 'インストールが終わると…', ms: 1200 },
+      { menu: ['日本語 Microsoft IME', '★ Astelio IME', '英語 (米国) US'], menuSel: 1, caption: 'Win+Space の一覧に Astelio IME', ms: 2200, key: 'Win+Space' },
+      { committed: '', comp: '', mode: 'あ', flash: true, caption: 'タスクバーに「あ」。これで準備完了です', ms: 2400 },
+    ],
+    mode: [
+      { committed: 'Hello ', comp: '', mode: 'A', caption: '英語で入力中', ms: 1200 },
+      { committed: 'Hello ', comp: '', mode: 'あ', flash: true, key: '右Alt', caption: '右Altを1回押す → 日本語', ms: 1600 },
+      ...typing('Hello ', [['k', 'k'], ['o', 'こ'], ['n', 'こn'], ['n', 'こん']], '日本語で入力'),
+      { committed: 'Hello こん', comp: '', mode: 'A', flash: true, key: '左Alt', caption: '左Altを1回押す → 確定して英語', ms: 1800 },
+    ],
+    convert: [
+      ...typing('', [['n', 'n'], ['i', 'に'], ['h', 'にh'], ['o', 'にほ'], ['n', 'にほn'], ['g', 'にほんg'], ['o', 'にほんご'],
+                     ['w', 'にほんごw'], ['o', 'にほんごを'], ['k', 'にほんごをk'], ['a', 'にほんごをか'], ['k', 'にほんごをかk'], ['u', 'にほんごをかく']],
+             'ローマ字で打つと未確定のかなに'),
+      { committed: '', segments: ['日本語を', '書く'], focus: 0, key: 'Space', caption: 'Space で変換（文節ごとに下線）', ms: 1800 },
+      { committed: '', segments: ['日本語を', '書く'], focus: 1, key: '→', caption: '→ で次の文節へ', ms: 1400 },
+      { committed: '日本語を書く', comp: '', key: 'Enter', caption: 'Enter で確定', ms: 2000 },
+    ],
+    candidates: [
+      ...typing('', [['i', 'い'], ['n', 'いn'], ['u', 'いぬ']], '「いぬ」と打って'),
+      { committed: '', segments: ['犬'], focus: 0, key: 'Space', caption: 'Space で変換', ms: 1100 },
+      { committed: '', segments: ['犬'], focus: 0, key: 'Space', caption: 'もう一度 Space で候補の一覧',
+        cands: { cols: [['犬', '戌', 'イヌ', 'いぬ', '狗']], sel: [0, 0], emoji: ['🐶', '🐕', '🐩', '🦮'] }, ms: 1400 },
+      { committed: '', segments: ['戌'], focus: 0, key: '↓', caption: '↓ で次の候補',
+        cands: { cols: [['犬', '戌', 'イヌ', 'いぬ', '狗']], sel: [0, 1], emoji: ['🐶', '🐕', '🐩', '🦮'] }, ms: 1200 },
+      { committed: '', segments: ['戌'], focus: 0, key: '→', caption: '→ で絵文字の列へ',
+        cands: { cols: [['犬', '戌', 'イヌ', 'いぬ', '狗']], sel: null, emoji: ['🐶', '🐕', '🐩', '🦮'], emojiSel: 1 }, ms: 1400 },
+      { committed: '', segments: ['🐶'], focus: 0, key: '↑', caption: '↑ で選んで…',
+        cands: { cols: [['犬', '戌', 'イヌ', 'いぬ', '狗']], sel: null, emoji: ['🐶', '🐕', '🐩', '🦮'], emojiSel: 0 }, ms: 1200 },
+      { committed: '🐶', comp: '', key: 'Enter', caption: 'Enter で確定', ms: 1800 },
+    ],
+    predict: [
+      ...typing('', [['a', 'あ'], ['r', 'あr'], ['i', 'あり']], '2文字から予測'),
+      { committed: '', comp: 'あり', caption: '入力中から候補が出る', cands: { cols: [['ありがとう', '有り難い', 'ありがとうございます']], sel: null }, ms: 1400 },
+      { committed: '', segments: ['ありがとう'], focus: 0, key: 'Tab', caption: 'Tab で選ぶ', cands: { cols: [['ありがとう', '有り難い', 'ありがとうございます']], sel: [0, 0] }, ms: 1400 },
+      { committed: 'ありがとう', comp: '', key: 'Enter', caption: 'Enter で確定', ms: 1200 },
+      ...typing('ありがとう', [['y', 'y'], ['u', 'ゆ'], ['-', 'ゆー'], ['a', 'ゆーあ'], ['-', 'ゆーあー']], '打ち間違えても…'),
+      { committed: 'ありがとう', comp: 'ゆーあー', caption: '「もしかして」で正しい語を', cands: { cols: [['ゆーあー', 'ユーザー']], sel: null, typo: 1 }, ms: 2200 },
+    ],
+    extras: [
+      ...typing('', [['k', 'k'], ['y', 'ky'], ['o', 'きょ'], ['u', 'きょう']], '「きょう」を変換すると'),
+      { committed: '', segments: ['今日'], focus: 0, key: 'Space', caption: '日付の候補',
+        cands: { cols: [['今日', slash, iso, short, '本日']], sel: [0, 2] }, ms: 2000 },
+      { committed: iso + ' ', comp: '', key: 'Enter', caption: '好きな表記で確定', ms: 1200 },
+      { committed: iso + ' ', comp: '1. ', key: '1 .', caption: '文の頭の「1.」は「1. 」に', ms: 1600 },
+      { committed: iso + ' 1. ', comp: '「」', caret: 1, key: '[', caption: '[ で「」が入り、カーソルは中に', ms: 2000 },
+    ],
+    menu: [
+      { committed: '', comp: '', mode: 'あ', caption: 'タスクバーの「あ」を右クリック', ms: 1200, key: '右クリック' },
+      { menu: ['このアプリでは使わない', '✓ 入力モードをアプリ間で共有する', '✓ 数字の後のピリオドを「. 」にする',
+               '✓ 括弧を自動で閉じる', '✓ 入力履歴を使う', '記録を一時停止（シークレットモード）', 'ユーザー辞書...'],
+        menuSel: 1, mode: 'あ', caption: '機能ごとにオン・オフ', ms: 2600 },
+      { menu: ['このアプリでは使わない', '✓ 入力モードをアプリ間で共有する', '✓ 数字の後のピリオドを「. 」にする',
+               '✓ 括弧を自動で閉じる', '✓ 入力履歴を使う', '記録を一時停止（シークレットモード）', 'ユーザー辞書...'],
+        menuSel: 6, mode: 'あ', caption: '自分の言葉はユーザー辞書に', ms: 2200 },
+    ],
+  };
+
+  const el = (tag, cls, text) => {
+    const node = document.createElement(tag);
+    if (cls) node.className = cls;
+    if (text !== undefined) node.textContent = text;
+    return node;
+  };
+
+  function render(stage, frame) {
+    const screen = stage.querySelector('.screen');
+    const keys = stage.querySelector('.keys');
+    const caption = stage.querySelector('.caption');
+    const mode = stage.querySelector('.mode');
+    const cands = stage.querySelector('.cands');
+    screen.replaceChildren();
+    if (frame.menu) {
+      const menu = el('div', 'col');
+      frame.menu.forEach((item, i) => menu.append(el('div', 'row' + (i === frame.menuSel ? ' sel' : ''), item)));
+      screen.append(menu);
+    } else {
+      screen.append(document.createTextNode(frame.committed || ''));
+      if (frame.segments) {
+        const comp = el('span', 'comp converted');
+        frame.segments.forEach((s, i) => comp.append(el('span', i === frame.focus ? 'focus' : '', s)));
+        screen.append(comp);
+      } else if (frame.comp) {
+        const text = frame.comp;
+        const at = frame.caret ?? text.length;
+        const comp = el('span', 'comp');
+        comp.append(document.createTextNode(text.slice(0, at)), el('span', 'caret'), document.createTextNode(text.slice(at)));
+        screen.append(comp);
+      }
+      if (!frame.comp || frame.segments) screen.append(el('span', 'caret'));
+    }
+    cands.replaceChildren();
+    cands.classList.toggle('show', !!frame.cands);
+    if (frame.cands) {
+      frame.cands.cols.forEach((col, c) => {
+        const column = el('div', 'col');
+        col.forEach((item, r) => {
+          const selected = frame.cands.sel && frame.cands.sel[0] === c && frame.cands.sel[1] === r;
+          const row = el('div', 'row' + (selected ? ' sel' : ''));
+          row.append(el('i', '', String(r + 1)), el('span', '', item));
+          if (frame.cands.typo === r) row.append(el('em', '', 'もしかして'));
+          column.append(row);
+        });
+        cands.append(column);
+      });
+      if (frame.cands.emoji) {
+        const column = el('div', 'col emoji');
+        frame.cands.emoji.forEach((item, r) => {
+          const row = el('div', 'row' + (frame.cands.emojiSel === r ? ' sel' : ''));
+          row.append(el('i', '', String(r + 1)), el('span', '', item));
+          column.append(row);
+        });
+        cands.append(column);
+      }
+    }
+    keys.replaceChildren();
+    if (frame.key) keys.append(el('span', 'key down', frame.key));
+    caption.textContent = frame.caption || '';
+    if (frame.mode) {
+      mode.textContent = frame.mode;
+      mode.style.visibility = 'visible';
+      mode.classList.remove('flash');
+      if (frame.flash && !reduced) { void mode.offsetWidth; mode.classList.add('flash'); }
+    }
+  }
+
+  function play(stage) {
+    const frames = demos[stage.dataset.demo];
+    clearTimeout(stage.timer);
+    if (reduced) { render(stage, frames[frames.length - 1]); return; }
+    let i = 0;
+    const next = () => {
+      render(stage, frames[i]);
+      const wait = frames[i].ms;
+      i += 1;
+      stage.timer = setTimeout(i < frames.length ? next : () => { i = 0; next(); }, i < frames.length ? wait : wait + 1600);
+    };
+    next();
+  }
+
+  document.querySelectorAll('.stage').forEach(stage => {
+    const replay = el('button', 'replay', '最初から');
+    const screen = el('div', 'screen');
+    const cands = el('div', 'cands');
+    const mode = el('div', 'mode', 'あ');
+    mode.style.visibility = 'hidden';
+    stage.append(replay, screen, cands, el('div', 'keys'), el('div', 'caption'), mode);
+    replay.addEventListener('click', () => play(stage));
+    new IntersectionObserver(entries => {
+      entries.forEach(entry => {
+        if (entry.isIntersecting && !stage.started) { stage.started = true; play(stage); }
+      });
+    }, { threshold: 0.4 }).observe(stage);
+  });
+})();
+</script>
+</body>
+</html>

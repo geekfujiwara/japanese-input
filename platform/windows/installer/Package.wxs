@@ -1,0 +1,108 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Astelio IME installer (WiX Toolset v5). Built by tools/Build-Installer.ps1 once per architecture (arm64, x64).
+  Installs the native and the x86 TIP to "Program Files\Astelio IME\<arch>" (writable only by administrators, since
+  every app loads the TIP), registers both with regsvr32, adds Astelio IME to the installing user's keyboards and
+  opens the guide.
+-->
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+  <Package Name="Astelio IME"
+           Manufacturer="Geek Fujiwara"
+           Version="$(Version)"
+           UpgradeCode="0C21A79B-1E54-4493-9EFF-A4A490E57F15"
+           Scope="perMachine"
+           Language="1041"
+           Codepage="932"
+           InstallerVersion="500"
+           Compressed="yes">
+    <SummaryInformation Description="英語配列キーボード向けの日本語入力システム" Codepage="932" />
+    <MajorUpgrade DowngradeErrorMessage="新しい版の Astelio IME がすでにインストールされています。" />
+    <MediaTemplate EmbedCab="yes" />
+
+    <Icon Id="AstelioIME.ico" SourceFile="$(IconFile)" />
+    <Property Id="ARPPRODUCTICON" Value="AstelioIME.ico" />
+    <Property Id="ARPURLINFOABOUT" Value="https://github.com/geekfujiwara/japanese-input" />
+    <Property Id="ARPHELPLINK" Value="https://github.com/geekfujiwara/japanese-input/issues" />
+
+    <StandardDirectory Id="ProgramFiles64Folder">
+      <Directory Id="INSTALLFOLDER" Name="Astelio IME">
+        <Directory Id="NativeDir" Name="$(Arch)" />
+        <Directory Id="X86Dir" Name="x86" />
+        <Directory Id="DictionaryDir" Name="dictionary" />
+        <Directory Id="GuideDir" Name="guide" />
+      </Directory>
+    </StandardDirectory>
+    <StandardDirectory Id="ProgramMenuFolder">
+      <Directory Id="MenuDir" Name="Astelio IME" />
+    </StandardDirectory>
+
+    <ComponentGroup Id="Product">
+      <Component Directory="NativeDir">
+        <File Id="NativeTip" Source="$(NativeTip)" KeyPath="yes" />
+      </Component>
+      <Component Directory="X86Dir">
+        <File Id="X86Tip" Source="$(X86Tip)" KeyPath="yes" />
+      </Component>
+      <Component Directory="DictionaryDir">
+        <File Source="$(DictionaryDir)\system.dic" KeyPath="yes" />
+      </Component>
+      <Component Directory="DictionaryDir">
+        <File Source="$(DictionaryDir)\LICENSE-azooKey_dictionary_storage.txt" KeyPath="yes" />
+      </Component>
+      <Component Directory="INSTALLFOLDER">
+        <File Id="License" Source="$(RepositoryRoot)\LICENSE" Name="LICENSE.txt" KeyPath="yes" />
+      </Component>
+      <Component Directory="INSTALLFOLDER">
+        <File Source="$(RepositoryRoot)\THIRD_PARTY_NOTICES" Name="THIRD_PARTY_NOTICES.txt" KeyPath="yes" />
+      </Component>
+      <Component Directory="GuideDir">
+        <File Id="GuideFile" Source="$(RepositoryRoot)\platform\windows\installer\guide\index.html" KeyPath="yes">
+          <Shortcut Id="GuideShortcut" Directory="MenuDir" Name="Astelio IME の使い方"
+                    Description="Astelio IME の使い方と設定の手順" Icon="AstelioIME.ico" />
+        </File>
+        <RemoveFolder Id="RemoveMenuDir" Directory="MenuDir" On="uninstall" />
+      </Component>
+      <Component Directory="GuideDir">
+        <File Source="$(RepositoryRoot)\assets\icon\AstelioIME.png" KeyPath="yes" />
+      </Component>
+    </ComponentGroup>
+    <Feature Id="Main" Title="Astelio IME">
+      <ComponentGroupRef Id="Product" />
+    </Feature>
+
+    <!-- The TIP registers its COM class, its TSF profile and categories itself (DllRegisterServer). -->
+    <CustomAction Id="RegisterNative" Directory="NativeDir" Execute="deferred" Impersonate="no" Return="check"
+                  ExeCommand="&quot;[System64Folder]regsvr32.exe&quot; /s &quot;[NativeDir]astelio_tip.dll&quot;" />
+    <CustomAction Id="RegisterX86" Directory="X86Dir" Execute="deferred" Impersonate="no" Return="check"
+                  ExeCommand="&quot;[SystemFolder]regsvr32.exe&quot; /s &quot;[X86Dir]astelio_tip.dll&quot;" />
+    <CustomAction Id="UnregisterNative" Directory="NativeDir" Execute="deferred" Impersonate="no" Return="ignore"
+                  ExeCommand="&quot;[System64Folder]regsvr32.exe&quot; /u /s &quot;[NativeDir]astelio_tip.dll&quot;" />
+    <CustomAction Id="UnregisterX86" Directory="X86Dir" Execute="deferred" Impersonate="no" Return="ignore"
+                  ExeCommand="&quot;[SystemFolder]regsvr32.exe&quot; /u /s &quot;[X86Dir]astelio_tip.dll&quot;" />
+    <CustomAction Id="RollbackNative" Directory="NativeDir" Execute="rollback" Impersonate="no" Return="ignore"
+                  ExeCommand="&quot;[System64Folder]regsvr32.exe&quot; /u /s &quot;[NativeDir]astelio_tip.dll&quot;" />
+    <CustomAction Id="RollbackX86" Directory="X86Dir" Execute="rollback" Impersonate="no" Return="ignore"
+                  ExeCommand="&quot;[SystemFolder]regsvr32.exe&quot; /u /s &quot;[X86Dir]astelio_tip.dll&quot;" />
+    <!-- Runs as the installing user, so Astelio IME is in that user's keyboards without going to Settings. -->
+    <CustomAction Id="EnableForUser" Directory="NativeDir" Execute="immediate" Return="ignore"
+                  ExeCommand="&quot;[System64Folder]rundll32.exe&quot; &quot;[NativeDir]astelio_tip.dll&quot;,AstelioTipEnableForUser" />
+    <!-- The animated guide opens in the default browser at the end (not on silent installs). -->
+    <CustomAction Id="OpenGuide" Directory="GuideDir" Execute="immediate" Return="asyncNoWait"
+                  ExeCommand="&quot;[WindowsFolder]explorer.exe&quot; &quot;[#GuideFile]&quot;" />
+    <InstallExecuteSequence>
+      <Custom Action="UnregisterNative" Before="RemoveFiles" Condition="Installed AND REMOVE=&quot;ALL&quot;" />
+      <Custom Action="UnregisterX86" After="UnregisterNative" Condition="Installed AND REMOVE=&quot;ALL&quot;" />
+      <Custom Action="RollbackNative" After="InstallFiles" Condition="NOT REMOVE=&quot;ALL&quot;" />
+      <Custom Action="RegisterNative" After="RollbackNative" Condition="NOT REMOVE=&quot;ALL&quot;" />
+      <Custom Action="RollbackX86" After="RegisterNative" Condition="NOT REMOVE=&quot;ALL&quot;" />
+      <Custom Action="RegisterX86" After="RollbackX86" Condition="NOT REMOVE=&quot;ALL&quot;" />
+      <Custom Action="EnableForUser" After="InstallFinalize" Condition="NOT REMOVE" />
+      <Custom Action="OpenGuide" After="EnableForUser" Condition="NOT REMOVE AND UILevel &gt;= 3" />
+    </InstallExecuteSequence>
+    <!--
+      No wizard pages: Windows Installer's own progress window is used, which also handles files in use (every app
+      that has the TIP loaded locks it). WixUI is not used, since only MIT / Apache-2.0 / BSD material is shipped;
+      the settings wizard (R-08) comes with the settings app.
+    -->
+  </Package>
+</Wix>
