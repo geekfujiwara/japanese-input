@@ -1,5 +1,6 @@
 #include "user_dictionary_manager.h"
 
+#include "dialog_keys.h"
 #include "module.h"
 #include "user_dictionary_store.h"
 
@@ -22,12 +23,12 @@ using Word = UserDictionary::Word;
 
 constexpr wchar_t kClassName[] = L"AstelioUserDictionaryManager";
 enum : int {
-    kSearchId = 100,
-    kListId,
-    kReadingId,
-    kSurfaceId,
-    kPosId,
-    kCommentId,
+    kSearchId = kUserDictionarySearchId,
+    kListId = kUserDictionaryListId,
+    kReadingId = kUserDictionaryReadingId,
+    kSurfaceId = kUserDictionarySurfaceId,
+    kPosId = kUserDictionaryPosId,
+    kCommentId = kUserDictionaryCommentId,
     kAddId,
     kUpdateId,
     kDeleteId,
@@ -481,6 +482,7 @@ bool Create(HWND window, State& state)
     state.dictionary = LoadUserDictionary();
     Fill(state);
     Layout(window, state);
+    UseDialogKeys(window);
     return true;
 }
 
@@ -524,6 +526,18 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
             case kDeleteId: DeleteSelected(window, *state); return 0;
             case kImportId: Import(window, *state); return 0;
             case kExportId: Export(window, *state); return 0;
+            case IDOK: {
+                // Enter in the fields adds the word, or changes the one selected.
+                const HWND focus = GetFocus();
+                if (focus != state->search && focus != state->list) {
+                    if (IsWindowEnabled(state->update_button)) {
+                        UpdateWord(window, *state);
+                    } else {
+                        AddWord(window, *state);
+                    }
+                }
+                return 0;
+            }
             case kCloseId:
             case IDCANCEL: DestroyWindow(window); return 0;
             default: break;
@@ -570,6 +584,11 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
 }
 
 } // namespace
+
+HWND UserDictionaryManagerWindow()
+{
+    return g_window;
+}
 
 void ShowUserDictionaryManager()
 {

@@ -4,6 +4,7 @@
 #include "astelio/user_dictionary.h"
 #include "astelio/user_dictionary_io.h"
 #include "test_text_store.h"
+#include "user_dictionary_manager.h"
 #include "user_dictionary_store.h"
 
 #include <windows.h>
@@ -1363,6 +1364,40 @@ TEST_F(TypingTest, SavedUserDictionaryIsUsedFromTheNextInput)
     ASSERT_TRUE(DeleteFileW(user_dictionary_path_.c_str()));
     EXPECT_EQ(convert(), L"\u79C1") << "the file is gone";
     astelio::tip::UseUserDictionaryFile(nullptr);
+}
+
+// T-D02-2 (TIP): in the user dictionary window, which runs in the app's message loop, Tab moves to the next field,
+// Enter adds the word typed and Esc closes the window.
+TEST_F(TypingTest, UserDictionaryWindowTakesTabEnterAndEscape)
+{
+    using ShowFunction = HWND(WINAPI*)();
+    const auto show = reinterpret_cast<ShowFunction>(
+        GetProcAddress(GetModuleHandleW(TipPath().c_str()), "AstelioTipTestShowUserDictionaryManager"));
+    ASSERT_NE(show, nullptr);
+    const HWND window = show();
+    ASSERT_NE(window, nullptr);
+    const HWND reading = GetDlgItem(window, astelio::tip::kUserDictionaryReadingId);
+    const HWND surface = GetDlgItem(window, astelio::tip::kUserDictionarySurfaceId);
+    ASSERT_NE(reading, nullptr);
+    ASSERT_NE(surface, nullptr);
+
+    SetFocus(reading);
+    SetWindowTextW(reading, L"\u30C6\u30B9\u30C8"); // テスト: katakana is saved as hiragana
+    SendMessageW(reading, WM_KEYDOWN, VK_TAB, 0);
+    EXPECT_EQ(GetFocus(), surface) << "Tab moves to the next field";
+    SetWindowTextW(surface, L"\u8A66\u9A13"); // 試験
+    SendMessageW(surface, WM_KEYDOWN, VK_RETURN, 0);
+
+    astelio::tip::UseUserDictionaryFile(user_dictionary_path_.c_str());
+    const std::vector<astelio::UserDictionary::Word> saved = astelio::tip::LoadUserDictionary().Words();
+    astelio::tip::UseUserDictionaryFile(nullptr);
+    ASSERT_EQ(saved.size(), 1u) << "Enter adds the word";
+    EXPECT_TRUE(saved.front().reading == u"\u3066\u3059\u3068");
+    EXPECT_TRUE(saved.front().surface == u"\u8A66\u9A13");
+    EXPECT_EQ(GetWindowTextLengthW(surface), 0) << "the fields are emptied for the next word";
+
+    SendMessageW(reading, WM_KEYDOWN, VK_ESCAPE, 0);
+    EXPECT_FALSE(IsWindow(window)) << "Esc closes the window";
 }
 
 std::wstring TemporaryFile(const wchar_t* name)

@@ -5,6 +5,7 @@ EXPORTS
     AstelioTipTestEmojiWindow PRIVATE
     AstelioTipTestKey PRIVATE
     AstelioTipTestModeWindow PRIVATE
+    AstelioTipTestShowUserDictionaryManager PRIVATE
     AstelioTipTestUseDictionary PRIVATE
     AstelioTipTestUseEmojiHistory PRIVATE
     AstelioTipTestUseLearningHistory PRIVATE
