@@ -13,6 +13,9 @@ constexpr std::size_t kMaxCandidates = 50;
 constexpr std::int32_t kInfinity = std::numeric_limits<std::int32_t>::max() / 2;
 // Added to words found only after fixing a typo, so exact readings win when both make sense.
 constexpr std::int32_t kTypoPenalty = 400;
+// D-08: a word whose join with the next ones spells a suppressed word is avoided in the next search.
+constexpr std::int32_t kSuppressedPenalty = 1'000'000;
+constexpr int kMaxSuppressedRetries = 4;
 
 struct Node {
     std::size_t begin = 0;
@@ -80,6 +83,23 @@ bool Hidden(const std::vector<const UserWord*>& suppressed, std::u16string_view 
     return std::any_of(suppressed.begin(), suppressed.end(), [&](const UserWord* word) {
         return word->surface == surface && (word->reading.empty() || reading.empty() || word->reading == reading);
     });
+}
+
+// The first node of words on `path` that together spell a suppressed word over the same reading, or nullptr.
+const Node* SpelledSuppressed(const std::vector<const Node*>& path, std::u16string_view reading,
+                              const std::vector<const UserWord*>& suppressed)
+{
+    constexpr std::size_t kLongestJoin = 4;
+    for (std::size_t first = 0; first < path.size(); ++first) {
+        std::u16string text(path[first]->surface);
+        for (std::size_t k = first + 1; k < path.size() && k < first + kLongestJoin; ++k) {
+            text += path[k]->surface;
+            if (Hidden(suppressed, reading.substr(path[first]->begin, path[k]->end - path[first]->begin), text)) {
+                return path[first];
+            }
+        }
+    }
+    return nullptr;
 }
 
 bool CollapsesWhenDoubled(char16_t c)
@@ -273,53 +293,72 @@ std::vector<ConvertedSegment> Converter::Convert(std::u16string_view reading,
     }
 
     // Viterbi over nodes in order of their start; predecessors of a node end where it begins.
-    std::vector<std::vector<std::int32_t>> ending(n + 1);
-    std::vector<std::int32_t> heads;
-    for (std::size_t i = 0; i < nodes.size();) {
-        const std::size_t begin = nodes[i].begin;
-        // Only the cheapest predecessor per right id matters.
-        heads = ending[begin];
-        std::sort(heads.begin(), heads.end(), [&nodes](std::int32_t a, std::int32_t b) {
-            return std::pair(nodes[a].right, nodes[a].best) < std::pair(nodes[b].right, nodes[b].best);
-        });
-        heads.erase(std::unique(heads.begin(), heads.end(),
-                                [&nodes](std::int32_t a, std::int32_t b) { return nodes[a].right == nodes[b].right; }),
-                    heads.end());
-        for (; i < nodes.size() && nodes[i].begin == begin; ++i) {
-            Node& node = nodes[i];
-            if (begin == 0) {
-                node.best = dictionary_.ConnectionCost(start, node.left) + node.cost;
-            } else {
-                for (const std::int32_t head : heads) {
-                    const std::int32_t total =
-                        nodes[head].best + dictionary_.ConnectionCost(nodes[head].right, node.left) + node.cost;
-                    if (total < node.best) {
-                        node.best = total;
-                        node.previous = head;
+    const auto shortest_path = [&]() {
+        for (Node& node : nodes) {
+            node.best = kInfinity;
+            node.previous = -1;
+        }
+        std::vector<std::vector<std::int32_t>> ending(n + 1);
+        std::vector<std::int32_t> heads;
+        for (std::size_t i = 0; i < nodes.size();) {
+            const std::size_t begin = nodes[i].begin;
+            // Only the cheapest predecessor per right id matters.
+            heads = ending[begin];
+            std::sort(heads.begin(), heads.end(), [&nodes](std::int32_t a, std::int32_t b) {
+                return std::pair(nodes[a].right, nodes[a].best) < std::pair(nodes[b].right, nodes[b].best);
+            });
+            heads.erase(std::unique(heads.begin(), heads.end(),
+                                    [&nodes](std::int32_t a, std::int32_t b) {
+                                        return nodes[a].right == nodes[b].right;
+                                    }),
+                        heads.end());
+            for (; i < nodes.size() && nodes[i].begin == begin; ++i) {
+                Node& node = nodes[i];
+                if (begin == 0) {
+                    node.best = dictionary_.ConnectionCost(start, node.left) + node.cost;
+                } else {
+                    for (const std::int32_t head : heads) {
+                        const std::int32_t total =
+                            nodes[head].best + dictionary_.ConnectionCost(nodes[head].right, node.left) + node.cost;
+                        if (total < node.best) {
+                            node.best = total;
+                            node.previous = head;
+                        }
                     }
                 }
-            }
-            if (node.best < kInfinity) {
-                ending[node.end].push_back(static_cast<std::int32_t>(i));
+                if (node.best < kInfinity) {
+                    ending[node.end].push_back(static_cast<std::int32_t>(i));
+                }
             }
         }
-    }
 
-    std::int32_t last = -1;
-    std::int32_t last_total = kInfinity;
-    for (const std::int32_t index : ending[n]) {
-        const std::int32_t total =
-            nodes[index].best + dictionary_.ConnectionCost(nodes[index].right, dictionary_.eos_id());
-        if (total < last_total) {
-            last_total = total;
-            last = index;
+        std::int32_t last = -1;
+        std::int32_t last_total = kInfinity;
+        for (const std::int32_t index : ending[n]) {
+            const std::int32_t total =
+                nodes[index].best + dictionary_.ConnectionCost(nodes[index].right, dictionary_.eos_id());
+            if (total < last_total) {
+                last_total = total;
+                last = index;
+            }
         }
+        std::vector<const Node*> found;
+        for (std::int32_t index = last; index >= 0; index = nodes[index].previous) {
+            found.push_back(&nodes[index]);
+        }
+        std::reverse(found.begin(), found.end());
+        return found;
+    };
+    std::vector<const Node*> path = shortest_path();
+    // D-08: words joined on the path can spell a suppressed word (日本 + 語 = 日本語); that join is avoided.
+    for (int retry = 0; retry < kMaxSuppressedRetries && !suppressed.empty(); ++retry) {
+        const Node* spelled = SpelledSuppressed(path, reading, suppressed);
+        if (spelled == nullptr) {
+            break;
+        }
+        nodes[static_cast<std::size_t>(spelled - nodes.data())].cost = kSuppressedPenalty;
+        path = shortest_path();
     }
-    std::vector<const Node*> path;
-    for (std::int32_t index = last; index >= 0; index = nodes[index].previous) {
-        path.push_back(&nodes[index]);
-    }
-    std::reverse(path.begin(), path.end());
 
     // Group words into segments.
     std::vector<std::pair<std::size_t, std::size_t>> groups; // [first word, last word + 1)
@@ -427,8 +466,13 @@ std::vector<ConvertedSegment> Converter::Convert(std::u16string_view reading,
         AddUnique(segment.candidates, segment.reading);
         AddUnique(segment.candidates, HiraganaToKatakana(segment.reading));
         if (!suppressed.empty()) {
+            // Words joined in the lattice (日本 + 語) can spell a suppressed word (日本語) in the head too.
+            const std::u16string_view tail_view = segment.tail;
             std::erase_if(segment.candidates, [&](const std::u16string& candidate) {
-                return Hidden(suppressed, segment.reading, candidate);
+                const std::u16string_view text = candidate;
+                return Hidden(suppressed, segment.reading, text) ||
+                       (!tail_view.empty() && text.size() > tail_view.size() && text.ends_with(tail_view) &&
+                        Hidden(suppressed, head_reading, text.substr(0, text.size() - tail_view.size())));
             });
             if (segment.candidates.empty()) {
                 segment.candidates.push_back(segment.reading);

@@ -296,6 +296,25 @@ TEST_F(ConverterTest, SuppressedWordsAreLeftOut)
     EXPECT_EQ(converter.Predict(u"わた", 9), (std::vector<std::u16string>{u"渡し"})) << "for any reading";
 }
 
+// T-D08-1: a suppressed word stays hidden when the lattice spells it with shorter words (日本 + 語 = 日本語).
+TEST_F(ConverterTest, SuppressedWordsSpelledByShorterWordsAreHidden)
+{
+    astelio::UserDictionary user;
+    ASSERT_TRUE(user.Add({u"にほんご", u"日本語", Pos::Suppressed, u""}));
+    astelio::Converter converter(*dictionary_);
+    converter.SetUserDictionary(&user);
+
+    for (const ConvertedSegment& segment : converter.Convert(u"にほんごです")) {
+        for (const std::u16string& candidate : segment.candidates) {
+            EXPECT_EQ(candidate.find(u"日本語"), std::u16string::npos) << "not even as 日本 + 語";
+        }
+    }
+    for (const std::u16string& prediction : converter.Predict(u"にほんごです", 9)) {
+        EXPECT_EQ(prediction.find(u"日本語"), std::u16string::npos);
+    }
+    EXPECT_EQ(Best(converter.Convert(u"にほん")), u"日本") << "the shorter word itself is not suppressed";
+}
+
 TEST(TypoCorrection, CollapsesDoubledSmallKanaAndKeepsTheMapping)
 {
     const astelio::TypoCorrection fixed = astelio::CorrectTypos(u"たっっせい");
