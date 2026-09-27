@@ -62,18 +62,8 @@ public:
     // Mode button click: switches the mode in the focused document.
     HRESULT ToggleMode();
 
-    // D-04 / D-05 / D-06: the history menu of the mode button.
-    enum class LearningCommand { Toggle, Manage, Clear, Pause, ExcludeApp };
-    bool LearningOn() const { return learning_on_; }
-    // The exe file name the "not in this app" item names.
-    const std::wstring& AppName() const { return app_name_; }
-    // C-09: the IME is not used in this app (the menu item "use direct input in this app").
-    bool AppDisabledHere() const { return app_disabled_; }
-    void ToggleAppDisabled();
-    // R-10 / R-11 from the menu: saved, and used from the next key in every app.
-    enum class InputOption { ListNumberPeriod, AutoCloseBrackets, SharedMode };
-    void ToggleInputOption(InputOption option);
-    void OnLearningCommand(LearningCommand command, HWND owner);
+    // The "settings" item of the mode button's menu: opens the settings app for this app (C-12).
+    void OpenSettings();
 
     // Runs inside an edit session: commits `commit`, then shows the session's uncommitted text.
     HRESULT ApplyToDocument(TfEditCookie cookie, ITfContext* context, const std::u16string& commit,
@@ -93,8 +83,8 @@ private:
     ~TextService();
 
     void UseConverter(const Converter* converter);
-    // Reads the R-10 / R-11 settings into the session.
-    void ApplyCharacterSettings();
+    // Reads the settings the settings app writes (HKCU\Software\AstelioIME) into the session.
+    void ApplySettings();
     // Whether the IME takes `key` in `context`.
     bool WillHandle(ITfContext* context, const KeyEvent& key);
     // Loads the history again when another app (or the history window) changed the file.

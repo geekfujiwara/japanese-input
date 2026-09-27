@@ -376,4 +376,9 @@ void ShowLearningManager()
     }
 }
 
+HWND LearningManagerWindow()
+{
+    return g_window;
+}
+
 } // namespace astelio::tip

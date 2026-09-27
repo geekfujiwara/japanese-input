@@ -408,8 +408,7 @@ STDMETHODIMP TextService::ActivateEx(ITfThreadMgr* thread_mgr, TfClientId client
     learning_on_ = LearningEnabled();
     RefreshLearning(true);
     RefreshUserDictionary(true);
-    session_.SetTypoSuggestions(TypoSuggestionsEnabled());
-    ApplyCharacterSettings();
+    ApplySettings();
     ComPtr<ITfCategoryMgr> categories;
     if (SUCCEEDED(CoCreateInstance(CLSID_TF_CategoryMgr, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&categories)))) {
         for (int index = 0; index < kDisplayAttributeCount; ++index) {
@@ -451,13 +450,17 @@ STDMETHODIMP TextService::Deactivate()
 STDMETHODIMP TextService::OnSetFocus(BOOL foreground)
 {
     session_.ResetContext();
-    app_disabled_ = AppDisabled(app_name_); // another window of this app may have changed it
+    // The settings app (or another window of this app) may have changed them.
+    app_disabled_ = AppDisabled(app_name_);
     share_mode_ = SharedInputModeEnabled();
     if (foreground) {
         try {
+            if (!session_.Composing()) {
+                ApplySettings();
+            }
             FollowSharedMode();
         } catch (...) {
-            // The mode stays as it was.
+            // The mode and the settings stay as they were.
         }
     }
     return S_OK;
@@ -470,39 +473,49 @@ bool TextService::WillHandle(ITfContext* context, const KeyEvent& key)
            (session_.Composing() || !CaretInPasswordField(client_id_, context));
 }
 
-void TextService::ToggleAppDisabled()
+void TextService::OpenSettings()
 {
-    app_disabled_ = !app_disabled_;
-    SetAppDisabled(app_name_, app_disabled_);
-    if (app_disabled_) {
-        SetMode(false, FocusedContext().Get(), true); // commits what is typed; the app gets direct input
-    }
-}
-
-void TextService::ToggleInputOption(InputOption option)
-{
-    switch (option) {
-    case InputOption::ListNumberPeriod: SetListNumberPeriodEnabled(!ListNumberPeriodEnabled()); break;
-    case InputOption::AutoCloseBrackets: SetAutoCloseBracketsEnabled(!AutoCloseBracketsEnabled()); break;
-    case InputOption::SharedMode:
-        share_mode_ = !SharedInputModeEnabled();
-        SetSharedInputModeEnabled(share_mode_);
-        PublishMode();
+    // <install>\<arch>\astelio_tip.dll -> <install>\settings\AstelioSettings.exe
+    wchar_t module[MAX_PATH] = {};
+    const DWORD length = GetModuleFileNameW(ModuleHandle(), module, MAX_PATH);
+    std::wstring path(module, length < MAX_PATH ? length : 0);
+    const std::size_t slash = path.find_last_of(L'\\');
+    const std::size_t parent = slash == std::wstring::npos || slash == 0 ? std::wstring::npos
+                                                                          : path.find_last_of(L'\\', slash - 1);
+    const std::wstring exe =
+        parent == std::wstring::npos ? std::wstring() : path.substr(0, parent) + L"\\settings\\AstelioSettings.exe";
+    // The app is named so the settings open with its own switches (exe names cannot hold quotes).
+    std::wstring command = L"\"" + exe + L"\" --app \"" + app_name_ + L"\"";
+    STARTUPINFOW startup{};
+    startup.cb = sizeof(startup);
+    PROCESS_INFORMATION process{};
+    if (!exe.empty() && GetFileAttributesW(exe.c_str()) != INVALID_FILE_ATTRIBUTES &&
+        CreateProcessW(exe.c_str(), command.data(), nullptr, nullptr, FALSE, 0, nullptr, nullptr, &startup,
+                       &process)) {
+        CloseHandle(process.hThread);
+        CloseHandle(process.hProcess);
         return;
     }
-    if (!session_.Composing()) {
-        ApplyCharacterSettings();
-    }
+    // 設定アプリが見つかりません。Astelio IME をインストールし直してください。
+    MessageBoxW(nullptr,
+                L"\u8A2D\u5B9A\u30A2\u30D7\u30EA\u304C\u898B\u3064\u304B\u308A\u307E\u305B\u3093\u3002"
+                L"Astelio IME \u3092\u30A4\u30F3\u30B9\u30C8\u30FC\u30EB\u3057\u76F4\u3057\u3066\u304F\u3060\u3055\u3044\u3002",
+                L"Astelio IME", MB_OK | MB_ICONWARNING | MB_SETFOREGROUND);
 }
 
-void TextService::ApplyCharacterSettings()
+void TextService::ApplySettings()
 {
     CharacterSettings settings;
     settings.list_number_period = ListNumberPeriodEnabled();
     settings.auto_close_brackets = AutoCloseBracketsEnabled();
     session_.SetCharacterSettings(settings);
+    session_.SetTypoSuggestions(TypoSuggestionsEnabled());
     if (converter_) {
         converter_->SetDateFormat(PreferredDateFormat());
+    }
+    if (const bool on = LearningEnabled(); on != learning_on_) {
+        learning_on_ = on;
+        RefreshLearning(true);
     }
 }
 
@@ -580,7 +593,7 @@ STDMETHODIMP TextService::OnKeyDown(ITfContext* context, WPARAM wparam, LPARAM l
         if (!session_.Composing()) {
             RefreshLearning();
             RefreshUserDictionary();
-            ApplyCharacterSettings(); // the menu of another app may have changed them
+            ApplySettings(); // the settings app may have changed them
         }
         const bool offered = session_.EmojiPaletteOffered();
         SessionOutput output = session_.Handle(*key);
@@ -1047,37 +1060,6 @@ void TextService::PassUserDictionary()
     session_.SetUserDictionary(words);
 }
 
-void TextService::OnLearningCommand(LearningCommand command, HWND owner)
-{
-    switch (command) {
-    case LearningCommand::Toggle:
-        learning_on_ = !learning_on_;
-        SetLearningEnabled(learning_on_);
-        RefreshLearning(true);
-        break;
-    case LearningCommand::Manage:
-        ShowLearningManager();
-        break;
-    case LearningCommand::Pause:
-        SetLearningPaused(!LearningPaused());
-        RefreshLearning();
-        break;
-    case LearningCommand::ExcludeApp:
-        SetAppLearningExcluded(app_name_, !AppLearningExcluded(app_name_));
-        RefreshLearning();
-        break;
-    case LearningCommand::Clear:
-        // 入力履歴をすべて削除しますか？
-        if (MessageBoxW(owner, L"\u5165\u529B\u5C65\u6B74\u3092\u3059\u3079\u3066\u524A\u9664\u3057\u307E\u3059\u304B\uFF1F",
-                        L"Astelio IME", MB_YESNO | MB_ICONWARNING | MB_DEFBUTTON2 | MB_SETFOREGROUND) == IDYES) {
-            learning_.Clear();
-            SaveLearning(learning_);
-            learning_stamp_ = LearningFileStamp();
-        }
-        break;
-    }
-}
-
 HRESULT TextService::Deliver(ITfContext* context, SessionOutput output)
 {
     if (output.recent_emoji_changed && !session_.RecentEmoji().empty()) {
@@ -1349,8 +1331,7 @@ void TextService::TestUseSettingsKey(const wchar_t* key)
         service->learning_on_ = LearningEnabled();
         service->app_disabled_ = AppDisabled(service->app_name_);
         service->share_mode_ = SharedInputModeEnabled();
-        service->session_.SetTypoSuggestions(TypoSuggestionsEnabled());
-        service->ApplyCharacterSettings();
+        service->ApplySettings();
         service->RefreshLearning(true);
     }
 }

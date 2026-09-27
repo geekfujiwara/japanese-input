@@ -1,10 +1,8 @@
 #include "lang_bar_button.h"
 
 #include "astelio/tip/guids.h"
-#include "learning_store.h"
 #include "module.h"
 #include "text_service.h"
-#include "user_dictionary_manager.h"
 
 #include <oleauto.h>
 #include <olectl.h>
@@ -205,49 +203,15 @@ STDMETHODIMP LangBarButton::OnClick(TfLBIClick click, POINT point, const RECT* /
     return S_OK;
 }
 
-// C-09 / D-02 / D-04 / D-05: right click shows the per-app, history and user dictionary menu.
+// C-12: right click shows one item, "settings", which opens the settings app.
 void LangBarButton::ShowMenu(POINT point)
 {
-    enum : UINT {
-        kToggle = 1, kManage, kClear, kPause, kExcludeApp, kUserDictionary, kDisableApp, kListPeriod, kAutoClose,
-        kSharedMode
-    };
+    constexpr UINT kSettings = 1;
     HMENU menu = CreatePopupMenu();
     if (menu == nullptr) {
         return;
     }
-    const std::wstring& app = service_->AppName();
-    const UINT app_known = app.empty() ? MF_GRAYED : 0;
-    // このアプリ（name）では使わない
-    const std::wstring disable_label = L"\u3053\u306E\u30A2\u30D7\u30EA\uFF08" + app +
-                                       L"\uFF09\u3067\u306F\u4F7F\u308F\u306A\u3044";
-    AppendMenuW(menu, MF_STRING | (service_->AppDisabledHere() ? MF_CHECKED : MF_UNCHECKED) | app_known, kDisableApp,
-                disable_label.c_str());
-    // 入力モードをアプリ間で共有する
-    AppendMenuW(menu, MF_STRING | (SharedInputModeEnabled() ? MF_CHECKED : MF_UNCHECKED), kSharedMode,
-                L"\u5165\u529B\u30E2\u30FC\u30C9\u3092\u30A2\u30D7\u30EA\u9593\u3067\u5171\u6709\u3059\u308B");
-    AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
-    // 数字の後のピリオドを「. 」にする / 括弧を自動で閉じる
-    AppendMenuW(menu, MF_STRING | (ListNumberPeriodEnabled() ? MF_CHECKED : MF_UNCHECKED), kListPeriod,
-                L"\u6570\u5B57\u306E\u5F8C\u306E\u30D4\u30EA\u30AA\u30C9\u3092\u300C. \u300D\u306B\u3059\u308B");
-    AppendMenuW(menu, MF_STRING | (AutoCloseBracketsEnabled() ? MF_CHECKED : MF_UNCHECKED), kAutoClose,
-                L"\u62EC\u5F27\u3092\u81EA\u52D5\u3067\u9589\u3058\u308B");
-    AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
-    // 入力履歴を使う / 記録を一時停止（シークレットモード） / このアプリ（name）では記録しない /
-    // 入力履歴の管理... / 入力履歴をすべて削除...
-    AppendMenuW(menu, MF_STRING | (service_->LearningOn() ? MF_CHECKED : MF_UNCHECKED), kToggle,
-                L"\u5165\u529B\u5C65\u6B74\u3092\u4F7F\u3046");
-    AppendMenuW(menu, MF_STRING | (LearningPaused() ? MF_CHECKED : MF_UNCHECKED), kPause,
-                L"\u8A18\u9332\u3092\u4E00\u6642\u505C\u6B62\uFF08\u30B7\u30FC\u30AF\u30EC\u30C3\u30C8\u30E2\u30FC\u30C9\uFF09");
-    const std::wstring exclude_label = L"\u3053\u306E\u30A2\u30D7\u30EA\uFF08" + app +
-                                       L"\uFF09\u3067\u306F\u8A18\u9332\u3057\u306A\u3044";
-    AppendMenuW(menu, MF_STRING | (AppLearningExcluded(app) ? MF_CHECKED : MF_UNCHECKED) | app_known, kExcludeApp,
-                exclude_label.c_str());
-    AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
-    AppendMenuW(menu, MF_STRING, kManage, L"\u5165\u529B\u5C65\u6B74\u306E\u7BA1\u7406...");
-    AppendMenuW(menu, MF_STRING, kClear, L"\u5165\u529B\u5C65\u6B74\u3092\u3059\u3079\u3066\u524A\u9664...");
-    AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
-    AppendMenuW(menu, MF_STRING, kUserDictionary, L"\u30E6\u30FC\u30B6\u30FC\u8F9E\u66F8..."); // ユーザー辞書...
+    AppendMenuW(menu, MF_STRING, kSettings, L"\u8A2D\u5B9A..."); // 設定...
 
     // Owned by the app's focused window, like Mozc: a window of another thread cannot track the menu, and
     // TPM_NONOTIFY keeps the owner from changing the menu.
@@ -273,20 +237,8 @@ void LangBarButton::ShowMenu(POINT point)
         menu, TPM_NONOTIFY | TPM_RETURNCMD | TPM_LEFTALIGN | TPM_BOTTOMALIGN | TPM_RIGHTBUTTON, point.x, point.y, 0,
         owner, nullptr));
     DestroyMenu(menu);
-    if (service_ != nullptr) {
-        switch (chosen) {
-        case kToggle: service_->OnLearningCommand(TextService::LearningCommand::Toggle, owner); break;
-        case kManage: service_->OnLearningCommand(TextService::LearningCommand::Manage, owner); break;
-        case kClear: service_->OnLearningCommand(TextService::LearningCommand::Clear, owner); break;
-        case kPause: service_->OnLearningCommand(TextService::LearningCommand::Pause, owner); break;
-        case kExcludeApp: service_->OnLearningCommand(TextService::LearningCommand::ExcludeApp, owner); break;
-        case kUserDictionary: ShowUserDictionaryManager(); break;
-        case kDisableApp: service_->ToggleAppDisabled(); break;
-        case kListPeriod: service_->ToggleInputOption(TextService::InputOption::ListNumberPeriod); break;
-        case kAutoClose: service_->ToggleInputOption(TextService::InputOption::AutoCloseBrackets); break;
-        case kSharedMode: service_->ToggleInputOption(TextService::InputOption::SharedMode); break;
-        default: break;
-        }
+    if (service_ != nullptr && chosen == kSettings) {
+        service_->OpenSettings();
     }
     if (temporary != nullptr) {
         DestroyWindow(temporary);
