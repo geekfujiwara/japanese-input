@@ -1,0 +1,39 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <UseWPF>true</UseWPF>
+    <RootNamespace>Astelio.Settings</RootNamespace>
+    <AssemblyName>AstelioSettings</AssemblyName>
+    <RuntimeIdentifiers>win-arm64;win-x64</RuntimeIdentifiers>
+    <Product>Astelio IME</Product>
+    <Title>Astelio IME の設定</Title>
+    <Description>Astelio IME の設定アプリ</Description>
+    <Authors>Geek Fujiwara</Authors>
+    <Company>Geek Fujiwara</Company>
+    <Copyright>Copyright © 2026 Geek Fujiwara</Copyright>
+    <Version>0.1.0</Version>
+    <ApplicationIcon>..\..\..\..\assets\icon\AstelioIME.ico</ApplicationIcon>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <!-- The Fluent theme (ThemeMode) is marked experimental in WPF. -->
+    <NoWarn>$(NoWarn);WPF0001</NoWarn>
+  </PropertyGroup>
+
+  <!-- Installed as one file with its own runtime, so no .NET needs to be on the PC. -->
+  <PropertyGroup Condition="'$(RuntimeIdentifier)' != ''">
+    <SelfContained>true</SelfContained>
+    <PublishSingleFile>true</PublishSingleFile>
+    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+    <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
+    <DebugType>None</DebugType>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Resource Include="..\..\..\..\assets\icon\AstelioIME.png" Link="Assets\AstelioIME.png" />
+    <InternalsVisibleTo Include="Astelio.Settings.Tests" />
+  </ItemGroup>
+
+</Project>

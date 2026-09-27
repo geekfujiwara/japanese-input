@@ -1,4 +1,10 @@
 <Solution>
+  <Folder Name="/platform/" />
+  <Folder Name="/platform/windows/" />
+  <Folder Name="/platform/windows/settings/">
+    <Project Path="platform/windows/settings/Astelio.Settings.Tests/Astelio.Settings.Tests.csproj" />
+    <Project Path="platform/windows/settings/Astelio.Settings/Astelio.Settings.csproj" />
+  </Folder>
   <Folder Name="/src/">
     <Project Path="src/KotohaIME.App/KotohaIME.App.csproj" />
     <Project Path="src/KotohaIME.Core/KotohaIME.Core.csproj" />
