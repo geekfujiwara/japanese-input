@@ -141,6 +141,10 @@ public:
     // A second Space (or an arrow / page key) while converting opens the candidate list of the focused segment.
     bool CandidateListVisible() const { return candidate_list_visible_; }
     static constexpr std::size_t kCandidatePageSize = 9;
+    // B-03: more than 9 candidates spread into up to 3 columns of 9. Left / Right move between the columns,
+    // the digits pick from the focused column, PageUp / PageDown move by the 27 shown together.
+    static constexpr std::size_t kCandidateColumns = 3;
+    static constexpr std::size_t kCandidateGridSize = kCandidatePageSize * kCandidateColumns;
 
     // B-04: candidates predicted from the kana typed so far (shown while typing; Tab or Down selects them).
     const std::vector<std::u16string>& Predictions() const { return predictions_; }

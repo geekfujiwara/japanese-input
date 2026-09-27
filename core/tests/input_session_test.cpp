@@ -360,6 +360,67 @@ TEST_F(ConversionTest, CandidateListKeys)
         << "a number past the end keeps the choice";
 }
 
+// T-B03-5: more than 9 candidates spread into columns of 9. Left / Right move between the columns, the digits
+// pick from the focused column, and PageUp / PageDown move by the 27 shown together.
+TEST_F(ConversionTest, CandidateColumns)
+{
+    UserDictionary user;
+    for (char16_t i = 0; i < 30; ++i) {
+        ASSERT_TRUE(user.Add({u"わたし", std::u16string{u'W', static_cast<char16_t>(u'A' + i)},
+                              UserDictionary::PartOfSpeech::Noun, u""}));
+    }
+    converter_->SetUserDictionary(&user);
+    session_.SetUserDictionary(&user);
+    Type(session_, u"watasihanihongodesu");
+    session_.Handle(Key(KeyKind::Space));
+    ASSERT_EQ(session_.Segments().size(), 2u);
+    session_.Handle(Arrow(KeyKind::Right));
+    session_.Handle(Key(KeyKind::Space));
+    ASSERT_TRUE(session_.CandidateListVisible());
+    session_.Handle(Arrow(KeyKind::Left));
+    EXPECT_EQ(session_.FocusedSegment(), 0u) << "a short list: the arrows move between the segments";
+    session_.Handle(Key(KeyKind::Space));
+    const std::size_t count = session_.Segments()[0].candidates.size();
+    ASSERT_GT(count, 28u);
+    ASSERT_TRUE(session_.CandidateListVisible());
+    EXPECT_EQ(session_.SelectedCandidate(0), 1u);
+
+    session_.Handle(Arrow(KeyKind::Right));
+    EXPECT_EQ(session_.SelectedCandidate(0), 10u) << "the same row of the next column";
+    EXPECT_EQ(session_.FocusedSegment(), 0u);
+    EXPECT_TRUE(session_.CandidateListVisible());
+    session_.Handle(Arrow(KeyKind::Right));
+    session_.Handle(Arrow(KeyKind::Right));
+    EXPECT_EQ(session_.SelectedCandidate(0), 28u) << "on to the next columns";
+    if (28 + 9 >= count) {
+        session_.Handle(Arrow(KeyKind::Right));
+        EXPECT_EQ(session_.SelectedCandidate(0), 28u) << "no column after the last";
+    }
+    session_.Handle(Arrow(KeyKind::Left));
+    EXPECT_EQ(session_.SelectedCandidate(0), 19u);
+    for (int i = 0; i < 7; ++i) {
+        session_.Handle(Key(KeyKind::Down));
+    }
+    session_.Handle(Arrow(KeyKind::Right));
+    EXPECT_EQ(session_.SelectedCandidate(0), std::min<std::size_t>(26 + 9, count - 1))
+        << "a short last column: its last candidate";
+
+    session_.Handle(Key(KeyKind::PageUp));
+    EXPECT_EQ(session_.SelectedCandidate(0), std::min<std::size_t>(26 + 9, count - 1) - 27);
+    session_.Handle(Key(KeyKind::PageUp));
+    EXPECT_EQ(session_.SelectedCandidate(0), 0u);
+    session_.Handle(Key(KeyKind::PageDown));
+    EXPECT_EQ(session_.SelectedCandidate(0), 27u);
+
+    session_.Handle(Key(KeyKind::PageUp));
+    session_.Handle(Arrow(KeyKind::Right));
+    session_.Handle(Char(u'3'));
+    EXPECT_EQ(session_.SelectedCandidate(0), 11u) << "3 in the second column";
+    EXPECT_FALSE(session_.CandidateListVisible());
+    session_.Handle(Arrow(KeyKind::Right));
+    EXPECT_EQ(session_.FocusedSegment(), 1u) << "with the list closed the arrows move between the segments";
+}
+
 // T-B04-1: predictions appear while typing; Tab selects them and Enter commits.
 TEST_F(ConversionTest, PredictionsWhileTypingAndTabSelects)
 {

@@ -29,4 +29,9 @@ inline constexpr GUID kConvertedAttributeGuid = {
 inline constexpr GUID kFocusedAttributeGuid = {
     0x37b32bfa, 0xab11, 0x4aed, {0xb6, 0x77, 0x02, 0x42, 0x2a, 0x03, 0xa7, 0x3a}};
 
+// C-14: the global compartment (VT_I4, 1 = Japanese) that shares the input mode between apps.
+// {5B7C2E4A-9D3F-4C61-8A2E-6F1B3D9C7E45}
+inline constexpr GUID kSharedModeCompartmentGuid = {
+    0x5b7c2e4a, 0x9d3f, 0x4c61, {0x8a, 0x2e, 0x6f, 0x1b, 0x3d, 0x9c, 0x7e, 0x45}};
+
 } // namespace astelio::tip

@@ -315,11 +315,27 @@ bool InputSession::HandleCandidateList(const KeyEvent& key)
         selected = key.shift ? (selected + count - 1) % count : (selected + 1) % count;
         break;
     case KeyKind::PageDown:
-        selected = std::min(selected + kCandidatePageSize, count - 1);
+        selected = std::min(selected + kCandidateGridSize, count - 1);
         break;
     case KeyKind::PageUp:
-        selected = selected >= kCandidatePageSize ? selected - kCandidatePageSize : 0;
+        selected = selected >= kCandidateGridSize ? selected - kCandidateGridSize : 0;
         break;
+    case KeyKind::Left:
+    case KeyKind::Right: {
+        // Columns only when the list shows more than one; otherwise the arrows move between the segments.
+        if (!candidate_list_visible_ || key.shift || count <= kCandidatePageSize) {
+            return false;
+        }
+        const std::size_t column = selected / kCandidatePageSize;
+        if (key.kind == KeyKind::Left) {
+            selected = column > 0 ? selected - kCandidatePageSize : selected;
+        } else if (selected + kCandidatePageSize < count) {
+            selected += kCandidatePageSize;
+        } else if ((count - 1) / kCandidatePageSize > column) {
+            selected = count - 1;
+        }
+        break;
+    }
     case KeyKind::Character: {
         // 1-9 pick from the current page and close the list.
         if (!candidate_list_visible_ || key.character < u'1' || key.character > u'9') {

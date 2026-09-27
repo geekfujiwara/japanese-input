@@ -202,8 +202,10 @@ int Lookup(const fs::path& path, const std::vector<std::string>& readings)
         const std::vector<astelio::DictionaryEntry> entries =
             query ? dictionary->Lookup(*query) : std::vector<astelio::DictionaryEntry>{};
         std::cout << reading << ':';
-        for (std::size_t i = 0; i < entries.size() && i < 10; ++i) {
-            std::cout << ' ' << astelio::Utf16ToUtf8(entries[i].surface) << '(' << entries[i].cost << ')';
+        for (std::size_t i = 0; i < entries.size() && i < 30; ++i) {
+            std::cout << ' ' << astelio::Utf16ToUtf8(entries[i].surface) << '(' << entries[i].cost << ' '
+                      << entries[i].left_id << '/' << entries[i].right_id << ' '
+                      << static_cast<int>(dictionary->word_type(entries[i].left_id)) << ')';
         }
         std::cout << '\n';
         if (entries.empty()) {

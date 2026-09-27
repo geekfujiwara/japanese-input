@@ -1,6 +1,7 @@
 #pragma once
 
 #include "astelio/learning.h"
+#include "astelio/special_candidates.h"
 
 #include <cstdint>
 #include <string>
@@ -45,5 +46,12 @@ bool ListNumberPeriodEnabled();
 void SetListNumberPeriodEnabled(bool enabled);
 bool AutoCloseBracketsEnabled();
 void SetAutoCloseBracketsEnabled(bool enabled);
+
+// C-14: the input mode is shared between apps (SharedInputMode; on unless set to 0).
+bool SharedInputModeEnabled();
+void SetSharedInputModeEnabled(bool enabled);
+
+// C-13: the date form offered first (DateFormat: one of kDateFormatNames; yyyy/MM/dd when missing or unknown).
+DateFormat PreferredDateFormat();
 
 } // namespace astelio::tip

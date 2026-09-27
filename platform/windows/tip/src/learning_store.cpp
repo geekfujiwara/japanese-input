@@ -235,6 +235,28 @@ void SetAutoCloseBracketsEnabled(bool enabled)
     WriteFlag(L"AutoCloseBrackets", enabled);
 }
 
+bool SharedInputModeEnabled()
+{
+    return ReadFlag(L"SharedInputMode");
+}
+
+void SetSharedInputModeEnabled(bool enabled)
+{
+    WriteFlag(L"SharedInputMode", enabled);
+}
+
+DateFormat PreferredDateFormat()
+{
+    wchar_t buffer[64] = {};
+    DWORD bytes = sizeof(buffer);
+    if (RegGetValueW(HKEY_CURRENT_USER, SettingsKey().c_str(), L"DateFormat", RRF_RT_REG_SZ, nullptr, buffer,
+                     &bytes) != ERROR_SUCCESS) {
+        return DateFormat::SlashPadded;
+    }
+    const std::u16string name(reinterpret_cast<const char16_t*>(buffer));
+    return DateFormatFromName(name).value_or(DateFormat::SlashPadded);
+}
+
 void SetLearningEnabled(bool enabled)
 {
     WriteFlag(kEnabledValue, enabled);

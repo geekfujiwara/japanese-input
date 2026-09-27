@@ -16,6 +16,14 @@ constexpr std::int32_t kTypoPenalty = 400;
 // D-08: a word whose join with the next ones spells a suppressed word is avoided in the next search.
 constexpr std::int32_t kSuppressedPenalty = 1'000'000;
 constexpr int kMaxSuppressedRetries = 4;
+// B-02: a suffix in kanji spelled like the particle that ends a segment (か → 化) is offered second when it costs at
+// most this much more (汎用か / 汎用化).
+constexpr std::int32_t kSuffixMargin = 600;
+
+bool HasKanji(std::u16string_view text)
+{
+    return std::any_of(text.begin(), text.end(), [](char16_t c) { return c >= 0x4E00 && c <= 0x9FFF; });
+}
 
 struct Node {
     std::size_t begin = 0;
@@ -447,10 +455,38 @@ std::vector<ConvertedSegment> Converter::Convert(std::u16string_view reading,
                 AddUnique(segment.candidates, word->surface + tail_text);
             }
         }
+        const std::u16string best_text = best;
         AddUnique(segment.candidates, std::move(best));
+        if (end - tail == 1 && !HasKanji(path[end - 1]->surface)) {
+            const Node& ending = *path[end - 1];
+            const std::uint16_t before_ending = path[end - 2]->right;
+            const auto suffix_score = [&](std::uint16_t left, std::uint16_t right, std::int32_t cost) {
+                return dictionary_.ConnectionCost(before_ending, left) + cost +
+                       dictionary_.ConnectionCost(right, after_segment);
+            };
+            const std::int32_t ending_score = suffix_score(ending.left, ending.right, ending.cost);
+            const std::u16string_view ending_reading = reading.substr(ending.begin, ending.end - ending.begin);
+            const std::u16string head_text = best_text.substr(0, best_text.size() - ending.surface.size());
+            // The most common kanji suffix (化 rather than 家), if it fits almost as well as the particle.
+            std::int16_t cheapest = std::numeric_limits<std::int16_t>::max();
+            std::int32_t alternative_score = kInfinity;
+            std::u16string_view alternative;
+            for (const DictionaryEntry& entry : dictionary_.Lookup(ending_reading)) {
+                if (HasKanji(entry.surface) && dictionary_.word_type(entry.left_id) == WordType::Suffix &&
+                    entry.cost < cheapest) {
+                    cheapest = entry.cost;
+                    alternative_score = suffix_score(entry.left_id, entry.right_id, entry.cost);
+                    alternative = entry.surface;
+                }
+            }
+            if (!alternative.empty() && alternative_score - ending_score <= kSuffixMargin &&
+                !Hidden(suppressed, segment.reading, head_text + std::u16string(alternative))) {
+                AddUnique(segment.candidates, head_text + std::u16string(alternative));
+            }
+        }
         std::vector<std::u16string> special = NumberForms(head_reading);
         if (special.empty() && IsDateReading(head_reading)) {
-            special = DateForms(head_reading, clock_ ? clock_() : CurrentLocalTime());
+            special = DateForms(head_reading, clock_ ? clock_() : CurrentLocalTime(), date_format_);
         }
         for (std::u16string& text : special) {
             if (!Hidden(suppressed, head_reading, text)) {

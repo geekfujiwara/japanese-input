@@ -59,5 +59,26 @@ TEST(SpecialCandidates, DatesAndTimes)
     EXPECT_FALSE(IsDateReading(u"あさ"));
 }
 
+// T-B09-3, T-C13-1: yyyy-MM-dd, yyyyMMdd and M/d, and the preferred form first among the dates
+TEST(SpecialCandidates, DateFormats)
+{
+    const LocalTime now{2026, 9, 5, 14, 5};
+    EXPECT_EQ(DateForms(u"きょう", now),
+              (std::vector<std::u16string>{u"2026/09/05", u"2026年9月5日", u"9月5日", u"9月5日(土)", u"令和8年9月5日",
+                                           u"2026-09-05", u"20260905", u"9/5", u"土曜日"}));
+    const std::vector<std::u16string> iso = DateForms(u"あした", now, DateFormat::Iso);
+    EXPECT_EQ(iso.front(), u"2026-09-06");
+    EXPECT_EQ(iso.size(), 9u) << "the others are still there";
+    EXPECT_EQ(DateForms(u"きょう", now, DateFormat::Compact).front(), u"20260905");
+    EXPECT_EQ(DateForms(u"きょう", now, DateFormat::SlashShort).front(), u"9/5");
+    EXPECT_EQ(DateForms(u"きょう", LocalTime{2019, 4, 30, 0, 0}, DateFormat::Era).front(), u"2019/04/30")
+        << "no era form before 令和; the usual order";
+
+    for (std::size_t i = 0; i < kDateFormatNames.size(); ++i) {
+        EXPECT_EQ(DateFormatFromName(kDateFormatNames[i]), static_cast<DateFormat>(i));
+    }
+    EXPECT_FALSE(DateFormatFromName(u"dd.MM.yyyy").has_value());
+}
+
 } // namespace
 } // namespace astelio

@@ -4,6 +4,7 @@
 
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <random>
 #include <string>
 #include <vector>
@@ -65,6 +66,10 @@ protected:
         add(u"ちゃ", u"茶", kNoun, 300);
         add(u"きょう", u"今日", kNoun, 300);
         add(u"たっせい", u"達成", kNoun, 500);
+        add(u"はんよう", u"汎用", kNoun, 400);
+        add(u"か", u"か", kParticle, 100);
+        add(u"か", u"化", kAuxiliary, 200);
+        add(u"か", u"蚊", kNoun, 300);
         bytes_ = builder.Build();
         dictionary_ = astelio::SystemDictionary::Open(bytes_);
         ASSERT_TRUE(dictionary_);
@@ -114,6 +119,19 @@ TEST_F(ConverterTest, SegmentCandidatesReplaceTheHeadAndKeepTheParticle)
     EXPECT_EQ(segments[0].head_length, 3u) << "わたし";
     EXPECT_EQ(segments[0].tail, u"は");
     EXPECT_EQ(segments[1].right_id, kAuxiliary) << "the last word of the best candidate: です";
+}
+
+// T-B02-6: a suffix in kanji spelled like the ending particle (か → 化) comes second: 汎用か / 汎用化.
+TEST_F(ConverterTest, SuffixSpelledLikeTheParticleComesSecond)
+{
+    const std::vector<ConvertedSegment> segments = Convert(u"はんようか");
+    ASSERT_EQ(segments.size(), 1u);
+    ASSERT_GE(segments[0].candidates.size(), 2u);
+    EXPECT_EQ(segments[0].candidates[0], u"汎用か");
+    EXPECT_EQ(segments[0].candidates[1], u"汎用化");
+    EXPECT_EQ(std::count(segments[0].candidates.begin(), segments[0].candidates.end(), u"汎用蚊"), 0)
+        << "only suffixes, not content words";
+    EXPECT_EQ(Convert(u"わたしは")[0].candidates.at(1), u"渡しは") << "は has no suffix in kanji";
 }
 
 // T-B02-5: the word committed before (its right id) is the context of the next conversion.
@@ -229,6 +247,12 @@ TEST_F(ConverterTest, NumbersAndDatesGetSpecialCandidates)
     EXPECT_EQ(dates[0], u"今日は");
     EXPECT_NE(std::find(dates.begin(), dates.end(), u"2026/09/25は"), dates.end()) << "the particle is kept";
     EXPECT_NE(std::find(dates.begin(), dates.end(), u"9月25日(金)は"), dates.end());
+
+    converter.SetDateFormat(astelio::DateFormat::Iso); // T-C13-1
+    const std::vector<std::u16string> iso = converter.Convert(u"きょうは").at(0).candidates;
+    ASSERT_GE(iso.size(), 2u);
+    EXPECT_EQ(iso[0], u"今日は");
+    EXPECT_EQ(iso[1], u"2026-09-25は") << "the preferred form is the first date";
 }
 
 using Pos = astelio::UserDictionary::PartOfSpeech;

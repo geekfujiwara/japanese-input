@@ -656,6 +656,36 @@ protected:
         ASSERT_HRESULT_SUCCEEDED(compartment->SetValue(client_id_, &value));
     }
 
+    // C-14: the global compartment the TIPs of all apps share the mode through.
+    ComPtr<ITfCompartment> SharedMode()
+    {
+        ComPtr<ITfCompartmentMgr> global;
+        ComPtr<ITfCompartment> compartment;
+        EXPECT_HRESULT_SUCCEEDED(thread_mgr_->GetGlobalCompartment(&global));
+        if (global) {
+            EXPECT_HRESULT_SUCCEEDED(global->GetCompartment(astelio::tip::kSharedModeCompartmentGuid, &compartment));
+        }
+        return compartment;
+    }
+
+    static long ValueOf(ITfCompartment* compartment)
+    {
+        VARIANT value;
+        VariantInit(&value);
+        const long result = SUCCEEDED(compartment->GetValue(&value)) && value.vt == VT_I4 ? value.lVal : -1;
+        VariantClear(&value);
+        return result;
+    }
+
+    void SetValue(ITfCompartment* compartment, long number)
+    {
+        VARIANT value;
+        VariantInit(&value);
+        value.vt = VT_I4;
+        value.lVal = number;
+        ASSERT_HRESULT_SUCCEEDED(compartment->SetValue(client_id_, &value));
+    }
+
     ComPtr<ITfLangBarItemButton> ModeButton()
     {
         ComPtr<ITfLangBarItemMgr> items;
@@ -967,6 +997,34 @@ TEST_F(TypingTest, KeyboardCloseFromOutsideSwitchesToEnglish)
     SetOpenClose(1);
     EXPECT_TRUE(Press('A', 0x1E));
     EXPECT_EQ(Text(), L"\u304B\u3042");
+}
+
+// T-C14-1: the mode is shared with the other apps through a global compartment, both ways, and can be turned off.
+TEST_F(TypingTest, InputModeIsSharedBetweenApps)
+{
+    const ComPtr<ITfCompartment> shared = SharedMode();
+    ASSERT_TRUE(shared);
+    EXPECT_EQ(ValueOf(shared.Get()), 1);
+    EXPECT_TRUE(TapAlt(false));
+    EXPECT_EQ(ValueOf(shared.Get()), 0) << "English is published for the other apps";
+
+    SetValue(shared.Get(), 1); // another app switched to Japanese
+    EXPECT_EQ(OpenCloseValue(), 1);
+    EXPECT_EQ(ModeButtonText(), L"\u3042");
+    EXPECT_TRUE(Press('A', 0x1E));
+    EXPECT_EQ(Text(), L"\u3042");
+    EXPECT_TRUE(Press(VK_ESCAPE, 0x01));
+
+    const DWORD off = 0;
+    ASSERT_EQ(RegSetKeyValueW(HKEY_CURRENT_USER, kTestSettingsKey, L"SharedInputMode", REG_DWORD, &off, sizeof(off)),
+              ERROR_SUCCESS);
+    use_settings_(kTestSettingsKey);
+    SetValue(shared.Get(), 0);
+    EXPECT_EQ(OpenCloseValue(), 1) << "sharing off: this app keeps its own mode";
+    EXPECT_TRUE(TapAlt(false));
+    EXPECT_EQ(ValueOf(shared.Get()), 0);
+    EXPECT_TRUE(TapAlt(true));
+    EXPECT_EQ(ValueOf(shared.Get()), 0) << "and does not publish it";
 }
 
 // T-B02-1, T-B06-1 (TIP): Space converts in the document, Space picks the next candidate,
