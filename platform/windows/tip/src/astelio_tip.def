@@ -2,6 +2,8 @@ LIBRARY astelio_tip
 EXPORTS
     AstelioTipEnableForUser PRIVATE
     AstelioTipKeyDiagnostics PRIVATE
+    AstelioTipOpenLearningHistory PRIVATE
+    AstelioTipOpenUserDictionary PRIVATE
     AstelioTipTestCandidateWindow PRIVATE
     AstelioTipTestEmojiWindow PRIVATE
     AstelioTipTestKey PRIVATE

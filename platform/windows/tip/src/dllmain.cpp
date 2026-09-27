@@ -1,6 +1,8 @@
 #include "dictionary_loader.h"
+#include "learning_manager.h"
 #include "module.h"
 #include "text_service.h"
+#include "user_dictionary_manager.h"
 
 #include "astelio/tip/guids.h"
 
@@ -152,4 +154,41 @@ extern "C" void CALLBACK AstelioTipEnableForUser(HWND /*window*/, HINSTANCE /*in
                                                  int /*show*/)
 {
     astelio::tip::EnableForCurrentUser();
+}
+
+namespace {
+
+// rundll32 has no message loop of its own; run one until the window is gone.
+void RunUntilClosed(HWND window)
+{
+    MSG message{};
+    while (window != nullptr && IsWindow(window)) {
+        MsgWaitForMultipleObjects(0, nullptr, FALSE, 250, QS_ALLINPUT);
+        while (PeekMessageW(&message, nullptr, 0, 0, PM_REMOVE)) {
+            TranslateMessage(&message);
+            DispatchMessageW(&message);
+        }
+    }
+}
+
+} // namespace
+
+// For the settings app: rundll32 astelio_tip.dll,AstelioTipOpenUserDictionary (returns when the window closes).
+extern "C" void CALLBACK AstelioTipOpenUserDictionary(HWND /*window*/, HINSTANCE /*instance*/, LPSTR /*command*/,
+                                                      int /*show*/)
+{
+    const HRESULT com = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED); // the file dialogs of import / export
+    astelio::tip::ShowUserDictionaryManager();
+    RunUntilClosed(astelio::tip::UserDictionaryManagerWindow());
+    if (SUCCEEDED(com)) {
+        CoUninitialize();
+    }
+}
+
+// For the settings app: rundll32 astelio_tip.dll,AstelioTipOpenLearningHistory (returns when the window closes).
+extern "C" void CALLBACK AstelioTipOpenLearningHistory(HWND /*window*/, HINSTANCE /*instance*/, LPSTR /*command*/,
+                                                       int /*show*/)
+{
+    astelio::tip::ShowLearningManager();
+    RunUntilClosed(astelio::tip::LearningManagerWindow());
 }
