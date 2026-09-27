@@ -1,7 +1,9 @@
 <#
 .SYNOPSIS
-    Builds the Astelio IME installer (MSI) for one architecture with WiX Toolset v5.
+    Builds the Astelio IME setup exe and MSI for one architecture with WiX Toolset v5.
 .DESCRIPTION
+    Makes AstelioIME-<version>-<arch>-setup.exe (the wizard, for people) and AstelioIME-<version>-<arch>.msi (for
+    the Microsoft Store and silent installs).
     Expects the CI artifacts laid out like "gh run download": <Artifacts>\astelio-tip-windows-<arch>\astelio_tip.dll,
     <Artifacts>\astelio-tip-windows-x86\astelio_tip.dll and <Artifacts>\astelio-dictionary\system.dic. The settings app
     (platform/windows/settings/Astelio.Settings) is published here for the same architecture unless -SettingsApp
@@ -78,27 +80,63 @@ if (-not (Test-Path $SettingsApp)) {
 }
 
 $wix = Get-Package $packages[0]
+$wixDll = Join-Path $wix 'tools\net6.0\any\wix.dll'
 New-Item -ItemType Directory -Force -Path $OutputDirectory | Out-Null
-$output = Join-Path $OutputDirectory "AstelioIME-$Version-$Arch.msi"
-
 $env:DOTNET_ROLL_FORWARD = 'Major'
-$arguments = @(
-    (Join-Path $wix 'tools\net6.0\any\wix.dll'), 'build', (Join-Path $root 'platform\windows\installer\Package.wxs'),
-    '-arch', $Arch,
-    '-d', "Version=$Version", '-d', "Arch=$Arch",
-    '-d', "NativeTip=$((Resolve-Path $nativeTip).Path)", '-d', "X86Tip=$((Resolve-Path $x86Tip).Path)",
-    '-d', "DictionaryDir=$((Resolve-Path $dictionary).Path)", '-d', "RepositoryRoot=$root",
-    '-d', "SettingsApp=$((Resolve-Path $SettingsApp).Path)",
-    '-d', "IconFile=$(Join-Path $root 'assets\icon\AstelioIME.ico')",
-    '-intermediatefolder', (Join-Path $work "obj-$Arch"), '-o', $output
-)
-& dotnet @arguments | Out-Host
-if ($LASTEXITCODE -ne 0) {
-    throw "wix build failed with exit code $LASTEXITCODE"
+
+function Build-Msi([string]$Output, [string]$Compressed, [string]$Intermediate) {
+    $arguments = @(
+        $wixDll, 'build', (Join-Path $root 'platform\windows\installer\Package.wxs'),
+        '-arch', $Arch,
+        '-d', "Version=$Version", '-d', "Arch=$Arch",
+        '-d', "NativeTip=$((Resolve-Path $nativeTip).Path)", '-d', "X86Tip=$((Resolve-Path $x86Tip).Path)",
+        '-d', "DictionaryDir=$((Resolve-Path $dictionary).Path)", '-d', "RepositoryRoot=$root",
+        '-d', "SettingsApp=$((Resolve-Path $SettingsApp).Path)", '-d', "SettingsCompressed=$Compressed",
+        '-d', "IconFile=$(Join-Path $root 'assets\icon\AstelioIME.ico')",
+        '-intermediatefolder', (Join-Path $work $Intermediate), '-o', $Output
+    )
+    & dotnet @arguments | Out-Host
+    if ($LASTEXITCODE -ne 0) {
+        throw "wix build failed with exit code $LASTEXITCODE"
+    }
+    # ICE43 / ICE57 treat the Start menu as a user profile folder; this package is per machine (ALLUSERS=1).
+    & dotnet $wixDll msi validate -sice ICE43 -sice ICE57 $Output | Out-Host
+    if ($LASTEXITCODE -ne 0) {
+        throw "The MSI did not pass the ICE validation (exit code $LASTEXITCODE)"
+    }
 }
-# ICE43 / ICE57 treat the Start menu as a user profile folder; this package is per machine (ALLUSERS=1).
-& dotnet (Join-Path $wix 'tools\net6.0\any\wix.dll') msi validate -sice ICE43 -sice ICE57 $output | Out-Host
-if ($LASTEXITCODE -ne 0) {
-    throw "The MSI did not pass the ICE validation (exit code $LASTEXITCODE)"
-}
+
+# The MSI on its own (Microsoft Store, silent installs): everything inside.
+$output = Join-Path $OutputDirectory "AstelioIME-$Version-$Arch.msi"
+Build-Msi $output 'default' "obj-$Arch"
 Write-Host "Built $output"
+
+# The setup exe: the settings app with an MSI that leaves the app out appended (Setup/SetupPayload.cs). WiX lays the
+# app out next to that MSI where Windows Installer looks for it; the setup writes itself to the same place.
+$setupWork = Join-Path $work "setup-$Arch"
+if (Test-Path $setupWork) {
+    Remove-Item -LiteralPath $setupWork -Recurse -Force
+}
+$setupMsi = Join-Path $setupWork 'AstelioIME.msi'
+Build-Msi $setupMsi 'no' "obj-setup-$Arch"
+$laidOut = Get-ChildItem -LiteralPath $setupWork -Recurse -File -Filter 'AstelioSettings.exe' | Select-Object -First 1
+if (-not $laidOut) {
+    throw "WiX did not lay out AstelioSettings.exe in $setupWork"
+}
+$appPath = [IO.Path]::GetRelativePath($setupWork, $laidOut.FullName)
+$setup = Join-Path $OutputDirectory "AstelioIME-$Version-$Arch-setup.exe"
+Copy-Item -LiteralPath $SettingsApp -Destination $setup -Force
+$stream = [IO.File]::Open($setup, 'Append', 'Write')
+try {
+    $msiBytes = [IO.File]::ReadAllBytes($setupMsi)
+    $pathBytes = [Text.Encoding]::UTF8.GetBytes($appPath)
+    $stream.Write($msiBytes, 0, $msiBytes.Length)
+    $stream.Write($pathBytes, 0, $pathBytes.Length)
+    $stream.Write([BitConverter]::GetBytes([int]$pathBytes.Length), 0, 4)
+    $stream.Write([BitConverter]::GetBytes([long]$msiBytes.Length), 0, 8)
+    $magic = [Text.Encoding]::ASCII.GetBytes('ASTSETUP')
+    $stream.Write($magic, 0, $magic.Length)
+} finally {
+    $stream.Dispose()
+}
+Write-Host "Built $setup"

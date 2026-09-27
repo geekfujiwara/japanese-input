@@ -1,6 +1,8 @@
 using System.Diagnostics;
+using System.IO;
 using System.Runtime.InteropServices;
 using System.Windows;
+using Astelio.Settings.Setup;
 
 namespace Astelio.Settings;
 
@@ -11,16 +13,32 @@ public partial class App : Application
     protected override void OnStartup(StartupEventArgs e)
     {
         base.OnStartup(e);
-        _single = new Mutex(initiallyOwned: true, @"Local\AstelioIME.Settings", out bool first);
+        // The setup exe is this app with the MSI appended (Setup/SetupPayload.cs).
+        SetupPayload? payload = ReadPayload();
+        bool setup = payload is not null || e.Args.Contains("--setup-preview");
+        _single = new Mutex(initiallyOwned: true, setup ? @"Local\AstelioIME.Setup" : @"Local\AstelioIME.Settings", out bool first);
         if (!first)
         {
             BringOtherToFront();
             Shutdown();
             return;
         }
-        var window = new MainWindow(CommandLine.Parse(e.Args));
+        Window window = setup ? new SetupWindow(payload) : new MainWindow(CommandLine.Parse(e.Args));
         MainWindow = window;
         window.Show();
+    }
+
+    private static SetupPayload? ReadPayload()
+    {
+        try
+        {
+            using FileStream self = File.OpenRead(Environment.ProcessPath!);
+            return SetupPayload.Read(self);
+        }
+        catch (IOException)
+        {
+            return null;
+        }
     }
 
     protected override void OnExit(ExitEventArgs e)

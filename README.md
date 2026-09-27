@@ -104,10 +104,12 @@ flowchart LR
 
 | PC | ファイル |
 | --- | --- |
-| ARM64（Snapdragon など） | `AstelioIME-<版>-arm64.msi` |
-| x64（Intel / AMD） | `AstelioIME-<版>-x64.msi` |
+| ARM64（Snapdragon など） | `AstelioIME-<版>-arm64-setup.exe` |
+| x64（Intel / AMD） | `AstelioIME-<版>-x64-setup.exe` |
 
-- インストールするとキーボードの一覧に「Astelio IME」が入り、最後にアニメーションで操作を紹介する使い方のページが開きます（スタートメニューの「Astelio IME の使い方」からも開けます）。設定は「Astelio IME の設定」です
+- 開くとウィザードが起動し、Astelio IME でできることをアニメーションで紹介してからインストールし、最後にはじめの設定を選べます。キーボードの一覧には「Astelio IME」が入ります。スタートメニューの「Astelio IME の設定」「Astelio IME の使い方」から、あとで設定や紹介を開けます
+- 前の版が入っているときは、使用中のファイルが PC の再起動で新しくなります（完了の画面で案内します）
+- 管理ツールや `msiexec /qn` で入れるときは、MSI（`AstelioIME-<版>-<arch>.msi`）を使います
 - すでに起動していたアプリは、起動し直すと使えます。右Altの単押しで日本語、左Altの単押しで英語です
 - まだコード署名をしていないため、「Windows によって PC が保護されました」と出ることがあります。「詳細情報」→「実行」で進めます。ファイルの SHA-256 はリリースの `SHA256SUMS.txt` にあります
 - アンインストールは［設定］→［アプリ］→［インストールされているアプリ］から行います
@@ -140,7 +142,7 @@ TIPの結合テスト（登録を伴う）は `ASTELIO_TIP_INTEGRATION=1` のと
 | --- | --- |
 | [core/](core) | 変換エンジン（C++20） |
 | [platform/windows/tip/](platform/windows/tip) | Windows TIP（TSF） |
-| [platform/windows/installer/](platform/windows/installer) | インストーラー（WiXのMSI）と使い方のページ。`./tools/Build-Installer.ps1 -Arch arm64` で作る |
+| [platform/windows/installer/](platform/windows/installer) | インストーラー（セットアップexeとWiXのMSI）と使い方のページ。`./tools/Build-Installer.ps1 -Arch arm64` で作る |
 | [assets/](assets) | アイコン（`./tools/Generate-AppIcon.ps1` で作る） |
 | [dictionary/tools/](dictionary/tools) | 辞書の変換・作成・確認ツール |
 | [eval/](eval) | 変換精度の評価コーパスと評価ツール（CIで正解率を記録） |

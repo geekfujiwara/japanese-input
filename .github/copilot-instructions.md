@@ -73,11 +73,12 @@ TIP（Windows）の試用: CIの成果物 `astelio-tip-windows-<arch>` を取得
 インストーラー（MSI、WiX v5）とリリース:
 
 ```powershell
-./tools/Build-Installer.ps1 -Arch arm64 -Artifacts artifacts/tip   # Get-AstelioTip.ps1 の成果物から artifacts/installer/*.msi
+./tools/Build-Installer.ps1 -Arch arm64 -Artifacts artifacts/tip   # Get-AstelioTip.ps1 の成果物から artifacts/installer/*-setup.exe と *.msi
 ./tools/Generate-AppIcon.ps1                                      # アイコン（assets/icon）を作り直す
 ```
 
 - リリースはタグ `vX.Y.Z`（`CMakeLists.txt` の `project(... VERSION)` と同じ版）を送ると `.github/workflows/release.yml` が作る。タグの送信は公開に当たるので、ユーザーの指示があるときだけ行う
 - MSIのインストールは管理者の確認が出るので、ユーザーが行う
+- セットアップexeは設定アプリにMSIをつないだもの（`Setup/SetupPayload.cs`）。画面の確認は `AstelioSettings.exe --setup-preview`（何もインストールしない）。MSIの中で設定アプリを探す場所は、管理者なしでコストの計算（`CostInitialize`〜`CostFinalize` の後の `SourcePath`）で確かめられる
 - Windows InstallerのCOMでMSIを開いたままにすると、同じターミナルでのWiXのビルドが 1631 で失敗する。中身は `wix msi decompile` で確かめる
 - ARM64版Windowsのx64アプリは、ARM64Xの転送DLLを用意するまで対象外

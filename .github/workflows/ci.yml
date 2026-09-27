@@ -194,13 +194,15 @@ jobs:
       - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
         with:
           dotnet-version: 10.0.x
-      - name: Build the MSI (with ICE validation)
+      - name: Build the setup exe and the MSI (with ICE validation)
         shell: pwsh
         run: ./tools/Build-Installer.ps1 -Arch ${{ matrix.arch }} -Artifacts artifacts/tip -OutputDirectory artifacts/installer
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: installer-${{ matrix.arch }}
-          path: artifacts/installer/*.msi
+          path: |
+            artifacts/installer/*-setup.exe
+            artifacts/installer/*.msi
           if-no-files-found: error
           retention-days: 30
 

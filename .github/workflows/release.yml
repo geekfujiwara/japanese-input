@@ -1,6 +1,6 @@
 name: Release
 
-# Builds the TIPs, the system dictionary and the installers (MSI for ARM64 and x64) from a tag, and publishes them
+# Builds the TIPs, the system dictionary and the installers (setup exe and MSI for ARM64 and x64) from a tag, and publishes them
 # as a GitHub Release. The tag (vX.Y.Z) must match project(... VERSION X.Y.Z) in CMakeLists.txt.
 on:
   push:
@@ -128,13 +128,15 @@ jobs:
       - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
         with:
           dotnet-version: 10.0.x
-      - name: Build the MSI
+      - name: Build the setup exe and the MSI
         shell: pwsh
         run: ./tools/Build-Installer.ps1 -Arch ${{ matrix.arch }} -Artifacts artifacts/tip -Version ${{ needs.version.outputs.version }} -OutputDirectory artifacts/installer
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: installer-${{ matrix.arch }}
-          path: artifacts/installer/*.msi
+          path: |
+            artifacts/installer/*-setup.exe
+            artifacts/installer/*.msi
           if-no-files-found: error
           retention-days: 7
 
@@ -161,18 +163,18 @@ jobs:
           VERSION: ${{ needs.version.outputs.version }}
         run: |
           cd dist
-          sha256sum *.msi > SHA256SUMS.txt
+          sha256sum *-setup.exe *.msi > SHA256SUMS.txt
           {
             echo "Astelio IME ${VERSION} のプレビュー版です（Windows 11 / 英語配列キーボード）。"
             echo
             echo "## インストール"
             echo
-            echo "- ARM64 の PC（Snapdragon など）: \`AstelioIME-${VERSION}-arm64.msi\`"
-            echo "- x64 の PC（Intel / AMD）: \`AstelioIME-${VERSION}-x64.msi\`"
+            echo "- ARM64 の PC（Snapdragon など）: \`AstelioIME-${VERSION}-arm64-setup.exe\`"
+            echo "- x64 の PC（Intel / AMD）: \`AstelioIME-${VERSION}-x64-setup.exe\`"
             echo
-            echo "ダウンロードした MSI を開き、画面の案内に従ってください（管理者の確認が出ます）。"
-            echo "インストールが終わると、キーボードの一覧に「Astelio IME」が入り、使い方のページが開きます。"
+            echo "ダウンロードした setup.exe を開くと、ウィザードが Astelio IME の紹介、インストール、はじめの設定まで案内します（管理者の確認が出ます）。"
             echo "すでに起動していたアプリは、起動し直すと使えます。右Altの単押しで日本語、左Altの単押しで英語です。"
+            echo "MSI（\`AstelioIME-${VERSION}-<arch>.msi\`）は、管理ツールや \`msiexec /qn\` で入れるときのためのものです。"
             echo
             echo "> [!NOTE]"
             echo "> まだコード署名をしていないため、「Windows によって PC が保護されました」と表示されることがあります。"
@@ -182,8 +184,8 @@ jobs:
             echo "不具合の報告や変換の要望は [Issue](https://github.com/${GH_REPO}/issues/new/choose) で受け付けています。"
           } > notes.md
           if gh release view "$RELEASE_TAG" > /dev/null 2>&1; then
-            gh release upload "$RELEASE_TAG" *.msi SHA256SUMS.txt --clobber
+            gh release upload "$RELEASE_TAG" *-setup.exe *.msi SHA256SUMS.txt --clobber
           else
-            gh release create "$RELEASE_TAG" *.msi SHA256SUMS.txt --prerelease --verify-tag \
+            gh release create "$RELEASE_TAG" *-setup.exe *.msi SHA256SUMS.txt --prerelease --verify-tag \
               --title "Astelio IME ${VERSION}（プレビュー）" --notes-file notes.md
           fi
