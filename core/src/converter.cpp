@@ -457,7 +457,7 @@ std::vector<ConvertedSegment> Converter::Convert(std::u16string_view reading,
         }
         const std::u16string best_text = best;
         AddUnique(segment.candidates, std::move(best));
-        if (end - tail == 1) {
+        if (end - tail == 1 && !HasKanji(path[end - 1]->surface)) {
             const Node& ending = *path[end - 1];
             const std::uint16_t before_ending = path[end - 2]->right;
             const auto suffix_score = [&](std::uint16_t left, std::uint16_t right, std::int32_t cost) {
@@ -467,17 +467,19 @@ std::vector<ConvertedSegment> Converter::Convert(std::u16string_view reading,
             const std::int32_t ending_score = suffix_score(ending.left, ending.right, ending.cost);
             const std::u16string_view ending_reading = reading.substr(ending.begin, ending.end - ending.begin);
             const std::u16string head_text = best_text.substr(0, best_text.size() - ending.surface.size());
-            std::int32_t cheapest = kInfinity;
+            // The most common kanji suffix (化 rather than 家), if it fits almost as well as the particle.
+            std::int16_t cheapest = std::numeric_limits<std::int16_t>::max();
+            std::int32_t alternative_score = kInfinity;
             std::u16string_view alternative;
             for (const DictionaryEntry& entry : dictionary_.Lookup(ending_reading)) {
-                const std::int32_t alternative_score = suffix_score(entry.left_id, entry.right_id, entry.cost);
-                if (entry.surface != ending.surface && HasKanji(entry.surface) &&
-                    dictionary_.word_type(entry.left_id) == WordType::Suffix && alternative_score < cheapest) {
-                    cheapest = alternative_score;
+                if (HasKanji(entry.surface) && dictionary_.word_type(entry.left_id) == WordType::Suffix &&
+                    entry.cost < cheapest) {
+                    cheapest = entry.cost;
+                    alternative_score = suffix_score(entry.left_id, entry.right_id, entry.cost);
                     alternative = entry.surface;
                 }
             }
-            if (!alternative.empty() && cheapest - ending_score <= kSuffixMargin &&
+            if (!alternative.empty() && alternative_score - ending_score <= kSuffixMargin &&
                 !Hidden(suppressed, segment.reading, head_text + std::u16string(alternative))) {
                 AddUnique(segment.candidates, head_text + std::u16string(alternative));
             }

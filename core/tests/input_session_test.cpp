@@ -371,7 +371,7 @@ TEST_F(ConversionTest, CandidateColumns)
     }
     converter_->SetUserDictionary(&user);
     session_.SetUserDictionary(&user);
-    Type(session_, u"watasiha");
+    Type(session_, u"watasihanihongodesu");
     session_.Handle(Key(KeyKind::Space));
     ASSERT_EQ(session_.Segments().size(), 2u);
     session_.Handle(Arrow(KeyKind::Right));
