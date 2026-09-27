@@ -1192,10 +1192,19 @@ void TextService::UpdateCandidateWindow(TfEditCookie cookie, ITfContext* context
     RECT anchor{};
     CompositionRect(cookie, context, offset, length, &anchor);
     if (!candidate_window_) {
-        candidate_window_.reset(new (std::nothrow) CandidateWindow());
+        candidate_window_.reset(new (std::nothrow) CandidateWindow([this](std::size_t index) {
+            if (const ComPtr<ITfContext> focused = FocusedContext()) {
+                Deliver(focused.Get(), session_.PickRelatedEmoji(index));
+            }
+        }));
     }
     if (candidate_window_) {
-        candidate_window_->Show(*candidates, selected, anchor, marks);
+        if (predicting) {
+            candidate_window_->Show(*candidates, selected, anchor, marks);
+        } else {
+            candidate_window_->Show(*candidates, selected, anchor, marks, session_.RelatedEmoji(),
+                                    session_.RelatedEmojiSelection());
+        }
     }
 }
 

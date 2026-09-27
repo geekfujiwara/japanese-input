@@ -145,6 +145,15 @@ public:
     // the digits pick from the focused column, PageUp / PageDown move by the 27 shown together.
     static constexpr std::size_t kCandidateColumns = 3;
     static constexpr std::size_t kCandidateGridSize = kCandidatePageSize * kCandidateColumns;
+    // B-03: emoji found by the reading of the focused segment's head, shown as a column right of the candidates
+    // while the list is open (empty when there are none). Right from the last candidate column moves into it;
+    // the digits, Enter or a click put the emoji in place of the head.
+    const std::vector<std::u16string>& RelatedEmoji() const { return related_emoji_; }
+    // The emoji selected in that column, kNoEmojiSelection while the candidates have the focus.
+    std::size_t RelatedEmojiSelection() const { return related_focus_ ? related_selected_ : kNoEmojiSelection; }
+    SessionOutput PickRelatedEmoji(std::size_t index);
+    static constexpr std::size_t kMaxRelatedEmoji = 9;
+    static constexpr std::size_t kMinRelatedReading = 2;
 
     // B-04: candidates predicted from the kana typed so far (shown while typing; Tab or Down selects them).
     const std::vector<std::u16string>& Predictions() const { return predictions_; }
@@ -200,6 +209,8 @@ private:
     bool Hidden(const ConvertedSegment& segment, std::u16string_view surface) const;
     bool ForgetSelectedCandidate();
     void EndConversion();
+    void RefreshRelatedEmoji();
+    void UseRelatedEmoji(std::size_t index);
 
     Composer composer_;
     CharacterSettings settings_;
@@ -247,6 +258,10 @@ private:
     Composer emoji_search_;
     std::vector<std::u16string> emoji_items_;
     std::size_t emoji_selected_ = 0;
+    std::vector<std::u16string> related_emoji_;
+    std::u16string related_reading_; // what related_emoji_ was searched for
+    bool related_focus_ = false;
+    std::size_t related_selected_ = 0;
 };
 
 } // namespace astelio

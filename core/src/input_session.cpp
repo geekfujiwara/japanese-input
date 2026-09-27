@@ -119,6 +119,7 @@ SessionOutput InputSession::Handle(const KeyEvent& key)
         last_commit_.reset(); // a new composition started after the commit
     }
     UpdatePredictions();
+    RefreshRelatedEmoji();
     return output;
 }
 
@@ -303,6 +304,34 @@ bool InputSession::HandleCandidateList(const KeyEvent& key)
 {
     const std::size_t count = segments_[focus_].candidates.size();
     std::size_t& selected = selected_[focus_];
+    if (related_focus_ && candidate_list_visible_) {
+        const std::size_t emoji = related_emoji_.size();
+        switch (key.kind) {
+        case KeyKind::Left:
+            related_focus_ = false;
+            return true;
+        case KeyKind::Right:
+            return true;
+        case KeyKind::Up:
+            related_selected_ = (related_selected_ + emoji - 1) % emoji;
+            return true;
+        case KeyKind::Down:
+        case KeyKind::Space:
+        case KeyKind::Tab:
+            related_selected_ = (related_selected_ + 1) % emoji;
+            return true;
+        case KeyKind::Character:
+            if (key.character < u'1' || key.character > u'9') {
+                return false;
+            }
+            if (const std::size_t index = static_cast<std::size_t>(key.character - u'1'); index < emoji) {
+                UseRelatedEmoji(index);
+            }
+            return true;
+        default:
+            return false;
+        }
+    }
     switch (key.kind) {
     case KeyKind::Space:
     case KeyKind::Down:
@@ -323,10 +352,18 @@ bool InputSession::HandleCandidateList(const KeyEvent& key)
     case KeyKind::Left:
     case KeyKind::Right: {
         // Columns only when the list shows more than one; otherwise the arrows move between the segments.
-        if (!candidate_list_visible_ || key.shift || count <= kCandidatePageSize) {
+        if (!candidate_list_visible_ || key.shift) {
             return false;
         }
         const std::size_t column = selected / kCandidatePageSize;
+        if (key.kind == KeyKind::Right && column == (count - 1) / kCandidatePageSize && !related_emoji_.empty()) {
+            related_focus_ = true;
+            related_selected_ = std::min(selected % kCandidatePageSize, related_emoji_.size() - 1);
+            break;
+        }
+        if (count <= kCandidatePageSize) {
+            return false;
+        }
         if (key.kind == KeyKind::Left) {
             selected = column > 0 ? selected - kCandidatePageSize : selected;
         } else if (selected + kCandidatePageSize < count) {
@@ -424,6 +461,9 @@ SessionOutput InputSession::HandleConversion(const KeyEvent& key)
         break;
     }
     case KeyKind::Enter:
+        if (related_focus_) {
+            UseRelatedEmoji(related_selected_);
+        }
         output.commit = CommitConversion(output);
         break;
     case KeyKind::Escape:
@@ -820,6 +860,56 @@ void InputSession::EndConversion()
     selected_.clear();
     focus_ = 0;
     candidate_list_visible_ = false;
+}
+
+void InputSession::RefreshRelatedEmoji()
+{
+    if (!converting_ || !candidate_list_visible_ || focus_ >= segments_.size()) {
+        related_emoji_.clear();
+        related_reading_.clear();
+        related_focus_ = false;
+        return;
+    }
+    const ConvertedSegment& segment = segments_[focus_];
+    const std::u16string reading =
+        segment.head_length > 0 ? segment.reading.substr(0, segment.head_length) : segment.reading;
+    if (reading == related_reading_) {
+        return;
+    }
+    related_reading_ = reading;
+    related_emoji_.clear();
+    related_focus_ = false;
+    const EmojiCatalog* catalog = reading.size() >= kMinRelatedReading ? Catalog() : nullptr;
+    if (catalog != nullptr) {
+        for (const std::size_t index : catalog->Search(reading, kMaxRelatedEmoji)) {
+            related_emoji_.push_back(catalog->at(index).text);
+        }
+    }
+}
+
+void InputSession::UseRelatedEmoji(std::size_t index)
+{
+    ConvertedSegment& segment = segments_[focus_];
+    const std::u16string text = related_emoji_.at(index) + (segment.head_length > 0 ? segment.tail : u"");
+    std::vector<std::u16string>& candidates = segment.candidates;
+    const auto found = std::find(candidates.begin(), candidates.end(), text);
+    selected_[focus_] = static_cast<std::size_t>(found - candidates.begin());
+    if (found == candidates.end()) {
+        candidates.push_back(text);
+    }
+    related_focus_ = false;
+    candidate_list_visible_ = false;
+}
+
+SessionOutput InputSession::PickRelatedEmoji(std::size_t index)
+{
+    SessionOutput output;
+    if (converting_ && candidate_list_visible_ && index < related_emoji_.size()) {
+        UseRelatedEmoji(index);
+        output.composition_changed = true;
+        RefreshRelatedEmoji();
+    }
+    return output;
 }
 
 const EmojiCatalog* InputSession::Catalog() const
