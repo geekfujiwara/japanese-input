@@ -2,8 +2,8 @@
 <!--
   Astelio IME installer (WiX Toolset v5). Built by tools/Build-Installer.ps1 once per architecture (arm64, x64).
   Installs the native and the x86 TIP to "Program Files\Astelio IME\<arch>" (writable only by administrators, since
-  every app loads the TIP), registers both with regsvr32, adds Astelio IME to the installing user's keyboards and
-  opens the guide.
+  every app loads the TIP), the settings app to "settings", registers both TIPs with regsvr32, adds Astelio IME to the
+  installing user's keyboards and opens the guide.
 -->
 <Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
   <Package Name="Astelio IME"
@@ -30,6 +30,7 @@
         <Directory Id="X86Dir" Name="x86" />
         <Directory Id="DictionaryDir" Name="dictionary" />
         <Directory Id="GuideDir" Name="guide" />
+        <Directory Id="SettingsDir" Name="settings" />
       </Directory>
     </StandardDirectory>
     <StandardDirectory Id="ProgramMenuFolder">
@@ -64,6 +65,13 @@
       </Component>
       <Component Directory="GuideDir">
         <File Source="$(RepositoryRoot)\assets\icon\AstelioIME.png" KeyPath="yes" />
+      </Component>
+      <!-- The settings app (C-12); the TIP opens it from "設定..." in the right-click menu of the mode icon. -->
+      <Component Directory="SettingsDir">
+        <File Id="SettingsApp" Source="$(SettingsApp)" KeyPath="yes">
+          <Shortcut Id="SettingsShortcut" Directory="MenuDir" Name="Astelio IME の設定"
+                    Description="Astelio IME の設定を変える" />
+        </File>
       </Component>
     </ComponentGroup>
     <Feature Id="Main" Title="Astelio IME">

@@ -3,7 +3,9 @@
     Builds the Astelio IME installer (MSI) for one architecture with WiX Toolset v5.
 .DESCRIPTION
     Expects the CI artifacts laid out like "gh run download": <Artifacts>\astelio-tip-windows-<arch>\astelio_tip.dll,
-    <Artifacts>\astelio-tip-windows-x86\astelio_tip.dll and <Artifacts>\astelio-dictionary\system.dic.
+    <Artifacts>\astelio-tip-windows-x86\astelio_tip.dll and <Artifacts>\astelio-dictionary\system.dic. The settings app
+    (platform/windows/settings/Astelio.Settings) is published here for the same architecture unless -SettingsApp
+    gives an AstelioSettings.exe.
     WiX is downloaded from nuget.org at a pinned version and checked against SHA-256. No WiX extension is used, so
     nothing of WiX (MS-RL) goes into the MSI. Needs the .NET SDK (WiX 5 targets .NET 6 and runs on a newer runtime
     through roll-forward). -Version defaults to the project version in CMakeLists.txt.
@@ -15,6 +17,7 @@ param(
     [Parameter(Mandatory)][ValidateSet('arm64', 'x64')][string]$Arch,
     [string]$Artifacts = (Join-Path $PSScriptRoot '..\artifacts\tip'),
     [ValidatePattern('^(\d+\.\d+\.\d+)?$')][string]$Version = '',
+    [string]$SettingsApp = '',
     [string]$OutputDirectory = (Join-Path $PSScriptRoot '..\artifacts\installer')
 )
 
@@ -61,6 +64,19 @@ foreach ($required in $nativeTip, $x86Tip, (Join-Path $dictionary 'system.dic'))
     }
 }
 
+if (-not $SettingsApp) {
+    $settingsOutput = Join-Path $work "settings-$Arch"
+    & dotnet publish (Join-Path $root 'platform\windows\settings\Astelio.Settings\Astelio.Settings.csproj') `
+        -c Release -r "win-$Arch" -p:Version=$Version -o $settingsOutput | Out-Host
+    if ($LASTEXITCODE -ne 0) {
+        throw "dotnet publish of the settings app failed with exit code $LASTEXITCODE"
+    }
+    $SettingsApp = Join-Path $settingsOutput 'AstelioSettings.exe'
+}
+if (-not (Test-Path $SettingsApp)) {
+    throw "Not found: $SettingsApp"
+}
+
 $wix = Get-Package $packages[0]
 New-Item -ItemType Directory -Force -Path $OutputDirectory | Out-Null
 $output = Join-Path $OutputDirectory "AstelioIME-$Version-$Arch.msi"
@@ -72,6 +88,7 @@ $arguments = @(
     '-d', "Version=$Version", '-d', "Arch=$Arch",
     '-d', "NativeTip=$((Resolve-Path $nativeTip).Path)", '-d', "X86Tip=$((Resolve-Path $x86Tip).Path)",
     '-d', "DictionaryDir=$((Resolve-Path $dictionary).Path)", '-d', "RepositoryRoot=$root",
+    '-d', "SettingsApp=$((Resolve-Path $SettingsApp).Path)",
     '-d', "IconFile=$(Join-Path $root 'assets\icon\AstelioIME.ico')",
     '-intermediatefolder', (Join-Path $work "obj-$Arch"), '-o', $output
 )
