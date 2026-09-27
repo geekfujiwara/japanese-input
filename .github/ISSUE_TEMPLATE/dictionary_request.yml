@@ -1,0 +1,70 @@
+name: 辞書への追加・変換の改善
+description: 「こう入力したら、こう変換してほしい」を標準の辞書への追加リクエストとして送る（U-02）
+title: "[辞書] "
+labels: ["dictionary"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        標準の辞書に語を足したり、候補の順番を直したりする要望を受け付けます。
+        受け付けた要望は自動で形を確かめ、辞書作成環境の照合・評価を通った語だけを辞書に加えます。
+
+        **パスワード・個人情報・他人の文章は書かないでください。** この内容は公開されます。
+  - type: input
+    id: reading
+    attributes:
+      label: 読み
+      description: ひらがなで書いてください（カタカナはひらがなとして扱います。64文字まで）
+      placeholder: あすてりお
+    validations:
+      required: true
+  - type: input
+    id: surface
+    attributes:
+      label: 変換してほしい表記
+      description: 128文字まで
+      placeholder: Astelio
+    validations:
+      required: true
+  - type: input
+    id: current
+    attributes:
+      label: 今の変換結果
+      description: 今はどう変換されるか（わかれば）
+      placeholder: 明日照りお
+    validations:
+      required: false
+  - type: dropdown
+    id: kind
+    attributes:
+      label: 種類
+      options:
+        - 新しい語を追加してほしい
+        - 候補にはあるが、順番を上げてほしい
+        - 文節の区切りを直してほしい
+        - その他
+    validations:
+      required: true
+  - type: dropdown
+    id: pos
+    attributes:
+      label: 品詞
+      options:
+        - わからない
+        - 名詞
+        - 固有名詞
+        - 人名
+        - 地名
+        - 組織
+        - 記号
+        - 名詞以外（動詞・形容詞・定型文など）
+    validations:
+      required: true
+  - type: textarea
+    id: context
+    attributes:
+      label: 使う場面・前後の文
+      description: どんな文で使うか（任意）。候補の順番や区切りの判断に使います
+      placeholder: 「あすてりおをインストールする」のように使います
+    validations:
+      required: false
