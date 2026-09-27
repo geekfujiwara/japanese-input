@@ -4,7 +4,7 @@
 
 - 全体計画: [docs/astelio-ime-plan.md](../docs/astelio-ime-plan.md)（要件ID R / B / C / D、フェーズ0〜9）
 - テスト計画: [docs/astelio-ime-test-plan.md](../docs/astelio-ime-test-plan.md)（テストID T-* / REG-* / P-* など）
-- 現在の `src/`・`tests/` は旧キーフック版（.NET WPF）。フェーズ2でTSF版に置き換え、設定アプリとして残す
+- 現在の `src/`・`tests/` は旧キーフック版（.NET WPF）。設定アプリは `platform/windows/settings/`（`Astelio.Settings`）に作った
 
 ## 進め方
 
