@@ -2,9 +2,13 @@
 <!--
   Astelio IME installer (WiX Toolset v5). Built by tools/Build-Installer.ps1 once per architecture (arm64, x64).
   Installs the native and the x86 TIP to "Program Files\Astelio IME\<arch>" (writable only by administrators, since
-  every app loads the TIP), the settings app to "settings", registers both TIPs with regsvr32, adds Astelio IME to the
-  installing user's keyboards and opens the guide.
+  every app loads the TIP), the settings app to "settings", registers both TIPs with regsvr32 and adds Astelio IME to
+  the installing user's keyboards. SettingsCompressed=no leaves the settings app outside the MSI: the setup exe
+  (the settings app itself with this MSI appended) writes itself next to the MSI, so it is not carried twice.
 -->
+<?ifndef SettingsCompressed?>
+<?define SettingsCompressed = default?>
+<?endif?>
 <Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
   <Package Name="Astelio IME"
            Manufacturer="Geek Fujiwara"
@@ -16,7 +20,8 @@
            InstallerVersion="500"
            Compressed="yes">
     <SummaryInformation Description="英語配列キーボード向けの日本語入力システム" Codepage="932" />
-    <MajorUpgrade DowngradeErrorMessage="新しい版の Astelio IME がすでにインストールされています。" />
+    <!-- Same-version upgrades too (ICE61 warns), so running a setup of the same version again repairs cleanly. -->
+    <MajorUpgrade AllowSameVersionUpgrades="yes" DowngradeErrorMessage="新しい版の Astelio IME がすでにインストールされています。" />
     <MediaTemplate EmbedCab="yes" />
 
     <Icon Id="AstelioIME.ico" SourceFile="$(IconFile)" />
@@ -57,21 +62,20 @@
         <File Source="$(RepositoryRoot)\THIRD_PARTY_NOTICES" Name="THIRD_PARTY_NOTICES.txt" KeyPath="yes" />
       </Component>
       <Component Directory="GuideDir">
-        <File Id="GuideFile" Source="$(RepositoryRoot)\platform\windows\installer\guide\index.html" KeyPath="yes">
-          <Shortcut Id="GuideShortcut" Directory="MenuDir" Name="Astelio IME の使い方"
-                    Description="Astelio IME の使い方と設定の手順" Icon="AstelioIME.ico" />
-        </File>
-        <RemoveFolder Id="RemoveMenuDir" Directory="MenuDir" On="uninstall" />
+        <File Id="GuideFile" Source="$(RepositoryRoot)\platform\windows\installer\guide\index.html" KeyPath="yes" />
       </Component>
       <Component Directory="GuideDir">
         <File Source="$(RepositoryRoot)\assets\icon\AstelioIME.png" KeyPath="yes" />
       </Component>
       <!-- The settings app (C-12); the TIP opens it from "設定..." in the right-click menu of the mode icon. -->
       <Component Directory="SettingsDir">
-        <File Id="SettingsApp" Source="$(SettingsApp)" KeyPath="yes">
+        <File Id="SettingsApp" Source="$(SettingsApp)" KeyPath="yes" Compressed="$(SettingsCompressed)">
           <Shortcut Id="SettingsShortcut" Directory="MenuDir" Name="Astelio IME の設定"
                     Description="Astelio IME の設定を変える" />
+          <Shortcut Id="GuideShortcut" Directory="MenuDir" Name="Astelio IME の使い方" Arguments="--page guide"
+                    Description="Astelio IME の使い方をアニメーションで見る" />
         </File>
+        <RemoveFolder Id="RemoveMenuDir" Directory="MenuDir" On="uninstall" />
       </Component>
     </ComponentGroup>
     <Feature Id="Main" Title="Astelio IME">
@@ -94,9 +98,6 @@
     <!-- Runs as the installing user, so Astelio IME is in that user's keyboards without going to Settings. -->
     <CustomAction Id="EnableForUser" Directory="NativeDir" Execute="immediate" Return="ignore"
                   ExeCommand="&quot;[System64Folder]rundll32.exe&quot; &quot;[NativeDir]astelio_tip.dll&quot;,AstelioTipEnableForUser" />
-    <!-- The animated guide opens in the default browser at the end (not on silent installs). -->
-    <CustomAction Id="OpenGuide" Directory="GuideDir" Execute="immediate" Return="asyncNoWait"
-                  ExeCommand="&quot;[WindowsFolder]explorer.exe&quot; &quot;[#GuideFile]&quot;" />
     <InstallExecuteSequence>
       <Custom Action="UnregisterNative" Before="RemoveFiles" Condition="Installed AND REMOVE=&quot;ALL&quot;" />
       <Custom Action="UnregisterX86" After="UnregisterNative" Condition="Installed AND REMOVE=&quot;ALL&quot;" />
@@ -105,12 +106,11 @@
       <Custom Action="RollbackX86" After="RegisterNative" Condition="NOT REMOVE=&quot;ALL&quot;" />
       <Custom Action="RegisterX86" After="RollbackX86" Condition="NOT REMOVE=&quot;ALL&quot;" />
       <Custom Action="EnableForUser" After="InstallFinalize" Condition="NOT REMOVE" />
-      <Custom Action="OpenGuide" After="EnableForUser" Condition="NOT REMOVE AND UILevel &gt;= 3" />
     </InstallExecuteSequence>
     <!--
-      No wizard pages: Windows Installer's own progress window is used, which also handles files in use (every app
-      that has the TIP loaded locks it). WixUI is not used, since only MIT / Apache-2.0 / BSD material is shipped;
-      the settings wizard (R-08) comes with the settings app.
+      No wizard pages of its own: the setup exe shows the wizard (introduction, progress, first settings) and runs
+      this MSI with its own progress. Run alone (Microsoft Store, silent installs), Windows Installer's progress
+      window is used. WixUI is not used, since only MIT / Apache-2.0 / BSD material is shipped.
     -->
   </Package>
 </Wix>
