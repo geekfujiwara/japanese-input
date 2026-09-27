@@ -31,6 +31,7 @@
 | 🪟 **すりガラスの候補ウィンドウ** | 背後をぼかすアクリル背景と角丸。ライト/ダーク、透明効果オフ、ハイコントラストにも対応 |
 | 🔢 **数字・日付・記号** | `1234` → １２３４ / 千二百三十四 / 1,234、`きょう` → 2026/09/25 / 令和8年9月25日、`にっこり` → 😄 |
 | 😀 **絵文字パレット** | `えもじ` と打ってTab。読みで検索（`いぬ` → 🐶）、分類ごとの一覧、使った絵文字の履歴。クリックでも選べます |
+| ✍️ **入力の補助** | 文の頭で `1.` と打つと `1. `（箇条書きの番号。続けて数字を打てば `3.14`）。`[` `(` `{` を打つと閉じ括弧も入り、カーソルは括弧の中。どちらも右クリックメニューでオフにできます |
 | 🔒 **プライバシー** | IMEと変換は外部と通信しません。入力内容をログに書きません |
 
 ## キー操作
@@ -50,6 +51,8 @@
 | `F6`〜`F10` | ひらがな / カタカナ / 半角カタカナ / 全角英数 / 半角英数 | 注目文節に適用 |
 | 左 `Alt` / 右 `Alt` の単押し | 英語 / 日本語に切り替え（未確定文字列は確定）。入力位置の近くに「A」「あ」を少し表示 | 同左 |
 | `z` + `h` `j` `k` `l` | `←` `↓` `↑` `→`（`z-` 〜、`z.` …、`z,` ‥、`z/` ・、`z[` 『、`z]` 』） | — |
+| 文の頭の数字 + `.` | `1. `（半角ピリオドとスペース） | — |
+| `[` `(` `{` | 閉じ括弧も入れる（`「」` `()` `{}`）。閉じ括弧のキーは括弧を越えるだけ。空の括弧はBackSpaceでまとめて消す | — |
 
 未確定のかなは点線、変換中の文節は実線、注目している文節は太線で表示します。
 
@@ -88,7 +91,7 @@ flowchart LR
 | 入力の履歴 | `%LOCALAPPDATA%\AstelioIME\learning.tsv` | 選んだ候補・語の組み合わせ・文節の区切り・予測（最大5000件、古いものから消す） |
 | ユーザー辞書 | `%APPDATA%\AstelioIME\user_dictionary.tsv` | 読み・表記・品詞・コメント（最大10000語） |
 | 使った絵文字 | `%LOCALAPPDATA%\AstelioIME\emoji_recent.txt` | 絵文字パレットの履歴 |
-| 設定 | `HKCU\Software\AstelioIME`（設定アプリができたら `%APPDATA%\AstelioIME\settings.json` に移す） | `LearningEnabled`（履歴を使う）、`LearningPaused`（記録の一時停止）、`NoLearningApps`（記録しないアプリのexe名）、`DisabledApps`（IMEを使わないアプリのexe名）、`TypoSuggestions`（もしかして。0でオフ） |
+| 設定 | `HKCU\Software\AstelioIME`（設定アプリができたら `%APPDATA%\AstelioIME\settings.json` に移す） | `LearningEnabled`（履歴を使う）、`LearningPaused`（記録の一時停止）、`NoLearningApps`（記録しないアプリのexe名）、`DisabledApps`（IMEを使わないアプリのexe名）、`TypoSuggestions`（もしかして。0でオフ）、`ListNumberPeriod`（数字の後の `. `。0でオフ）、`AutoCloseBrackets`（括弧の自動補完。0でオフ） |
 
 設定アプリ（フェーズ6）ができるまでは、タスクバーの「あ / A」の右クリックメニューとレジストリで切り替えます。ゲームなどIMEが邪魔になるアプリでは「このアプリでは使わない」を選ぶと、キーもAltの単押しもそのままアプリに届きます。
 
@@ -137,6 +140,19 @@ TIPの結合テスト（登録を伴う）は `ASTELIO_TIP_INTEGRATION=1` のと
   - [x] ユーザー辞書と抑制単語、他のIMEの辞書の取り込み・書き出し（Core）
   - [ ] ユーザー辞書の管理画面（TIP）、追加辞書（D-07）、言語モデルによる辞書の補強
 - [ ] フェーズ6〜8: 設定アプリ、macOS版、インストーラーと署名
+
+## 要望・不具合の報告
+
+[GitHubのIssue](https://github.com/geekfujiwara/japanese-input/issues/new/choose) で受け付けています。入力した文章や個人情報は書かないでください。
+
+- **辞書への追加・変換の改善**: 「こう入力したら、こう変換してほしい」を読みと表記で送ってください。ワークフローが形を確かめてラベル（`dictionary:ready` / `dictionary:needs-info`）を付け、辞書作成環境で照合・評価を通った語を標準の辞書に加えます
+- **不具合・クラッシュ**: 版・OS・CPUの種類・手順を書いてください。設定アプリ（フェーズ6）からは、同意した場合だけ記録する診断ログ（入力した文字列は含みません）を添えて開けるようにします。IMEが自分で送信することはありません
+
+確かめた辞書の要望は、次のコマンドでタブ区切り（読み・表記・品詞・Issueの番号）に書き出せます。
+
+```powershell
+gh issue list --label dictionary:ready --state open --json number,body --limit 1000 | python .github/scripts/triage_dictionary_request.py export > requests.tsv
+```
 
 ## ライセンス
 
