@@ -3,6 +3,7 @@ using System.IO;
 using System.Reflection;
 using System.Windows;
 using System.Windows.Controls;
+using Astelio.Settings.Tour;
 
 namespace Astelio.Settings;
 
@@ -36,6 +37,8 @@ public partial class MainWindow : Window
         DateFormat.ItemsSource = DateFormats.Names
             .Select(name => new ComboBoxItem { Content = DateFormats.Example(name, today), Tag = name })
             .ToArray();
+        GuideDemos.ItemsSource = Demos.All(today);
+        GuideStage.Finished += (_, _) => GuideDemos.SelectedIndex = (GuideDemos.SelectedIndex + 1) % GuideDemos.Items.Count;
 
         string version = Assembly.GetExecutingAssembly()
             .GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion.Split('+')[0] ?? "";
@@ -85,6 +88,30 @@ public partial class MainWindow : Window
             page.Panel.Visibility = page == selected ? Visibility.Visible : Visibility.Collapsed;
         }
         PageScroller.ScrollToTop();
+        if (selected.Panel == GuidePage)
+        {
+            if (GuideDemos.SelectedIndex < 0)
+            {
+                GuideDemos.SelectedIndex = 0;
+            }
+            else
+            {
+                GuideStage.Play((Demo)GuideDemos.SelectedItem);
+            }
+        }
+        else
+        {
+            GuideStage.Stop();
+        }
+    }
+
+    private void OnGuideDemo(object sender, SelectionChangedEventArgs e)
+    {
+        if (GuideDemos.SelectedItem is Demo demo)
+        {
+            GuideDescription.Text = demo.Description;
+            GuideStage.Play(demo);
+        }
     }
 
     private void OnFlag(object sender, RoutedEventArgs e)

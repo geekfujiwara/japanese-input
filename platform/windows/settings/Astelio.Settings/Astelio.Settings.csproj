@@ -33,6 +33,8 @@
 
   <ItemGroup>
     <Resource Include="..\..\..\..\assets\icon\AstelioIME.png" Link="Assets\AstelioIME.png" />
+    <EmbeddedResource Include="..\..\..\..\LICENSE" LogicalName="LICENSE" />
+    <EmbeddedResource Include="..\..\..\..\THIRD_PARTY_NOTICES" LogicalName="THIRD_PARTY_NOTICES" />
     <InternalsVisibleTo Include="Astelio.Settings.Tests" />
   </ItemGroup>
 

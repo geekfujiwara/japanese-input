@@ -1,6 +1,7 @@
 <Window x:Class="Astelio.Settings.MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:tour="clr-namespace:Astelio.Settings.Tour"
         Title="Astelio IME の設定"
         Width="940" Height="660" MinWidth="720" MinHeight="480"
         WindowStartupLocation="CenterScreen"
@@ -206,12 +207,20 @@
         <StackPanel x:Name="GuidePage">
           <TextBlock Style="{StaticResource PageTitle}" Text="使い方" />
           <Border Style="{StaticResource Card}">
+            <StackPanel>
+              <ComboBox x:Name="GuideDemos" HorizontalAlignment="Left" MinWidth="300" SelectionChanged="OnGuideDemo"
+                        DisplayMemberPath="Title" AutomationProperties.Name="紹介する機能" />
+              <TextBlock x:Name="GuideDescription" Style="{StaticResource Description}" Margin="0,10,0,12" />
+              <tour:DemoStage x:Name="GuideStage" />
+            </StackPanel>
+          </Border>
+          <Border Style="{StaticResource Card}">
             <DockPanel>
-              <Button DockPanel.Dock="Right" Content="使い方を開く" VerticalAlignment="Center" Click="OnOpenGuide" />
+              <Button DockPanel.Dock="Right" Content="ブラウザーで開く" VerticalAlignment="Center" Click="OnOpenGuide" />
               <StackPanel Margin="0,0,16,0">
-                <TextBlock Style="{StaticResource SettingTitle}" Text="アニメーションで見る使い方" />
+                <TextBlock Style="{StaticResource SettingTitle}" Text="すべての使い方を1ページで" />
                 <TextBlock Style="{StaticResource Description}"
-                           Text="Alt キーでの切り替え、変換、候補の選び方などをブラウザーで表示します（インターネットには接続しません）。" />
+                           Text="同じ説明をブラウザーで表示します（インターネットには接続しません）。" />
               </StackPanel>
             </DockPanel>
           </Border>
