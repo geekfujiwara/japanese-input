@@ -39,4 +39,11 @@ void SetAppDisabled(const std::wstring& app, bool disabled);
 // B-14: whether もしかして words are offered (TypoSuggestions under the same key; on unless set to 0).
 bool TypoSuggestionsEnabled();
 
+// R-10 / R-11: ". " after a list number, and closing brackets typed with the opening ones (ListNumberPeriod,
+// AutoCloseBrackets; on unless set to 0).
+bool ListNumberPeriodEnabled();
+void SetListNumberPeriodEnabled(bool enabled);
+bool AutoCloseBracketsEnabled();
+void SetAutoCloseBracketsEnabled(bool enabled);
+
 } // namespace astelio::tip

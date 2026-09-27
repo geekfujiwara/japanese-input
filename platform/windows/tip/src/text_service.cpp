@@ -406,6 +406,7 @@ STDMETHODIMP TextService::ActivateEx(ITfThreadMgr* thread_mgr, TfClientId client
     RefreshLearning(true);
     RefreshUserDictionary(true);
     session_.SetTypoSuggestions(TypoSuggestionsEnabled());
+    ApplyCharacterSettings();
     ComPtr<ITfCategoryMgr> categories;
     if (SUCCEEDED(CoCreateInstance(CLSID_TF_CategoryMgr, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&categories)))) {
         for (int index = 0; index < kDisplayAttributeCount; ++index) {
@@ -465,6 +466,25 @@ void TextService::ToggleAppDisabled()
     if (app_disabled_) {
         SetMode(false, FocusedContext().Get(), true); // commits what is typed; the app gets direct input
     }
+}
+
+void TextService::ToggleInputOption(InputOption option)
+{
+    switch (option) {
+    case InputOption::ListNumberPeriod: SetListNumberPeriodEnabled(!ListNumberPeriodEnabled()); break;
+    case InputOption::AutoCloseBrackets: SetAutoCloseBracketsEnabled(!AutoCloseBracketsEnabled()); break;
+    }
+    if (!session_.Composing()) {
+        ApplyCharacterSettings();
+    }
+}
+
+void TextService::ApplyCharacterSettings()
+{
+    CharacterSettings settings;
+    settings.list_number_period = ListNumberPeriodEnabled();
+    settings.auto_close_brackets = AutoCloseBracketsEnabled();
+    session_.SetCharacterSettings(settings);
 }
 
 STDMETHODIMP TextService::OnTestKeyDown(ITfContext* context, WPARAM wparam, LPARAM lparam, BOOL* eaten)
@@ -541,6 +561,7 @@ STDMETHODIMP TextService::OnKeyDown(ITfContext* context, WPARAM wparam, LPARAM l
         if (!session_.Composing()) {
             RefreshLearning();
             RefreshUserDictionary();
+            ApplyCharacterSettings(); // the menu of another app may have changed them
         }
         const bool offered = session_.EmojiPaletteOffered();
         SessionOutput output = session_.Handle(*key);
@@ -1230,6 +1251,7 @@ void TextService::TestUseSettingsKey(const wchar_t* key)
         service->learning_on_ = LearningEnabled();
         service->app_disabled_ = AppDisabled(service->app_name_);
         service->session_.SetTypoSuggestions(TypoSuggestionsEnabled());
+        service->ApplyCharacterSettings();
         service->RefreshLearning(true);
     }
 }

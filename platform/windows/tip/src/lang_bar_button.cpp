@@ -208,7 +208,9 @@ STDMETHODIMP LangBarButton::OnClick(TfLBIClick click, POINT point, const RECT* /
 // C-09 / D-02 / D-04 / D-05: right click shows the per-app, history and user dictionary menu.
 void LangBarButton::ShowMenu(POINT point)
 {
-    enum : UINT { kToggle = 1, kManage, kClear, kPause, kExcludeApp, kUserDictionary, kDisableApp };
+    enum : UINT {
+        kToggle = 1, kManage, kClear, kPause, kExcludeApp, kUserDictionary, kDisableApp, kListPeriod, kAutoClose
+    };
     HMENU menu = CreatePopupMenu();
     if (menu == nullptr) {
         return;
@@ -220,6 +222,12 @@ void LangBarButton::ShowMenu(POINT point)
                                        L"\uFF09\u3067\u306F\u4F7F\u308F\u306A\u3044";
     AppendMenuW(menu, MF_STRING | (service_->AppDisabledHere() ? MF_CHECKED : MF_UNCHECKED) | app_known, kDisableApp,
                 disable_label.c_str());
+    AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
+    // 数字の後のピリオドを「. 」にする / 括弧を自動で閉じる
+    AppendMenuW(menu, MF_STRING | (ListNumberPeriodEnabled() ? MF_CHECKED : MF_UNCHECKED), kListPeriod,
+                L"\u6570\u5B57\u306E\u5F8C\u306E\u30D4\u30EA\u30AA\u30C9\u3092\u300C. \u300D\u306B\u3059\u308B");
+    AppendMenuW(menu, MF_STRING | (AutoCloseBracketsEnabled() ? MF_CHECKED : MF_UNCHECKED), kAutoClose,
+                L"\u62EC\u5F27\u3092\u81EA\u52D5\u3067\u9589\u3058\u308B");
     AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
     // 入力履歴を使う / 記録を一時停止（シークレットモード） / このアプリ（name）では記録しない /
     // 入力履歴の管理... / 入力履歴をすべて削除...
@@ -270,6 +278,8 @@ void LangBarButton::ShowMenu(POINT point)
         case kExcludeApp: service_->OnLearningCommand(TextService::LearningCommand::ExcludeApp, owner); break;
         case kUserDictionary: ShowUserDictionaryManager(); break;
         case kDisableApp: service_->ToggleAppDisabled(); break;
+        case kListPeriod: service_->ToggleInputOption(TextService::InputOption::ListNumberPeriod); break;
+        case kAutoClose: service_->ToggleInputOption(TextService::InputOption::AutoCloseBrackets); break;
         default: break;
         }
     }

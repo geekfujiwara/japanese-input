@@ -1195,6 +1195,31 @@ TEST_F(TypingTest, SecretModeAndLeftOutAppsRecordNothing)
     EXPECT_GT(file_size(), 0u) << "recorded again";
 }
 
+// T-R10-1, T-R11-1 (TIP): "1." gives "1. ", and "[" gives 「」 with the caret between them; both can be turned off.
+TEST_F(TypingTest, ListNumberPeriodAndClosingBrackets)
+{
+    Press('1', 0x02);
+    Press(VK_OEM_PERIOD, 0x34);
+    EXPECT_EQ(Text(), L"1. ");
+    EXPECT_TRUE(Press(VK_RETURN, 0x1C));
+    EXPECT_TRUE(Press(VK_OEM_4, 0x1A));
+    EXPECT_EQ(Text(), L"1. \u300C\u300D");
+    EXPECT_EQ(store_->SelectionEnd(), 4) << "the caret is between the brackets";
+    EXPECT_TRUE(Press(VK_ESCAPE, 0x01));
+    ASSERT_EQ(Text(), L"1. ");
+
+    const DWORD off = 0;
+    ASSERT_EQ(RegSetKeyValueW(HKEY_CURRENT_USER, kTestSettingsKey, L"ListNumberPeriod", REG_DWORD, &off, sizeof(off)),
+              ERROR_SUCCESS);
+    ASSERT_EQ(RegSetKeyValueW(HKEY_CURRENT_USER, kTestSettingsKey, L"AutoCloseBrackets", REG_DWORD, &off, sizeof(off)),
+              ERROR_SUCCESS);
+    use_settings_(kTestSettingsKey);
+    Press('1', 0x02);
+    Press(VK_OEM_PERIOD, 0x34);
+    Press(VK_OEM_4, 0x1A);
+    EXPECT_EQ(Text(), L"1. 1\u3002\u300C");
+}
+
 // T-C09-1 (TIP): in an app left out, letters and Alt taps reach the app as they are; other apps are not affected.
 TEST_F(TypingTest, DisabledAppGetsTheKeysAsTheyAre)
 {

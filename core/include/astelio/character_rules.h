@@ -32,6 +32,10 @@ struct CharacterSettings {
     PunctuationStyle punctuation = PunctuationStyle::ToutenKuten;
     // R-05: write 「」、。・！？ as ｢｣､｡･!? instead.
     bool half_width_japanese_symbols = false;
+    // R-10: '.' right after a number that starts the text is ". " (a list number), not 。.
+    bool list_number_period = true;
+    // R-11: an opening bracket key also writes its closing bracket, with the cursor between them.
+    bool auto_close_brackets = true;
     // Indexed by ASCII code. Only printable symbols (not letters, digits, ',' or '.') are used.
     std::array<SymbolForm, 128> symbols = DefaultSymbolForms();
 
@@ -47,5 +51,9 @@ std::u16string KanaModeCharacter(char16_t ascii, const CharacterSettings& settin
 std::u16string AlphanumericModeCharacter(char16_t ascii, const CharacterSettings& settings);
 
 std::u16string SpaceCharacter(const CharacterSettings& settings);
+
+// R-11: the closing bracket of `opening` (「 『 （ ( ［ [ ｛ { ｢), or 0.
+char16_t ClosingBracket(char16_t opening);
+bool IsClosingBracket(char16_t c);
 
 } // namespace astelio
