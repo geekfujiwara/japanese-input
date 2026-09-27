@@ -175,6 +175,35 @@ jobs:
       - name: Test
         run: dotnet test KotohaIME.slnx -c Release
 
+  installer:
+    name: Installer (${{ matrix.arch }})
+    needs: [core-windows, dictionary]
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [arm64, x64]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: astelio-*
+          path: artifacts/tip
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          dotnet-version: 10.0.x
+      - name: Build the MSI (with ICE validation)
+        shell: pwsh
+        run: ./tools/Build-Installer.ps1 -Arch ${{ matrix.arch }} -Artifacts artifacts/tip -OutputDirectory artifacts/installer
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: installer-${{ matrix.arch }}
+          path: artifacts/installer/*.msi
+          if-no-files-found: error
+          retention-days: 30
+
   scripts:
     name: Repository scripts
     runs-on: ubuntu-latest
