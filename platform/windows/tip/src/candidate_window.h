@@ -40,8 +40,11 @@ private:
     std::vector<Mark> marks_;
     std::size_t selected_ = 0;
     bool has_selection_ = false;
+    // B-03: the candidates shown together, in columns of 9 (at most 3).
     std::size_t page_begin_ = 0;
     std::size_t page_end_ = 0;
+    std::vector<float> column_left_;
+    std::vector<float> column_width_;
     Microsoft::WRL::ComPtr<IDWriteTextFormat> text_format_;
     Microsoft::WRL::ComPtr<IDWriteTextFormat> small_format_;
 };
