@@ -1,6 +1,8 @@
 <div align="center">
 
-# ✦ Astelio IME
+<img src="assets/icon/AstelioIME.png" width="128" alt="Astelio IME">
+
+# Astelio IME
 
 **英語配列キーボードのための、新しい日本語入力。**
 
@@ -8,6 +10,7 @@
 すりガラスの候補ウィンドウ、入力中からの予測、入力ミスの補正まで、手元の端末だけで動きます。
 
 [![CI](https://github.com/geekfujiwara/japanese-input/actions/workflows/ci.yml/badge.svg)](https://github.com/geekfujiwara/japanese-input/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/geekfujiwara/japanese-input?include_prereleases&label=release)](https://github.com/geekfujiwara/japanese-input/releases)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 ![Windows ARM64 | x64 | x86](https://img.shields.io/badge/Windows-ARM64%20%7C%20x64%20%7C%20x86-0078D4)
 ![macOS](https://img.shields.io/badge/macOS-planned-lightgrey)
@@ -95,7 +98,24 @@ flowchart LR
 
 設定アプリ（フェーズ6）ができるまでは、タスクバーの「あ / A」の右クリックメニューとレジストリで切り替えます。ゲームなどIMEが邪魔になるアプリでは「このアプリでは使わない」を選ぶと、キーもAltの単押しもそのままアプリに届きます。
 
-## 試してみる（Windows）
+## インストール（Windows）
+
+[Releases](https://github.com/geekfujiwara/japanese-input/releases) からPCに合ったMSIをダウンロードして開きます。
+
+| PC | ファイル |
+| --- | --- |
+| ARM64（Snapdragon など） | `AstelioIME-<版>-arm64.msi` |
+| x64（Intel / AMD） | `AstelioIME-<版>-x64.msi` |
+
+- インストールするとキーボードの一覧に「Astelio IME」が入り、最後にアニメーションで操作を紹介する使い方のページが開きます（スタートメニューの「Astelio IME の使い方」からも開けます）
+- すでに起動していたアプリは、起動し直すと使えます。右Altの単押しで日本語、左Altの単押しで英語です
+- まだコード署名をしていないため、「Windows によって PC が保護されました」と出ることがあります。「詳細情報」→「実行」で進めます。ファイルの SHA-256 はリリースの `SHA256SUMS.txt` にあります
+- アンインストールは［設定］→［アプリ］→［インストールされているアプリ］から行います
+
+> [!NOTE]
+> ARM64版Windowsのx64アプリには、まだ対応していません（ARM64Xの転送DLLを用意する予定です）。
+
+### 開発中のビルドを試す
 
 CIが作ったTIPと辞書を取得して、管理者のPowerShellで登録します。
 
@@ -104,10 +124,7 @@ CIが作ったTIPと辞書を取得して、管理者のPowerShellで登録し�
 ./tools/Register-AstelioTip.ps1 -Path artifacts/tip   # 管理者のPowerShellで登録（解除は -Unregister）
 ```
 
-登録後、［設定］→［時刻と言語］→［言語と地域］→［日本語］→［言語のオプション］→［キーボード］で「Astelio IME」を追加します。起動中のアプリは再起動してください（サインアウトして入り直すのが確実です）。
-
-> [!NOTE]
-> ARM64版Windowsのx64アプリには、まだ対応していません（ARM64Xの転送DLLを用意する予定です）。
+登録後、［設定］→［時刻と言語］→［言語と地域］→［日本語］→［言語のオプション］→［キーボード］で「Astelio IME」を追加します。起動中のアプリは再起動してください（サインアウトして入り直すのが確実です）。CIの各ビルドには、同じ内容のMSI（`installer-arm64`、`installer-x64`）も成果物として残ります。
 
 ## ビルド
 
@@ -123,6 +140,8 @@ TIPの結合テスト（登録を伴う）は `ASTELIO_TIP_INTEGRATION=1` のと
 | --- | --- |
 | [core/](core) | 変換エンジン（C++20） |
 | [platform/windows/tip/](platform/windows/tip) | Windows TIP（TSF） |
+| [platform/windows/installer/](platform/windows/installer) | インストーラー（WiXのMSI）と使い方のページ。`./tools/Build-Installer.ps1 -Arch arm64` で作る |
+| [assets/](assets) | アイコン（`./tools/Generate-AppIcon.ps1` で作る） |
 | [dictionary/tools/](dictionary/tools) | 辞書の変換・作成・確認ツール |
 | [eval/](eval) | 変換精度の評価コーパスと評価ツール（CIで正解率を記録） |
 | [docs/](docs) | [計画書](docs/astelio-ime-plan.md)、[テスト計画書](docs/astelio-ime-test-plan.md)、[申し送り事項](docs/handover.md) |
