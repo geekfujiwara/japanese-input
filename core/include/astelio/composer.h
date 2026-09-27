@@ -5,6 +5,7 @@
 
 #include <cstddef>
 #include <string>
+#include <utility>
 
 namespace astelio {
 
@@ -34,9 +35,13 @@ public:
     void Clear();
     // Replaces the text (already converted to kana) and puts the cursor at the end.
     void SetText(std::u16string text);
+    // Takes effect for the next key.
+    void SetSettings(CharacterSettings settings) { settings_ = std::move(settings); }
 
 private:
     void ResolvePending(bool flush);
+    // A symbol key's text: R-11 adds the closing bracket, or types over the one already there.
+    void InsertSymbol(std::u16string text);
 
     const RomajiTable* table_;
     CharacterSettings settings_;
@@ -44,6 +49,7 @@ private:
     std::u16string pending_; // romaji not yet converted, at the cursor
     std::u16string after_;   // text right of the cursor
     bool temporary_alphanumeric_ = false;
+    bool list_period_ = false; // the last key wrote the ". " of a list number (R-10)
 };
 
 } // namespace astelio

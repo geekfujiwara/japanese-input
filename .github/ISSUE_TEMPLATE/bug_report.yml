@@ -1,0 +1,86 @@
+name: 不具合・クラッシュの報告
+description: 入力できない、アプリが落ちた、表示がおかしいなどの報告（U-01）
+title: "[不具合] "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        報告ありがとうございます。設定アプリの「問題を報告」から開くと、環境と診断ログが入った状態になります。
+
+        **入力した文章・パスワード・個人情報は書かないでください。** この内容は公開されます。
+        診断ログには入力した文字列は含まれません。貼り付ける前に内容を確かめてください。
+  - type: input
+    id: version
+    attributes:
+      label: Astelio IMEの版
+      placeholder: 2.0.0
+    validations:
+      required: true
+  - type: dropdown
+    id: platform
+    attributes:
+      label: OS
+      options:
+        - Windows 11
+        - Windows 10
+        - macOS
+    validations:
+      required: true
+  - type: input
+    id: os_version
+    attributes:
+      label: OSの版
+      placeholder: 24H2（26100.2314） / macOS 15.1
+    validations:
+      required: false
+  - type: dropdown
+    id: arch
+    attributes:
+      label: CPUの種類
+      options:
+        - ARM64
+        - x64
+        - x86（32bitのアプリ）
+        - Apple silicon
+        - Intel Mac
+    validations:
+      required: true
+  - type: input
+    id: app
+    attributes:
+      label: 起きたアプリ
+      placeholder: メモ帳、Edge、VS Code など
+    validations:
+      required: false
+  - type: textarea
+    id: steps
+    attributes:
+      label: 手順
+      description: 起きるまでの操作（押したキーなど）。入力した文章そのものは書かないでください
+      placeholder: |
+        1. メモ帳を開く
+        2. 右Altで日本語にする
+        3. Spaceを2回押す
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: 期待した動き
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: 実際の動き
+    validations:
+      required: true
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: 診断ログ
+      description: 設定アプリの「問題を報告」で表示されるログ（任意。`%LOCALAPPDATA%\AstelioIME\diagnostics.log`）
+      render: text
+    validations:
+      required: false

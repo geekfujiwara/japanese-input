@@ -77,6 +77,13 @@ public:
     // Enables kana-kanji conversion with Space. `converter` must outlive the session; nullptr disables it.
     void SetConverter(const Converter* converter) { converter_ = converter; }
 
+    // Changes the character settings (R-10, R-11 and the widths); they apply from the next key.
+    void SetCharacterSettings(const CharacterSettings& settings)
+    {
+        settings_ = settings;
+        composer_.SetSettings(settings);
+    }
+
     // D-04: the words chosen before come first. `history` must outlive the session; nullptr turns the history off.
     // With recording off (password fields, secret mode) the history is used but nothing new is recorded.
     void SetLearning(LearningHistory* history) { learning_ = history; }

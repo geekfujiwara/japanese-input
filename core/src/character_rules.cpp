@@ -127,4 +127,30 @@ std::u16string SpaceCharacter(const CharacterSettings& settings)
     return ToWidth(u' ', settings.space);
 }
 
+char16_t ClosingBracket(char16_t opening)
+{
+    switch (opening) {
+    case u'「': return u'」';
+    case u'『': return u'』';
+    case u'（': return u'）';
+    case u'(': return u')';
+    case u'［': return u'］';
+    case u'[': return u']';
+    case u'｛': return u'｝';
+    case u'{': return u'}';
+    case u'｢': return u'｣';
+    default: return 0;
+    }
+}
+
+bool IsClosingBracket(char16_t c)
+{
+    switch (c) {
+    case u'」': case u'』': case u'）': case u')': case u'］': case u']': case u'｝': case u'}': case u'｣':
+        return true;
+    default:
+        return false;
+    }
+}
+
 } // namespace astelio

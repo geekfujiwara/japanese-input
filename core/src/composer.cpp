@@ -1,5 +1,7 @@
 #include "astelio/composer.h"
 
+#include <algorithm>
+#include <string_view>
 #include <utility>
 
 namespace astelio {
@@ -8,6 +10,16 @@ namespace {
 bool IsUpper(char16_t c) { return c >= u'A' && c <= u'Z'; }
 
 bool IsPrintableAscii(char16_t c) { return c >= 0x21 && c <= 0x7E; }
+
+bool IsDigit(char16_t c) { return c >= u'0' && c <= u'9'; }
+
+// Digits only (half or full width), at least one.
+bool IsNumber(std::u16string_view text)
+{
+    return !text.empty() && std::all_of(text.begin(), text.end(), [](char16_t c) {
+        return IsDigit(c) || (c >= u'\uFF10' && c <= u'\uFF19');
+    });
+}
 
 // Guards against tables whose pending text never shrinks.
 constexpr int kMaxResolveSteps = 256;
@@ -24,9 +36,15 @@ void Composer::InsertKey(char16_t key)
     if (!IsPrintableAscii(key)) {
         return;
     }
+    // R-10: a digit right after the ". " of a list number makes it a decimal point ("3.14").
+    const bool after_list_period = list_period_;
+    list_period_ = false;
+    if (after_list_period && IsDigit(key) && !before_.empty() && before_.back() == u' ') {
+        before_.pop_back();
+    }
 
     if (temporary_alphanumeric_) {
-        before_ += AlphanumericModeCharacter(key, settings_);
+        InsertSymbol(AlphanumericModeCharacter(key, settings_));
         return;
     }
 
@@ -45,7 +63,29 @@ void Composer::InsertKey(char16_t key)
     }
 
     ResolvePending(true);
-    before_ += KanaModeCharacter(key, settings_);
+    if (key == u'.' && settings_.list_number_period && after_.empty() && IsNumber(before_)) {
+        before_ += u". ";
+        list_period_ = true;
+        return;
+    }
+    InsertSymbol(KanaModeCharacter(key, settings_));
+}
+
+void Composer::InsertSymbol(std::u16string text)
+{
+    if (settings_.auto_close_brackets && text.size() == 1) {
+        if (IsClosingBracket(text.front()) && !after_.empty() && after_.front() == text.front()) {
+            before_ += text;
+            after_.erase(0, 1);
+            return;
+        }
+        if (const char16_t closing = ClosingBracket(text.front()); closing != 0) {
+            before_ += text;
+            after_.insert(after_.begin(), closing);
+            return;
+        }
+    }
+    before_ += text;
 }
 
 void Composer::ResolvePending(bool flush)
@@ -85,15 +125,21 @@ void Composer::ResolvePending(bool flush)
 
 void Composer::Backspace()
 {
+    list_period_ = false;
     if (!pending_.empty()) {
         pending_.pop_back();
     } else if (!before_.empty()) {
+        // R-11: an empty pair of brackets goes as a whole.
+        if (settings_.auto_close_brackets && !after_.empty() && ClosingBracket(before_.back()) == after_.front()) {
+            after_.erase(0, 1);
+        }
         before_.pop_back();
     }
 }
 
 void Composer::Delete()
 {
+    list_period_ = false;
     ResolvePending(true);
     if (!after_.empty()) {
         after_.erase(0, 1);
@@ -107,10 +153,12 @@ void Composer::MoveLeft()
         after_.insert(after_.begin(), before_.back());
         before_.pop_back();
     }
+    list_period_ = false;
 }
 
 void Composer::MoveRight()
 {
+    list_period_ = false;
     ResolvePending(true);
     if (!after_.empty()) {
         before_.push_back(after_.front());
@@ -152,6 +200,7 @@ void Composer::Clear()
     pending_.clear();
     after_.clear();
     temporary_alphanumeric_ = false;
+    list_period_ = false;
 }
 
 void Composer::SetText(std::u16string text)

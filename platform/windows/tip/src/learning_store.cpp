@@ -215,6 +215,26 @@ bool TypoSuggestionsEnabled()
     return ReadFlag(L"TypoSuggestions");
 }
 
+bool ListNumberPeriodEnabled()
+{
+    return ReadFlag(L"ListNumberPeriod");
+}
+
+void SetListNumberPeriodEnabled(bool enabled)
+{
+    WriteFlag(L"ListNumberPeriod", enabled);
+}
+
+bool AutoCloseBracketsEnabled()
+{
+    return ReadFlag(L"AutoCloseBrackets");
+}
+
+void SetAutoCloseBracketsEnabled(bool enabled)
+{
+    WriteFlag(L"AutoCloseBrackets", enabled);
+}
+
 void SetLearningEnabled(bool enabled)
 {
     WriteFlag(kEnabledValue, enabled);

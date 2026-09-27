@@ -189,10 +189,12 @@ TEST(Composer, FullWidthLettersSetting)
 // T-R02-1
 TEST(Composer, ShiftSymbolsAreHalfWidth)
 {
-    EXPECT_EQ(Typed(u"+"), u"+");
-    EXPECT_EQ(Typed(u"("), u"(");
-    EXPECT_EQ(Typed(u")"), u")");
-    EXPECT_EQ(Typed(u"a+b"), u"あ+b");
+    CharacterSettings settings;
+    settings.auto_close_brackets = false; // this test is about the characters; R-11 is tested below
+    EXPECT_EQ(Typed(u"+", settings), u"+");
+    EXPECT_EQ(Typed(u"(", settings), u"(");
+    EXPECT_EQ(Typed(u")", settings), u")");
+    EXPECT_EQ(Typed(u"a+b", settings), u"あ+b");
 }
 
 // T-R02-2
@@ -217,9 +219,56 @@ TEST(Composer, EveryUsSymbolKeyFollowsTheDefaultRules)
         {u'\'', u"'"}, {u'"', u"\""}, {u',', u"、"}, {u'<', u"<"}, {u'.', u"。"}, {u'>', u">"},
         {u'/', u"・"}, {u'?', u"？"},
     };
+    CharacterSettings single; // one character per key; R-11 would add the closing brackets
+    single.auto_close_brackets = false;
     for (const Case& c : cases) {
-        EXPECT_EQ(Typed(std::u16string(1, c.key)), c.expected) << "key " << static_cast<int>(c.key);
+        EXPECT_EQ(Typed(std::u16string(1, c.key), single), c.expected) << "key " << static_cast<int>(c.key);
     }
+}
+
+// T-R10-1: '.' after a number that starts the text is ". " (a list number); a digit after it makes a decimal
+// point instead. It can be turned off.
+TEST(Composer, PeriodAfterAListNumber)
+{
+    EXPECT_EQ(Typed(u"1."), u"1. ");
+    EXPECT_EQ(Typed(u"12.ringo"), u"12. りんご");
+    EXPECT_EQ(Typed(u"3.14"), u"3.14");
+    EXPECT_EQ(Typed(u"a1."), u"あ1。") << "only when the text starts with the number";
+    EXPECT_EQ(Typed(u"."), u"。");
+    CharacterSettings off;
+    off.list_number_period = false;
+    EXPECT_EQ(Typed(u"1.", off), u"1。");
+}
+
+// T-R11-1: an opening bracket key writes the pair with the cursor between; the closing key moves over the bracket,
+// and Backspace on an empty pair removes both. It can be turned off.
+TEST(Composer, BracketsAreClosedAutomatically)
+{
+    Composer composer = MakeComposer();
+    composer.InsertKey(u'[');
+    EXPECT_EQ(composer.Text(), u"「」");
+    EXPECT_EQ(composer.Cursor(), 1u);
+    Type(composer, u"kagi");
+    EXPECT_EQ(composer.Text(), u"「かぎ」");
+    EXPECT_EQ(composer.Cursor(), 3u);
+    composer.InsertKey(u']');
+    EXPECT_EQ(composer.Text(), u"「かぎ」") << "the closing key moves over the bracket";
+    EXPECT_EQ(composer.Cursor(), 4u);
+
+    EXPECT_EQ(Typed(u"("), u"()");
+    EXPECT_EQ(Typed(u"{"), u"{}");
+    EXPECT_EQ(Typed(u"()"), u"()");
+    EXPECT_EQ(Typed(u"Ab["), u"Ab[]") << "in temporary alphanumeric mode too";
+    EXPECT_EQ(Typed(u"z["), u"『") << "z-key symbols are written as they are";
+
+    Composer pair = MakeComposer();
+    pair.InsertKey(u'(');
+    pair.Backspace();
+    EXPECT_TRUE(pair.Empty()) << "an empty pair goes as a whole";
+
+    CharacterSettings off;
+    off.auto_close_brackets = false;
+    EXPECT_EQ(Typed(u"[", off), u"「");
 }
 
 TEST(Composer, LongVowelMark)

@@ -1,0 +1,63 @@
+name: Dictionary requests
+
+# U-02: checks each dictionary request filed with the issue form, labels it ready or needs-info and says what to fix.
+# The issue body is untrusted: it only reaches the checker through an environment variable and stdin.
+on:
+  issues:
+    types: [opened, edited, labeled]
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: dictionary-request-${{ github.event.issue.number }}
+  cancel-in-progress: true
+
+jobs:
+  triage:
+    name: Check the request
+    if: >-
+      github.event.issue.state == 'open' &&
+      contains(github.event.issue.labels.*.name, 'dictionary') &&
+      (github.event.action != 'labeled' || github.event.label.name == 'dictionary')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          sparse-checkout: .github/scripts
+      - name: Check
+        id: check
+        env:
+          ISSUE_BODY: ${{ github.event.issue.body }}
+        run: |
+          result=$(printf '%s' "$ISSUE_BODY" | python3 .github/scripts/triage_dictionary_request.py triage)
+          echo "result=$result" >> "$GITHUB_OUTPUT"
+      - name: Label and comment
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          NUMBER: ${{ github.event.issue.number }}
+          RESULT: ${{ steps.check.outputs.result }}
+          WAS_READY: ${{ contains(github.event.issue.labels.*.name, 'dictionary:ready') }}
+          WAS_NEEDS_INFO: ${{ contains(github.event.issue.labels.*.name, 'dictionary:needs-info') }}
+        run: |
+          gh label create dictionary --color 1D76DB --description "辞書への要望" --force
+          gh label create dictionary:ready --color 0E8A16 --description "形を確かめた辞書への要望" --force
+          gh label create dictionary:needs-info --color FBCA04 --description "辞書への要望に直す点がある" --force
+          previous=none
+          if [ "$WAS_READY" = true ]; then previous=ready; elif [ "$WAS_NEEDS_INFO" = true ]; then previous=needs-info; fi
+          if [ "$RESULT" = "$previous" ]; then
+            exit 0
+          fi
+          if [ "$RESULT" = ready ]; then
+            add=dictionary:ready
+          else
+            add=dictionary:needs-info
+          fi
+          gh issue edit "$NUMBER" --add-label "$add"
+          if [ "$previous" != none ]; then
+            gh issue edit "$NUMBER" --remove-label "dictionary:$previous"
+          fi
+          gh issue comment "$NUMBER" --body-file comment.md
