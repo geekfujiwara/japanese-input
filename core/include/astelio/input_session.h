@@ -173,8 +173,12 @@ private:
     std::u16string ConvertedText() const;
     // Records the choices, then returns the text to commit and ends the conversion.
     std::u16string CommitConversion(SessionOutput& output);
-    // Records the choices of segments [0, end) and makes the last of them the context of what follows.
-    void RecordChoices(SessionOutput& output, std::size_t end);
+    // Records the choices of segments [0, end) and makes the last of them the context of what follows. The entries
+    // the history did not have before go to `added` (undone with the commit, B-08).
+    void RecordChoices(SessionOutput& output, std::size_t end, std::vector<LearningHistory::Entry>* added = nullptr);
+    // Records one choice; see RecordChoices for `added`.
+    void Learn(SessionOutput& output, LearningHistory::Kind kind, std::u16string_view reading,
+               std::u16string_view surface, std::u16string_view context, std::vector<LearningHistory::Entry>* added);
     SessionOutput CommitUpToFocus();
     SessionOutput UndoCommit();
     void ApplyLearning(std::size_t segment);
@@ -215,6 +219,7 @@ private:
         std::size_t focus; // no default initializer: clang then rejects std::optional of it in this class
         std::optional<std::uint16_t> context_right_id;
         std::u16string previous_surface;
+        std::vector<LearningHistory::Entry> learned; // what the commit added to the history
     };
     std::optional<CommittedConversion> last_commit_; // until the next key or caret move
     std::vector<std::size_t> selected_;

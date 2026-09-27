@@ -629,39 +629,57 @@ std::u16string InputSession::CommitConversion(SessionOutput& output)
     // B-08: what Ctrl+Backspace right after the commit brings back.
     std::optional<CommittedConversion> undo;
     if (!predicting_ && !segments_.empty()) {
-        CommittedConversion saved{text, reading_, {}, {}, focus_, context_right_id_, previous_surface_};
+        CommittedConversion saved{text, reading_, {}, {}, focus_, context_right_id_, previous_surface_, {}};
         for (std::size_t i = 0; i < segments_.size(); ++i) {
             saved.lengths.push_back(segments_[i].reading.size());
             saved.chosen.push_back(segments_[i].candidates[selected_[i]]);
         }
         undo = std::move(saved);
     }
-    RecordChoices(output, segments_.size());
+    std::vector<LearningHistory::Entry>* added = undo ? &undo->learned : nullptr;
+    RecordChoices(output, segments_.size(), added);
     // T-D04-2: segments split by hand (or taken from the history) are kept for the reading.
     if (learning_ != nullptr && recording_ && !predicting_ && (segments_resized_ || segments_learned_)) {
         std::vector<std::u16string> readings;
         for (const ConvertedSegment& segment : segments_) {
             readings.push_back(segment.reading);
         }
-        if (learning_->Record(LearningHistory::Kind::Segmentation, reading_, LearningHistory::JoinSegments(readings))) {
-            output.learning_changed = true;
-        }
+        Learn(output, LearningHistory::Kind::Segmentation, reading_, LearningHistory::JoinSegments(readings), {},
+              added);
     }
     EndConversion();
     last_commit_ = std::move(undo);
     return text;
 }
 
-void InputSession::RecordChoices(SessionOutput& output, std::size_t end)
+void InputSession::Learn(SessionOutput& output, LearningHistory::Kind kind, std::u16string_view reading,
+                         std::u16string_view surface, std::u16string_view context,
+                         std::vector<LearningHistory::Entry>* added)
+{
+    const bool known = learning_->Contains(kind, reading, surface, context);
+    if (!learning_->Record(kind, reading, surface, context)) {
+        return;
+    }
+    output.learning_changed = true;
+    if (added != nullptr && !known) {
+        LearningHistory::Entry entry;
+        entry.kind = kind;
+        entry.context = context;
+        entry.reading = reading;
+        entry.surface = surface;
+        added->push_back(std::move(entry));
+    }
+}
+
+void InputSession::RecordChoices(SessionOutput& output, std::size_t end, std::vector<LearningHistory::Entry>* added)
 {
     if (learning_ != nullptr && recording_) {
         for (std::size_t i = 0; i < end; ++i) {
             const ConvertedSegment& segment = segments_[i];
             const std::u16string& chosen = segment.candidates[selected_[i]];
             if (predicting_) {
-                if (chosen != segment.reading &&
-                    learning_->Record(LearningHistory::Kind::Prediction, segment.reading, chosen)) {
-                    output.learning_changed = true;
+                if (chosen != segment.reading) {
+                    Learn(output, LearningHistory::Kind::Prediction, segment.reading, chosen, {}, added);
                 }
                 continue;
             }
@@ -673,13 +691,10 @@ void InputSession::RecordChoices(SessionOutput& output, std::size_t end)
                 learning_->Pairs(context, segment.reading).empty()) {
                 continue;
             }
-            if (learning_->Record(LearningHistory::Kind::Conversion, segment.reading, chosen)) {
-                output.learning_changed = true;
-            }
+            Learn(output, LearningHistory::Kind::Conversion, segment.reading, chosen, {}, added);
             // D-04: the pair of words, so the same reading after the same word gets the same choice.
-            if (!context.empty() &&
-                learning_->Record(LearningHistory::Kind::Pair, segment.reading, chosen, context)) {
-                output.learning_changed = true;
+            if (!context.empty()) {
+                Learn(output, LearningHistory::Kind::Pair, segment.reading, chosen, context, added);
             }
         }
     }
@@ -738,6 +753,14 @@ SessionOutput InputSession::UndoCommit()
     }
     CommittedConversion undo = std::move(*last_commit_);
     last_commit_.reset();
+    // The choices this commit taught are forgotten again (entries it only refreshed stay).
+    if (learning_ != nullptr) {
+        for (const LearningHistory::Entry& entry : undo.learned) {
+            if (learning_->Remove(entry.kind, entry.reading, entry.surface, entry.context)) {
+                output.learning_changed = true;
+            }
+        }
+    }
     context_right_id_ = undo.context_right_id;
     previous_surface_ = undo.previous_surface;
     reading_ = undo.reading;
