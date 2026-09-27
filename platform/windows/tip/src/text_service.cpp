@@ -11,6 +11,7 @@
 #include "learning_store.h"
 #include "mode_window.h"
 #include "module.h"
+#include "user_dictionary_manager.h"
 #include "user_dictionary_store.h"
 
 #include <InputScope.h>
@@ -1296,4 +1297,11 @@ extern "C" void WINAPI AstelioTipTestUseSettingsKey(const wchar_t* key)
 extern "C" void WINAPI AstelioTipTestUseUserDictionary(const wchar_t* path)
 {
     astelio::tip::TextService::TestUseUserDictionaryFile(path);
+}
+
+// Test entry point: opens the user dictionary window on this thread and returns it.
+extern "C" HWND WINAPI AstelioTipTestShowUserDictionaryManager()
+{
+    astelio::tip::ShowUserDictionaryManager();
+    return astelio::tip::UserDictionaryManagerWindow();
 }

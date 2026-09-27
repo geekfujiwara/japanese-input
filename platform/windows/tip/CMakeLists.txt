@@ -18,6 +18,7 @@ target_compile_options(astelio_tip_store PRIVATE /W4 /WX /utf-8 /permissive- /EH
 add_library(astelio_tip SHARED
     src/astelio_tip.def
     src/candidate_window.cpp
+    src/dialog_keys.cpp
     src/dictionary_loader.cpp
     src/display_attributes.cpp
     src/dllmain.cpp

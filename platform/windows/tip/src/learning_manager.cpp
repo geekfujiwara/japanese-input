@@ -1,5 +1,6 @@
 #include "learning_manager.h"
 
+#include "dialog_keys.h"
 #include "learning_store.h"
 #include "module.h"
 
@@ -261,6 +262,7 @@ bool Create(HWND window, State& state)
     state.history = LoadLearning();
     Fill(state);
     Layout(window, state);
+    UseDialogKeys(window);
     return true;
 }
 
