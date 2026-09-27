@@ -167,7 +167,7 @@ std::vector<std::u16string> NumberForms(std::u16string_view digits)
     return forms;
 }
 
-std::vector<std::u16string> DateForms(std::u16string_view reading, const LocalTime& now)
+std::vector<std::u16string> DateForms(std::u16string_view reading, const LocalTime& now, DateFormat preferred)
 {
     std::vector<std::u16string> forms;
     if (IsTimeReading(reading)) {
@@ -189,18 +189,46 @@ std::vector<std::u16string> DateForms(std::u16string_view reading, const LocalTi
         static constexpr std::u16string_view kWeekdays[] = {u"日", u"月", u"火", u"水", u"木", u"金", u"土"};
         const std::u16string_view weekday = kWeekdays[((days % 7) + 7 + 4) % 7]; // 1970-01-01 was a Thursday
         const std::u16string month_day = Number(month) + u"月" + Number(day) + u"日";
-        forms.push_back(Number(year) + u"/" + Number(month, 2) + u"/" + Number(day, 2));
-        forms.push_back(Number(year) + u"年" + month_day);
-        forms.push_back(month_day);
-        forms.push_back(month_day + u"(" + std::u16string(weekday) + u")");
+        std::array<std::u16string, kDateFormatNames.size()> dates;
+        dates[static_cast<std::size_t>(DateFormat::SlashPadded)] =
+            Number(year) + u"/" + Number(month, 2) + u"/" + Number(day, 2);
+        dates[static_cast<std::size_t>(DateFormat::Kanji)] = Number(year) + u"年" + month_day;
+        dates[static_cast<std::size_t>(DateFormat::MonthDay)] = month_day;
+        dates[static_cast<std::size_t>(DateFormat::MonthDayWeekday)] =
+            month_day + u"(" + std::u16string(weekday) + u")";
         if (DaysFromCivil(year, month, day) >= DaysFromCivil(2019, 5, 1)) {
             const int reiwa = year - 2018;
-            forms.push_back(u"令和" + (reiwa == 1 ? std::u16string(u"元") : Number(reiwa)) + u"年" + month_day);
+            dates[static_cast<std::size_t>(DateFormat::Era)] =
+                u"令和" + (reiwa == 1 ? std::u16string(u"元") : Number(reiwa)) + u"年" + month_day;
+        }
+        dates[static_cast<std::size_t>(DateFormat::Iso)] =
+            Number(year) + u"-" + Number(month, 2) + u"-" + Number(day, 2);
+        dates[static_cast<std::size_t>(DateFormat::Compact)] = Number(year) + Number(month, 2) + Number(day, 2);
+        dates[static_cast<std::size_t>(DateFormat::SlashShort)] = Number(month) + u"/" + Number(day);
+
+        const std::size_t first = static_cast<std::size_t>(preferred);
+        if (first < dates.size() && !dates[first].empty()) {
+            forms.push_back(dates[first]);
+        }
+        for (std::size_t i = 0; i < dates.size(); ++i) {
+            if (i != first && !dates[i].empty()) {
+                forms.push_back(dates[i]);
+            }
         }
         forms.push_back(std::u16string(weekday) + u"曜日");
         break;
     }
     return forms;
+}
+
+std::optional<DateFormat> DateFormatFromName(std::u16string_view name)
+{
+    for (std::size_t i = 0; i < kDateFormatNames.size(); ++i) {
+        if (kDateFormatNames[i] == name) {
+            return static_cast<DateFormat>(i);
+        }
+    }
+    return std::nullopt;
 }
 
 bool IsDateReading(std::u16string_view reading)

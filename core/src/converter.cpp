@@ -450,7 +450,7 @@ std::vector<ConvertedSegment> Converter::Convert(std::u16string_view reading,
         AddUnique(segment.candidates, std::move(best));
         std::vector<std::u16string> special = NumberForms(head_reading);
         if (special.empty() && IsDateReading(head_reading)) {
-            special = DateForms(head_reading, clock_ ? clock_() : CurrentLocalTime());
+            special = DateForms(head_reading, clock_ ? clock_() : CurrentLocalTime(), date_format_);
         }
         for (std::u16string& text : special) {
             if (!Hidden(suppressed, head_reading, text)) {

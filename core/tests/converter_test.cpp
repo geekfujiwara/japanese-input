@@ -229,6 +229,12 @@ TEST_F(ConverterTest, NumbersAndDatesGetSpecialCandidates)
     EXPECT_EQ(dates[0], u"今日は");
     EXPECT_NE(std::find(dates.begin(), dates.end(), u"2026/09/25は"), dates.end()) << "the particle is kept";
     EXPECT_NE(std::find(dates.begin(), dates.end(), u"9月25日(金)は"), dates.end());
+
+    converter.SetDateFormat(astelio::DateFormat::Iso); // T-C13-1
+    const std::vector<std::u16string> iso = converter.Convert(u"きょうは").at(0).candidates;
+    ASSERT_GE(iso.size(), 2u);
+    EXPECT_EQ(iso[0], u"今日は");
+    EXPECT_EQ(iso[1], u"2026-09-25は") << "the preferred form is the first date";
 }
 
 using Pos = astelio::UserDictionary::PartOfSpeech;

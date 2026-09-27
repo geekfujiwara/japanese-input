@@ -45,6 +45,8 @@ public:
 
     // The clock for date and time candidates (tests fix it); the system clock by default.
     void SetClock(std::function<LocalTime()> clock) { clock_ = std::move(clock); }
+    // C-13: the date form that comes first among the date candidates.
+    void SetDateFormat(DateFormat format) { date_format_ = format; }
 
     // D-02 / D-08: the user's words come first where their reading is a segment, and suppressed words are left
     // out. `dictionary` must outlive the converter (or be replaced first); nullptr turns it off.
@@ -55,6 +57,7 @@ public:
 private:
     const SystemDictionary& dictionary_;
     std::function<LocalTime()> clock_;
+    DateFormat date_format_ = DateFormat::SlashPadded;
     const UserDictionary* user_dictionary_ = nullptr;
 };
 

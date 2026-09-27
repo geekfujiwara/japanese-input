@@ -119,13 +119,13 @@ jobs:
           cp build/azookey/LICENSE build/dictionary/out/LICENSE-azooKey_dictionary_storage.txt
           cp THIRD_PARTY_NOTICES build/dictionary/out/
       - name: Check lookups (T-D01)
-        run: build/dictionary/dictionary/tools/astelio_dicbuild lookup build/dictionary/out/system.dic わたし にほんご がっこう は です
+        run: build/dictionary/dictionary/tools/astelio_dicbuild lookup build/dictionary/out/system.dic わたし にほんご がっこう は です か はんよう
       - name: Check conversion (T-B02-1)
         run: |
           tool=build/dictionary/dictionary/tools/astelio_dicbuild
           dic=build/dictionary/out/system.dic
           $tool convert $dic わたしはにほんごです 私は日本語です
-          for reading in きょうはいいてんきですね かいぎのしりょうをおくります あしたのごごさんじにえきでまちあわせましょう iphoneをかう 1234 きょう やじるし にっこり たっっせい こんんにちは; do
+          for reading in きょうはいいてんきですね かいぎのしりょうをおくります あしたのごごさんじにえきでまちあわせましょう iphoneをかう 1234 きょう やじるし にっこり たっっせい こんんにちは はんようか ひとくかする じどうかします; do
             $tool convert $dic "$reading"
           done
       - name: Measure the conversion accuracy (test plan 10)

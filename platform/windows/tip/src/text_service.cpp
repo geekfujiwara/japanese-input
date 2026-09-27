@@ -485,6 +485,9 @@ void TextService::ApplyCharacterSettings()
     settings.list_number_period = ListNumberPeriodEnabled();
     settings.auto_close_brackets = AutoCloseBracketsEnabled();
     session_.SetCharacterSettings(settings);
+    if (converter_) {
+        converter_->SetDateFormat(PreferredDateFormat());
+    }
 }
 
 STDMETHODIMP TextService::OnTestKeyDown(ITfContext* context, WPARAM wparam, LPARAM lparam, BOOL* eaten)
@@ -914,6 +917,7 @@ void TextService::UseConverter(const Converter* shared)
     converter_.reset();
     if (shared != nullptr) {
         converter_.emplace(*shared);
+        converter_->SetDateFormat(PreferredDateFormat());
     }
     PassUserDictionary();
     session_.SetConverter(converter_ ? &*converter_ : nullptr);
