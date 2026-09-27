@@ -649,7 +649,7 @@ C:\dev\IME
 1. システム辞書に使うデータ（第一候補: azooKey_dictionary_storage。4.5参照）
 2. ~~macOSで単押しに使うキーの既定値（Command / Option）~~ → Command（左=英数、右=かな。設定でOptionに変えられる。2026-09-27に決定。4.7）
 3. ~~Windowsのインストーラー形式（MSI / MSIX）~~ → MSI（WiX。ARM64版とx64版を別々に。同じMSIをMicrosoft Storeにも出す。2026-09-27に決定）
-4. コード署名証明書の入手方法。候補（安い順）: SignPath Foundation（オープンソースには無償。GitHub Actionsから署名。発行元の名前は SignPath Foundation になる）、Certumのオープンソース開発者向け証明書（年額が安い。名前は個人名）、Azure Artifact Signing（月額制。申し込める地域に条件がある）。フェーズ8の前に選ぶ
+4. コード署名証明書の入手方法。候補（安い順）: SignPath Foundation（オープンソースには無償。GitHub Actionsから署名。発行元の名前は SignPath Foundation になる）、Certumのオープンソース開発者向け証明書（年額が安い。名前は個人名）、Azure Artifact Signing（月 $9.99。個人は米国・カナダのみ、日本は法人だけが申し込める）。フェーズ8の前に選ぶ。自己署名の証明書（`New-SelfSignedCertificate`）は使わない（2026-09-27。ほかのPCでは信頼されず、SmartScreenの警告も「不明な発行元」も変わらない。利用者にルート証明書を入れてもらうのは危険）
 5. ~~変換ミスの報告機能を設けるか、設ける場合の同意の取り方~~ → 設ける（2026-09-27に決定。3.6のU-01、U-02）。診断ログはインストール時に同意を尋ね（既定は同意しない）、送るときは利用者が内容を確かめてブラウザーからGitHubのIssueを起票する
 6. ~~フェーズ3以降、MS-IMEの変換結果を比較用に使うか~~ → 使わない（自前の評価だけで進める。2026-09-27に決定）
 7. 辞書補強に使うモデル（第一候補: 生成AIにsarashina2.2-3b-instruct、照合AIにllm-jp-3-3.7b-instruct、評価AIにgpt-oss-20b。4.5.3参照）と、誤り率の目標（初期値 1%）
