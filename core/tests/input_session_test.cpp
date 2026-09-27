@@ -421,6 +421,54 @@ TEST_F(ConversionTest, CandidateColumns)
     EXPECT_EQ(session_.FocusedSegment(), 1u) << "with the list closed the arrows move between the segments";
 }
 
+// T-B03-6: emoji found by the reading of the focused segment form a column right of the candidates. Right from
+// the last column moves into it; the digits, Enter or a click put the emoji in place of the head.
+TEST_F(ConversionTest, RelatedEmojiColumn)
+{
+    EmojiCatalog catalog;
+    catalog.Add(u"🙋", u"わたし");
+    catalog.Add(u"🙆", u"わたしも");
+    catalog.Add(u"🦷", u"は");
+    catalog.Finish();
+    session_.SetEmojiCatalog([&catalog] { return &catalog; });
+
+    Type(session_, u"watasiha");
+    session_.Handle(Key(KeyKind::Space));
+    EXPECT_TRUE(session_.RelatedEmoji().empty()) << "only while the list is open";
+    session_.Handle(Key(KeyKind::Space));
+    ASSERT_EQ(session_.RelatedEmoji(), (std::vector<std::u16string>{u"🙋", u"🙆"})) << "by the head, not は";
+    EXPECT_EQ(session_.RelatedEmojiSelection(), kNoEmojiSelection);
+    EXPECT_EQ(session_.SelectedCandidate(0), 1u);
+
+    session_.Handle(Arrow(KeyKind::Right));
+    EXPECT_EQ(session_.RelatedEmojiSelection(), 1u) << "the same row";
+    EXPECT_EQ(session_.SelectedCandidate(0), 1u);
+    session_.Handle(Key(KeyKind::Down));
+    EXPECT_EQ(session_.RelatedEmojiSelection(), 0u);
+    session_.Handle(Arrow(KeyKind::Left));
+    EXPECT_EQ(session_.RelatedEmojiSelection(), kNoEmojiSelection);
+    EXPECT_TRUE(session_.CandidateListVisible());
+    session_.Handle(Arrow(KeyKind::Right));
+    session_.Handle(Char(u'1'));
+    EXPECT_EQ(session_.CompositionText(), u"🙋は") << "the particle is kept";
+    EXPECT_FALSE(session_.CandidateListVisible());
+    EXPECT_TRUE(session_.RelatedEmoji().empty());
+    EXPECT_EQ(session_.Handle(Key(KeyKind::Enter)).commit, u"🙋は");
+
+    Type(session_, u"watasiha");
+    session_.Handle(Key(KeyKind::Space));
+    session_.Handle(Key(KeyKind::Space));
+    session_.Handle(Arrow(KeyKind::Right));
+    EXPECT_EQ(session_.Handle(Key(KeyKind::Enter)).commit, u"🙆は") << "Enter takes the selected emoji";
+
+    Type(session_, u"watasiha");
+    session_.Handle(Key(KeyKind::Space));
+    session_.Handle(Key(KeyKind::Space));
+    EXPECT_TRUE(session_.PickRelatedEmoji(0).composition_changed) << "a click";
+    EXPECT_EQ(session_.CompositionText(), u"🙋は");
+    EXPECT_FALSE(session_.PickRelatedEmoji(0).composition_changed) << "the list is closed";
+}
+
 // T-B04-1: predictions appear while typing; Tab selects them and Enter commits.
 TEST_F(ConversionTest, PredictionsWhileTypingAndTabSelects)
 {

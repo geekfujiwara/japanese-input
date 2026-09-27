@@ -34,6 +34,8 @@ constexpr std::size_t kColumnRows = 9;
 constexpr std::size_t kColumns = 3;
 // ← → 列の移動
 constexpr wchar_t kColumnHint[] = L"\u2190 \u2192 \u5217\u306E\u79FB\u52D5";
+// B-03: the related emoji column right of the candidates.
+constexpr float kEmojiColumnWidth = kNumberLeft + kNumberWidth + 34.0f;
 
 } // namespace
 
@@ -92,20 +94,27 @@ SIZE CandidateWindow::MeasureDips()
         column_width_.push_back(width);
         left += width;
     }
+    emoji_left_ = left;
+    emoji_width_ = emoji_.empty() ? 0.0f : kEmojiColumnWidth;
+    left += emoji_width_;
     float width = left + kPadding;
     if (has_selection_ && (Learned(selected_) || column_left_.size() > 1)) {
         width = std::max(width, kPadding * 2 + kHintWidth + 60.0f);
     }
-    if (!column_width_.empty()) {
-        column_width_.back() += width - left - kPadding; // the last column takes what the footer added
+    // The last column takes what the footer added.
+    if (!emoji_.empty()) {
+        emoji_width_ += width - left - kPadding;
+    } else if (!column_width_.empty()) {
+        column_width_.back() += width - left - kPadding;
     }
-    const std::size_t rows = std::min(kColumnRows, page_end_ - page_begin_);
+    const std::size_t rows = std::max(std::min(kColumnRows, page_end_ - page_begin_), emoji_.size());
     const float height = kPadding * 2 + static_cast<float>(rows) * kRowHeight + kFooterHeight;
     return SIZE{static_cast<LONG>(std::ceil(width)), static_cast<LONG>(std::ceil(height))};
 }
 
 void CandidateWindow::Show(const std::vector<std::u16string>& candidates, std::size_t selected, const RECT& anchor,
-                          const std::vector<Mark>& marks)
+                          const std::vector<Mark>& marks, const std::vector<std::u16string>& emoji,
+                          std::size_t emoji_selected)
 {
     if (candidates.empty() || !EnsureFormats()) {
         Hide();
@@ -113,6 +122,8 @@ void CandidateWindow::Show(const std::vector<std::u16string>& candidates, std::s
     }
     candidates_ = candidates;
     marks_ = marks;
+    emoji_.assign(emoji.begin(), emoji.begin() + static_cast<std::ptrdiff_t>(std::min(emoji.size(), kColumnRows)));
+    emoji_selected_ = emoji_selected < emoji_.size() ? emoji_selected : kNoSelection;
     has_selection_ = selected != kNoSelection;
     selected_ = has_selection_ ? std::min(selected, candidates_.size() - 1) : 0;
     // Predictions while typing stay in one column of 9.
@@ -134,7 +145,7 @@ void CandidateWindow::Render(ID2D1RenderTarget* target, ID2D1SolidColorBrush* br
         const float left = column_left_[column];
         const float right = left + column_width_[column];
         const float top = kPadding + static_cast<float>((i - page_begin_) % kColumnRows) * kRowHeight;
-        const bool selected = has_selection_ && i == selected_;
+        const bool selected = has_selection_ && i == selected_ && emoji_selected_ == kNoSelection;
         if (selected) {
             brush->SetColor(palette.highlight);
             target->FillRoundedRectangle(
@@ -166,7 +177,35 @@ void CandidateWindow::Render(ID2D1RenderTarget* target, ID2D1SolidColorBrush* br
     const std::wstring footer = has_selection_
                                     ? std::to_wstring(selected_ + 1) + L" / " + std::to_wstring(candidates_.size())
                                     : std::wstring(L"Tab \u2192 \u9078\u629E");
-    const std::size_t rows = std::min(kColumnRows, page_end_ - page_begin_);
+    const std::size_t rows = std::max(std::min(kColumnRows, page_end_ - page_begin_), emoji_.size());
+    if (!emoji_.empty()) {
+        brush->SetColor(palette.secondary);
+        brush->SetOpacity(0.35f);
+        target->DrawLine(D2D1::Point2F(emoji_left_, kPadding + 4.0f),
+                         D2D1::Point2F(emoji_left_, kPadding + static_cast<float>(rows) * kRowHeight - 4.0f), brush,
+                         1.0f);
+        brush->SetOpacity(1.0f);
+    }
+    for (std::size_t j = 0; j < emoji_.size(); ++j) {
+        const float top = kPadding + static_cast<float>(j) * kRowHeight;
+        const float right = emoji_left_ + emoji_width_;
+        const bool selected = j == emoji_selected_;
+        if (selected) {
+            brush->SetColor(palette.highlight);
+            target->FillRoundedRectangle(
+                D2D1::RoundedRect(D2D1::RectF(emoji_left_ + 2.0f, top, right, top + kRowHeight), 4.0f, 4.0f), brush);
+        }
+        const wchar_t number[2] = {static_cast<wchar_t>(L'1' + j), L'\0'};
+        brush->SetColor(selected ? palette.highlight_text : palette.secondary);
+        target->DrawTextW(number, 1, small_format_.Get(),
+                          D2D1::RectF(emoji_left_ + kNumberLeft, top, emoji_left_ + kNumberLeft + kNumberWidth,
+                                      top + kRowHeight),
+                          brush);
+        brush->SetColor(selected ? palette.highlight_text : palette.text);
+        target->DrawTextW(Wide(emoji_[j]), static_cast<UINT32>(emoji_[j].size()), text_format_.Get(),
+                          D2D1::RectF(emoji_left_ + kNumberLeft + kNumberWidth, top, right, top + kRowHeight), brush,
+                          D2D1_DRAW_TEXT_OPTIONS_CLIP | D2D1_DRAW_TEXT_OPTIONS_ENABLE_COLOR_FONT);
+    }
     const float footer_top = kPadding + static_cast<float>(rows) * kRowHeight;
     brush->SetColor(palette.secondary);
     const wchar_t* hint = has_selection_ && Learned(selected_) ? kForgetHint
@@ -181,6 +220,17 @@ void CandidateWindow::Render(ID2D1RenderTarget* target, ID2D1SolidColorBrush* br
     target->DrawTextW(footer.c_str(), static_cast<UINT32>(footer.size()), small_format_.Get(),
                       D2D1::RectF(kPadding, footer_top, width - kPadding - 4.0f, footer_top + kFooterHeight), brush);
     small_format_->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_LEADING);
+}
+
+void CandidateWindow::OnClick(float x, float y)
+{
+    if (emoji_.empty() || !on_emoji_click_ || x < emoji_left_ || x > emoji_left_ + emoji_width_ || y < kPadding) {
+        return;
+    }
+    const auto row = static_cast<std::size_t>((y - kPadding) / kRowHeight);
+    if (row < emoji_.size()) {
+        on_emoji_click_(row);
+    }
 }
 
 } // namespace astelio::tip
