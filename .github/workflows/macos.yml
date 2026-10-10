@@ -1,0 +1,56 @@
+name: macOS input method
+
+# Builds and tests the macOS input method (platform/macos) and uploads AstelioIME.app (Universal 2, signed ad hoc).
+# tools/get-astelio-mac.sh downloads it to a Mac and installs it.
+on:
+  pull_request:
+    paths:
+      - 'platform/macos/**'
+      - 'core/**'
+      - 'dictionary/**'
+      - 'tools/*-astelio-mac.sh'
+      - 'CMakeLists.txt'
+      - '.github/workflows/macos.yml'
+  push:
+    branches: [main, 'claude/**']
+    paths:
+      - 'platform/macos/**'
+      - 'core/**'
+      - 'dictionary/**'
+      - 'tools/*-astelio-mac.sh'
+      - 'CMakeLists.txt'
+      - '.github/workflows/macos.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: macos-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  app:
+    name: AstelioIME.app
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install XcodeGen
+        run: brew install xcodegen
+      - name: Engine tests (gtest)
+        run: |
+          cmake -S . -B build/engine -DCMAKE_BUILD_TYPE=Release
+          cmake --build build/engine --target astelio_mac_engine_tests --parallel
+          build/engine/platform/macos/engine/astelio_mac_engine_tests
+      - name: Build and test the app
+        env:
+          ASTELIO_BUILD_NUMBER: ${{ github.run_number }}
+        run: tools/build-astelio-mac.sh --test
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: astelio-ime-macos
+          path: build/macos-app/AstelioIME-*-mac.zip
+          if-no-files-found: error
+          retention-days: 30

@@ -41,3 +41,7 @@ add_subdirectory(eval)
 if(WIN32)
     add_subdirectory(platform/windows/tip)
 endif()
+
+if(UNIX)
+    add_subdirectory(platform/macos/engine)
+endif()

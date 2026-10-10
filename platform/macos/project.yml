@@ -1,0 +1,93 @@
+# Xcode project of the macOS input method. Generate it with `xcodegen generate` in this folder (tools/build-astelio-mac.sh
+# does it for you); AstelioIME.xcodeproj is not committed.
+name: AstelioIME
+options:
+  bundleIdPrefix: com.geekfujiwara
+  deploymentTarget:
+    macOS: "14.0"
+  createIntermediateGroups: true
+settings:
+  base:
+    MARKETING_VERSION: "0.2.1"
+    CURRENT_PROJECT_VERSION: "1"
+    MACOSX_DEPLOYMENT_TARGET: "14.0"
+    SWIFT_VERSION: "5.0"
+    CLANG_CXX_LANGUAGE_STANDARD: c++20
+    CLANG_CXX_LIBRARY: libc++
+    CLANG_ENABLE_OBJC_ARC: YES
+    HEADER_SEARCH_PATHS:
+      - $(SRCROOT)/../../core/include
+      - $(SRCROOT)/engine/include
+    GCC_PREPROCESSOR_DEFINITIONS:
+      - $(inherited)
+      - ASTELIO_CORE_VERSION=\"$(MARKETING_VERSION)\"
+    DEAD_CODE_STRIPPING: YES
+  configs:
+    Release:
+      ONLY_ACTIVE_ARCH: NO
+      ARCHS: "arm64 x86_64"
+
+targets:
+  AstelioIME:
+    type: application
+    platform: macOS
+    sources:
+      - path: AstelioIME
+        excludes:
+          - "*.entitlements"
+          - Info.plist
+      - path: engine/src
+        group: Engine
+      - path: ../../core/src
+        group: Core
+      # Built by tools/build-astelio-mac.sh or CI from azooKey_dictionary_storage; without it only kana input works.
+      - path: Dictionary
+        group: Dictionary
+        optional: true
+        buildPhase: resources
+        type: folder
+      - path: ../../THIRD_PARTY_NOTICES
+        buildPhase: resources
+      - path: ../../LICENSE
+        buildPhase: resources
+    settings:
+      base:
+        PRODUCT_NAME: AstelioIME
+        PRODUCT_BUNDLE_IDENTIFIER: com.geekfujiwara.inputmethod.Astelio
+        INFOPLIST_FILE: AstelioIME/Info.plist
+        GENERATE_INFOPLIST_FILE: NO
+        SWIFT_OBJC_BRIDGING_HEADER: AstelioIME/AstelioIME-Bridging-Header.h
+        CODE_SIGN_ENTITLEMENTS: AstelioIME/AstelioIME.entitlements
+        CODE_SIGN_STYLE: Manual
+        CODE_SIGN_IDENTITY: "-"
+        ENABLE_HARDENED_RUNTIME: YES
+        COMBINE_HIDPI_IMAGES: YES
+
+  AstelioIMETests:
+    type: bundle.unit-test
+    platform: macOS
+    sources:
+      - path: Tests
+      - path: AstelioIME/Bridge
+        group: Bridge
+      - path: engine/src
+        group: Engine
+      - path: ../../core/src
+        group: Core
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.geekfujiwara.inputmethod.AstelioTests
+        GENERATE_INFOPLIST_FILE: YES
+        SWIFT_OBJC_BRIDGING_HEADER: Tests/AstelioIMETests-Bridging-Header.h
+        CODE_SIGN_STYLE: Manual
+        CODE_SIGN_IDENTITY: "-"
+
+schemes:
+  AstelioIME:
+    build:
+      targets:
+        AstelioIME: all
+        AstelioIMETests: [test]
+    test:
+      targets:
+        - AstelioIMETests
