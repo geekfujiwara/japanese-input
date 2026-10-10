@@ -1,0 +1,89 @@
+# macOS版（2026-10-10時点）
+
+macOS版は InputMethodKit の入力メソッド（`AstelioIME.app`）です。変換エンジンは Windows 版と同じ C++ Core を使い、キー操作もそろえています（左右 Alt の代わりに左右 Command の単押し）。
+
+## できること
+
+- ローマ字入力、Space で変換、Return で確定、予測（Tab / ↓）、文節の移動と伸縮、F6〜F10、数字・日付、入力ミスの補正、もしかして、絵文字パレット、確定の取り消し（Control+Backspace）
+- 左 Command の単押しで英語、右 Command の単押しで日本語（入力メニューで Option に変えられる）。切り替えると入力位置の近くに「あ」「A」を少し表示。モードはすべてのアプリで共有
+- すりガラスの候補ウィンドウ（クリックでも選べる）。「もしかして」「履歴」の印
+- 入力の履歴（学習）とその一時停止・全削除、ユーザー辞書（`user_dictionary.tsv`。Windows 版と同じ形式）
+- パスワード欄（Secure Input）では日本語入力にならず、記録もしない
+- 設定はメニューバーの入力メニュー（Astelio IME を選んでいるときの「あ」のアイコン）から変える
+
+データは `~/Library/Application Support/AstelioIME/`（`learning.tsv`、`user_dictionary.tsv`、`emoji_recent.txt`）に、この利用者だけが読める形で置きます。外部とは通信しません。
+
+## このMacで使う
+
+必要なもの: macOS 14 以降、GitHub CLI（`brew install gh` のあと `gh auth login`）。
+
+```bash
+git clone https://github.com/geekfujiwara/japanese-input.git
+cd japanese-input
+tools/get-astelio-mac.sh            # main の最新のビルドを取得して入れる（ブランチ名も指定できる）
+```
+
+自分のMacでビルドするとき（Xcode と `brew install cmake xcodegen` が必要。初回は辞書の作成に数分かかる）:
+
+```bash
+tools/build-astelio-mac.sh --test   # build/macos-app/AstelioIME.app と zip を作る
+tools/install-astelio-mac.sh        # ~/Library/Input Methods に入れて入力ソースに加える
+```
+
+入れたあと、メニューバーの入力メニューで「Astelio IME」を選びます。一覧にないときは［システム設定］→［キーボード］→［テキスト入力］の［編集...］→［+］→［日本語］から「Astelio IME」を加えます（出てこなければ一度ログアウトして入り直す）。取り除くときは `tools/install-astelio-mac.sh --uninstall` です。
+
+> [!NOTE]
+> 今のビルドは開発者の署名（Developer ID）と公証をしていない、アドホック署名です。スクリプトで入れる場合はそのまま動きます。ブラウザーで zip をダウンロードした場合は、スクリプトに zip を渡すと隔離の属性を外して入れます。
+
+## ソースの構成
+
+| 場所 | 内容 |
+| --- | --- |
+| `platform/macos/engine/` | OS に依存しない C++（キーコードの変換、辞書のメモリマップ、履歴などの保存、修飾キーの単押し、表示する内容）。Linux・macOS の CI で gtest を実行 |
+| `platform/macos/AstelioIME/Bridge/` | Objective-C++ の橋渡し（型の変換だけ） |
+| `platform/macos/AstelioIME/*.swift` | IMKInputController、候補ウィンドウ、モード表示、設定、入力ソースの登録 |
+| `platform/macos/project.yml` | XcodeGen のプロジェクト定義（`.xcodeproj` はコミットしない） |
+| `platform/macos/Tests/` | 橋渡しの XCTest |
+| `.github/workflows/macos.yml` | Universal 2 のビルドとテスト。成果物 `astelio-ime-macos` に zip を置く |
+
+## Mac App Store に出すには
+
+コードの側では App Store 用のエンタイトルメント（`AstelioIME-AppStore.entitlements`: App Sandbox と、InputMethodKit の接続名の登録）と書き出しの設定（`ExportOptions-AppStore.plist`）を用意してあります。データの置き場所は Application Support なので、サンドボックスではそのままコンテナーの中になります。
+
+公開には、次の利用者側の作業が要ります（このリポジトリの CI からはできません）。
+
+1. Apple Developer Program に登録する（年額）。App Store Connect で App ID（`com.geekfujiwara.inputmethod.Astelio`、変えるときは `project.yml` の `PRODUCT_BUNDLE_IDENTIFIER` も）とアプリのレコードを作る
+2. Xcode にその Apple ID を加え、`ExportOptions-AppStore.plist` の `teamID` を自分のチーム ID にする
+3. アーカイブして書き出し、アップロードする
+
+   ```bash
+   cd platform/macos && xcodegen generate
+   xcodebuild archive -project AstelioIME.xcodeproj -scheme AstelioIME -configuration Release \
+     -archivePath build/AstelioIME.xcarchive \
+     CODE_SIGN_STYLE=Automatic CODE_SIGN_IDENTITY="Apple Distribution" DEVELOPMENT_TEAM=<チームID> \
+     CODE_SIGN_ENTITLEMENTS=AstelioIME/AstelioIME-AppStore.entitlements MARKETING_VERSION=<版>
+   xcodebuild -exportArchive -archivePath build/AstelioIME.xcarchive \
+     -exportOptionsPlist ExportOptions-AppStore.plist -exportPath build/appstore
+   xcrun altool --upload-app -f build/appstore/AstelioIME.pkg -t macos -u <Apple ID> -p <App用パスワード>
+   ```
+
+4. App Store Connect でスクリーンショット、説明、プライバシー（データを収集しない）、年齢区分を入れて審査に出す
+
+> [!WARNING]
+> 入力メソッドが Mac App Store の審査を通るかは確かではありません（計画書4.7で「フェーズ7の始めに確かめ、難しければ.pkgを先に出す」としていた点）。
+> - App Store のアプリは `/Applications` に入りますが、入力メソッドは本来 `~/Library/Input Methods` か `/Library/Input Methods` に置くものです。App Store 版は `/Applications` から入力ソースとして登録できるかを、実機で確かめる必要があります（`AstelioIME --install` は `TISRegisterInputSource` でその場所を登録します）
+> - サンドボックスで入力メソッドを動かすには、一時的な例外のエンタイトルメント（`temporary-exception.mach-register.global-name`）が要ります。審査で理由を求められることがあります
+> - 画面を持たないバックグラウンドのアプリは却下された例があります。App Store 版には、入れ方と設定を案内する通常のアプリ（SwiftUI の設定アプリ、フェーズ7の残り）を表に出し、入力メソッドはその中に入れる形が必要になる見込みです
+>
+> 先に Developer ID 署名と公証をした .pkg を GitHub Releases に出し（計画書4.7の配布の1つめ）、App Store は設定アプリができてから審査に相談するのが確実です。
+
+## まだできていないこと
+
+| 内容 | メモ |
+| --- | --- |
+| 実機での確認 | テキストエディット、Safari、VS Code で Windows 版と同じ操作ができること（フェーズ7の完了条件）。候補ウィンドウの位置、ライト/ダーク、マルチディスプレイ、Command の単押しとショートカットの区別 |
+| SwiftUI の設定アプリ | ユーザー辞書の管理、履歴の管理、日付の表記、アプリごとの設定。今は入力メニューの項目と `user_dictionary.tsv` の直接編集 |
+| Developer ID 署名・公証・.pkg | 証明書と公証の認証情報を GitHub の Secrets に入れ、main とタグのビルドだけで署名する（計画書4.7） |
+| Release への追加 | タグのビルドで zip（のちに .pkg）を GitHub Release に置く |
+| 入力モードのアイコン | メニューバーのアイコンは Astelio のアイコン1つ。日本語・英語でアイコンを変えるには入力モード（`ComponentInputModeDict`）を使う |
+| 再変換、アプリごとの無効化 | Windows 版の B-07、C-09 に当たるもの |

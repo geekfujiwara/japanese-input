@@ -13,7 +13,7 @@
 [![Release](https://img.shields.io/github/v/release/geekfujiwara/japanese-input?include_prereleases&label=release)](https://github.com/geekfujiwara/japanese-input/releases)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 ![Windows ARM64 | x64 | x86](https://img.shields.io/badge/Windows-ARM64%20%7C%20x64%20%7C%20x86-0078D4)
-![macOS](https://img.shields.io/badge/macOS-planned-lightgrey)
+![macOS 14+ (preview)](https://img.shields.io/badge/macOS%2014%2B-preview-orange)
 
 </div>
 
@@ -128,6 +128,18 @@ CIが作ったTIPと辞書を取得して、管理者のPowerShellで登録し�
 
 登録後、［設定］→［時刻と言語］→［言語と地域］→［日本語］→［言語のオプション］→［キーボード］で「Astelio IME」を追加します。起動中のアプリは再起動してください（サインアウトして入り直すのが確実です）。CIの各ビルドには、同じ内容のMSI（`installer-arm64`、`installer-x64`）も成果物として残ります。
 
+## インストール（macOS、開発中）
+
+macOS 14 以降の Mac（Apple silicon / Intel）で、CI が作った `AstelioIME.app` を取得して入れます（管理者の権限は要りません）。
+
+```bash
+tools/get-astelio-mac.sh          # 取得して ~/Library/Input Methods に入れる（GitHub CLI が必要）
+tools/build-astelio-mac.sh        # 自分でビルドするとき（Xcode、brew install cmake xcodegen）
+tools/install-astelio-mac.sh      # ビルドしたものを入れる（--uninstall で取り除く）
+```
+
+メニューバーの入力メニューで「Astelio IME」を選びます。右 Command の単押しで日本語、左 Command の単押しで英語です。詳しい手順、データの場所、Mac App Store に出すための手順と課題は [docs/macos.md](docs/macos.md) にまとめています。
+
 ## ビルド
 
 ```powershell
@@ -142,6 +154,7 @@ TIPの結合テスト（登録を伴う）は `ASTELIO_TIP_INTEGRATION=1` のと
 | --- | --- |
 | [core/](core) | 変換エンジン（C++20） |
 | [platform/windows/tip/](platform/windows/tip) | Windows TIP（TSF） |
+| [platform/macos/](platform/macos) | macOS の入力メソッド（InputMethodKit。Swift と Objective-C++、OS に依存しない部分は C++）。[docs/macos.md](docs/macos.md) |
 | [platform/windows/installer/](platform/windows/installer) | インストーラー（セットアップexeとWiXのMSI）と使い方のページ。`./tools/Build-Installer.ps1 -Arch arm64` で作る |
 | [assets/](assets) | アイコン（`./tools/Generate-AppIcon.ps1` で作る） |
 | [dictionary/tools/](dictionary/tools) | 辞書の変換・作成・確認ツール |
@@ -161,6 +174,8 @@ TIPの結合テスト（登録を伴う）は `ASTELIO_TIP_INTEGRATION=1` のと
   - [x] ユーザー辞書と抑制単語、他のIMEの辞書の取り込み・書き出し（Core）
   - [ ] ユーザー辞書の管理画面（TIP）、追加辞書（D-07）、言語モデルによる辞書の補強
 - [ ] フェーズ6〜8: 設定アプリ、macOS版、インストーラーと署名
+  - [x] macOS版の入力メソッド（変換・予測・候補ウィンドウ・左右Command・履歴。Universal 2 のビルドをCIで作る）
+  - [ ] macOS版の実機確認、SwiftUI の設定アプリ、Developer ID 署名と公証、Mac App Store
 
 ## 要望・不具合の報告
 

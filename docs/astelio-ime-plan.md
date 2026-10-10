@@ -581,6 +581,8 @@ C:\dev\IME
 
 **完了条件**: テキストエディット、Safari、VS Codeで、Windows版と同じ入力操作ができる。
 
+2026-10-10: 入力メソッドを `platform/macos` に追加した。OSに依存しない部分（キーコード、保存、単押し、表示する内容）は `platform/macos/engine` のC++にしてgtestで確かめ、Swiftは表示とInputMethodKitの呼び出しだけにした。ビルドはXcodeGen（`project.yml`）と `tools/build-astelio-mac.sh`、CIは `.github/workflows/macos.yml`。設定は当面、入力メニューの項目で変える。App Storeの扱いの調べた結果と手順は [macos.md](macos.md)
+
 ### フェーズ8: 配布
 
 - Windows: WiXインストーラー（MSI。ARM64版とx64版を別々に作る。TIP 3種の登録、サーバー、設定アプリ、辞書）、コード署名、アンインストール時の登録解除。同じMSIをGitHub ReleasesとMicrosoft Storeに出す（Storeは署名済みのMSIをそのまま掲載できる。TIPはMSIXでは登録できない）
