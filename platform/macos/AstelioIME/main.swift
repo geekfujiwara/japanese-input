@@ -19,6 +19,9 @@ guard let server = IMKServer(name: connectionName, bundleIdentifier: Bundle.main
     exit(1)
 }
 AppState.shared.server = server
+// Installed by the Mac App Store or TestFlight, the app lives in /Applications rather than an Input Methods folder;
+// registering it there makes it appear among the input sources (it is turned on in System Settings).
+InputSourceRegistration.register()
 
 let application = NSApplication.shared
 application.run()

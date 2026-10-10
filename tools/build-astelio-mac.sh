@@ -2,19 +2,22 @@
 # Builds the macOS input method (Universal 2) on a Mac: the system dictionary from azooKey_dictionary_storage,
 # the Xcode project (XcodeGen) and AstelioIME.app, signed ad hoc. CI runs the same script.
 #
-#   tools/build-astelio-mac.sh [--test] [--output DIR]
+#   tools/build-astelio-mac.sh [--test] [--output DIR] [--prepare-only]
 #
 # Needs Xcode, CMake and XcodeGen (brew install cmake xcodegen). The app ends up in DIR (default build/macos-app),
-# next to AstelioIME-<version>-mac.zip. Install it with tools/install-astelio-mac.sh.
+# next to AstelioIME-<version>-mac.zip. Install it with tools/install-astelio-mac.sh. --prepare-only stops after the
+# dictionary and the Xcode project (tools/release-astelio-mac-appstore.sh builds the Mac App Store version from them).
 set -euo pipefail
 
 root="$(cd "$(dirname "$0")/.." && pwd)"
 output="$root/build/macos-app"
 run_tests=0
+prepare_only=0
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --test) run_tests=1 ;;
         --output) output="$2"; shift ;;
+        --prepare-only) prepare_only=1 ;;
         *) echo "unknown option: $1" >&2; exit 2 ;;
     esac
     shift
@@ -60,6 +63,9 @@ fi
 
 echo "== Generating the Xcode project"
 (cd "$macos" && xcodegen generate --quiet)
+if [[ $prepare_only -eq 1 ]]; then
+    exit 0
+fi
 
 settings=(MARKETING_VERSION="$version" CURRENT_PROJECT_VERSION="${ASTELIO_BUILD_NUMBER:-1}")
 

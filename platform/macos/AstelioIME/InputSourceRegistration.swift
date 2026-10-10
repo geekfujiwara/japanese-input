@@ -26,6 +26,14 @@ enum InputSourceRegistration {
         return true
     }
 
+    /// Registers this copy without turning it on; harmless when it is already known.
+    static func register() {
+        let status = TISRegisterInputSource(Bundle.main.bundleURL as CFURL)
+        if status != noErr {
+            NSLog("Astelio IME: TISRegisterInputSource returned %ld", Int(status))
+        }
+    }
+
     static func uninstall() -> Bool {
         for source in inputSources() {
             TISDisableInputSource(source)

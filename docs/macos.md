@@ -46,28 +46,23 @@ tools/install-astelio-mac.sh        # ~/Library/Input Methods に入れて入力
 | `platform/macos/Tests/` | 橋渡しの XCTest |
 | `.github/workflows/macos.yml` | Universal 2 のビルドとテスト。成果物 `astelio-ime-macos` に zip を置く |
 
-## Mac App Store に出すには
+## Mac App Store に出すには（まず TestFlight）
 
-コードの側では App Store 用のエンタイトルメント（`AstelioIME-AppStore.entitlements`: App Sandbox と、InputMethodKit の接続名の登録）と書き出しの設定（`ExportOptions-AppStore.plist`）を用意してあります。データの置き場所は Application Support なので、サンドボックスではそのままコンテナーの中になります。
+App Store 版は App Sandbox を有効にした `AstelioIME-AppStore.entitlements` で署名し、`/Applications` に入ります。起動のたびに自分を入力ソースとして登録する（`TISRegisterInputSource`）ので、TestFlight で入れたあと［システム設定］→［キーボード］→［テキスト入力］から「Astelio IME」を加えれば使えます（実機で確かめる項目）。
 
-公開には、次の利用者側の作業が要ります（このリポジトリの CI からはできません）。
+署名とアップロードは `.github/workflows/macos-testflight.yml`（手動で実行）が行います。証明書（Apple Distribution と Mac Installer Distribution）とプロビジョニングプロファイルはその実行のためだけに App Store Connect API で作り、最後に失効させます。Apple が配布用に署名し直すので、失効させてもアップロード済みのビルドには影響しません。
 
-1. Apple Developer Program に登録する（年額）。App Store Connect で App ID（`com.geekfujiwara.inputmethod.Astelio`、変えるときは `project.yml` の `PRODUCT_BUNDLE_IDENTIFIER` も）とアプリのレコードを作る
-2. Xcode にその Apple ID を加え、`ExportOptions-AppStore.plist` の `teamID` を自分のチーム ID にする
-3. アーカイブして書き出し、アップロードする
+準備（初回だけ。Apple の画面での作業）:
 
-   ```bash
-   cd platform/macos && xcodegen generate
-   xcodebuild archive -project AstelioIME.xcodeproj -scheme AstelioIME -configuration Release \
-     -archivePath build/AstelioIME.xcarchive \
-     CODE_SIGN_STYLE=Automatic CODE_SIGN_IDENTITY="Apple Distribution" DEVELOPMENT_TEAM=<チームID> \
-     CODE_SIGN_ENTITLEMENTS=AstelioIME/AstelioIME-AppStore.entitlements MARKETING_VERSION=<版>
-   xcodebuild -exportArchive -archivePath build/AstelioIME.xcarchive \
-     -exportOptionsPlist ExportOptions-AppStore.plist -exportPath build/appstore
-   xcrun altool --upload-app -f build/appstore/AstelioIME.pkg -t macos -u <Apple ID> -p <App用パスワード>
-   ```
+1. App Store Connect →［ユーザーとアクセス］→［統合］→［App Store Connect API］で、**Admin** の役割のキーを作り、`.p8` をダウンロードする（再ダウンロードできない）
+2. GitHub のリポジトリの［Settings］→［Secrets and variables］→［Actions］に `ASC_KEY_ID`、`ASC_ISSUER_ID`、`ASC_KEY_P8`（`.p8` の中身）を登録する
+3. ワークフローを一度実行する。Bundle ID（`com.geekfujiwara.inputmethod.Astelio`、macOS）を登録し、アプリがまだ無いので止まる
+4. App Store Connect →［アプリ］→［+］→［新規アプリ］で、プラットフォーム macOS、上の Bundle ID、名前「Astelio IME」、主言語 日本語、SKU（任意）でアプリを作る（API では作れない）
+5. ワークフローをもう一度実行する（`tester` に自分の App Store Connect のメールアドレスを入れると、内部テストに招待する）。処理が終わると Mac の TestFlight アプリに出る
 
-4. App Store Connect でスクリーンショット、説明、プライバシー（データを収集しない）、年齢区分を入れて審査に出す
+手元の Mac で同じことをするときは、`ASC_KEY_ID`・`ASC_ISSUER_ID`・`ASC_KEY_PATH` を設定して `tools/release-astelio-mac-appstore.sh --build-number <前回より大きい番号>` を実行します（`--no-upload` で署名した .pkg を作るだけ）。
+
+内部テスト（チームのメンバー）は Beta 版審査が要りません。外部のテスターに配るときと、App Store に出すときは審査があります。
 
 > [!WARNING]
 > 入力メソッドが Mac App Store の審査を通るかは確かではありません（計画書4.7で「フェーズ7の始めに確かめ、難しければ.pkgを先に出す」としていた点）。

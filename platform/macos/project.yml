@@ -67,9 +67,17 @@ targets:
         INFOPLIST_FILE: AstelioIME/Info.plist
         GENERATE_INFOPLIST_FILE: NO
         SWIFT_OBJC_BRIDGING_HEADER: AstelioIME/AstelioIME-Bridging-Header.h
-        CODE_SIGN_ENTITLEMENTS: AstelioIME/AstelioIME.entitlements
+        # Ad hoc by default; tools/release-astelio-mac-appstore.sh sets the ASTELIO_* values for the Mac App Store
+        # (passing them on the command line reaches this target only, not the static library).
+        ASTELIO_ENTITLEMENTS: AstelioIME/AstelioIME.entitlements
+        ASTELIO_SIGN_IDENTITY: "-"
+        ASTELIO_PROFILE: ""
+        ASTELIO_TEAM: ""
+        CODE_SIGN_ENTITLEMENTS: $(ASTELIO_ENTITLEMENTS)
         CODE_SIGN_STYLE: Manual
-        CODE_SIGN_IDENTITY: "-"
+        CODE_SIGN_IDENTITY: $(ASTELIO_SIGN_IDENTITY)
+        PROVISIONING_PROFILE_SPECIFIER: $(ASTELIO_PROFILE)
+        DEVELOPMENT_TEAM: $(ASTELIO_TEAM)
         ENABLE_HARDENED_RUNTIME: YES
         COMBINE_HIDPI_IMAGES: YES
         OTHER_LDFLAGS: ["$(inherited)", "-lc++"]
