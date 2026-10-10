@@ -78,7 +78,7 @@ app="$work/derived/Build/Products/Release/AstelioIME.app"
 archs="$(lipo -archs "$app/Contents/MacOS/AstelioIME")"
 echo "slices: $archs"
 [[ "$archs" == *arm64* && "$archs" == *x86_64* ]]
-[[ -f "$app/Contents/Resources/Dictionary/system.dic" ]]
+[[ -f "$app/Contents/Resources/system.dic" ]]
 codesign --verify --deep --strict "$app"
 
 rm -rf "$output/AstelioIME.app"

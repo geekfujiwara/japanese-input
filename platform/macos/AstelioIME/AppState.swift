@@ -16,7 +16,7 @@ final class AppState {
     var japaneseMode = true
 
     private init() {
-        let dictionary = Bundle.main.path(forResource: "system", ofType: "dic", inDirectory: "Dictionary")
+        let dictionary = Bundle.main.path(forResource: "system", ofType: "dic")
         engine = ASTEngine(dictionaryPath: dictionary, dataDirectory: AppState.dataDirectory().path)
         if !engine.hasDictionary {
             NSLog("Astelio IME: the system dictionary is missing or broken; only kana input works")

@@ -5,7 +5,6 @@ options:
   bundleIdPrefix: com.geekfujiwara
   deploymentTarget:
     macOS: "14.0"
-  createIntermediateGroups: true
 settings:
   base:
     MARKETING_VERSION: "0.2.1"
@@ -28,27 +27,38 @@ settings:
       ARCHS: "arm64 x86_64"
 
 targets:
+  # The C++ Core, the platform-independent engine and the Objective-C++ bridge, linked by the app and the tests.
+  AstelioEngine:
+    type: library.static
+    platform: macOS
+    sources:
+      - path: ../../core/src
+      - path: engine/src
+      - path: AstelioIME/Bridge
+    settings:
+      base:
+        PRODUCT_NAME: AstelioEngine
+        SKIP_INSTALL: YES
+
   AstelioIME:
     type: application
     platform: macOS
+    dependencies:
+      - target: AstelioEngine
     sources:
       - path: AstelioIME
         excludes:
           - "*.entitlements"
           - Info.plist
-      - path: engine/src
-        group: Engine
-      - path: ../../core/src
-        group: Core
+          - Bridge/**
       # Built by tools/build-astelio-mac.sh or CI from azooKey_dictionary_storage; without it only kana input works.
-      - path: Dictionary
-        group: Dictionary
+      - path: Dictionary/system.dic
         optional: true
         buildPhase: resources
-        type: folder
-      - path: ../../THIRD_PARTY_NOTICES
+      - path: Dictionary/LICENSE-azooKey_dictionary_storage.txt
+        optional: true
         buildPhase: resources
-      - path: ../../LICENSE
+      - path: ../../THIRD_PARTY_NOTICES
         buildPhase: resources
     settings:
       base:
@@ -62,18 +72,15 @@ targets:
         CODE_SIGN_IDENTITY: "-"
         ENABLE_HARDENED_RUNTIME: YES
         COMBINE_HIDPI_IMAGES: YES
+        OTHER_LDFLAGS: ["$(inherited)", "-lc++"]
 
   AstelioIMETests:
     type: bundle.unit-test
     platform: macOS
+    dependencies:
+      - target: AstelioEngine
     sources:
       - path: Tests
-      - path: AstelioIME/Bridge
-        group: Bridge
-      - path: engine/src
-        group: Engine
-      - path: ../../core/src
-        group: Core
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.geekfujiwara.inputmethod.AstelioTests
@@ -81,6 +88,7 @@ targets:
         SWIFT_OBJC_BRIDGING_HEADER: Tests/AstelioIMETests-Bridging-Header.h
         CODE_SIGN_STYLE: Manual
         CODE_SIGN_IDENTITY: "-"
+        OTHER_LDFLAGS: ["$(inherited)", "-lc++"]
 
 schemes:
   AstelioIME:
