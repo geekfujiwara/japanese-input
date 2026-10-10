@@ -65,9 +65,15 @@ settings=(MARKETING_VERSION="$version" CURRENT_PROJECT_VERSION="${ASTELIO_BUILD_
 
 if [[ $run_tests -eq 1 ]]; then
     echo "== Testing the bridge (XCTest)"
-    TEST_RUNNER_ASTELIO_TEST_DICTIONARY="$dictionary" xcodebuild test -quiet \
-        -project "$macos/AstelioIME.xcodeproj" -scheme AstelioIME -destination 'platform=macOS' \
-        -derivedDataPath "$work/derived-test" "${settings[@]}"
+    status=0
+    TEST_RUNNER_ASTELIO_TEST_DICTIONARY="$dictionary" xcodebuild test \
+        -project "$macos/AstelioIME.xcodeproj" -scheme AstelioIME -destination "platform=macOS,arch=$(uname -m)" \
+        -derivedDataPath "$work/derived-test" "${settings[@]}" > "$work/test.log" 2>&1 || status=$?
+    grep -E "Test Case .*(passed|failed|skipped)|error:|Executed [0-9]+ test" "$work/test.log" || true
+    if [[ $status -ne 0 ]]; then
+        tail -n 40 "$work/test.log"
+        exit "$status"
+    fi
 fi
 
 echo "== Building AstelioIME.app (Universal 2)"
