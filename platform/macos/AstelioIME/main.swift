@@ -16,10 +16,13 @@ if arguments.contains("--uninstall") {
     exit(InputSourceRegistration.uninstall() ? 0 : 1)
 }
 
-// What the settings window's Install button does, for scripts and tests: copy to ~/Library/Input Methods and register.
+// For scripts and tests: copy to ~/Library/Input Methods and register (a copy made here, outside the sandbox, runs).
 if arguments.contains("--install-input-method") {
     do {
-        let outcome = try InputMethodInstaller().install()
+        let installer = InputMethodInstaller()
+        try installer.prepareForInstall()
+        try installer.copy(to: InputMethodInstaller.installedURL)
+        let outcome = installer.register()
         print("registered: \(outcome.registerStatus), listed: \(outcome.listed)")
         exit(outcome.registerStatus == noErr ? 0 : 1)
     } catch {

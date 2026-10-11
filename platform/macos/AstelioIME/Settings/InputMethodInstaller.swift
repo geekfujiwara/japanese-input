@@ -58,29 +58,63 @@ final class InputMethodInstaller {
 
     // MARK: - Install and remove
 
-    @discardableResult
-    func install() throws -> Outcome {
-        let fileManager = FileManager.default
-        try fileManager.createDirectory(at: Self.folder, withIntermediateDirectories: true)
+    /// Stops the running server and removes an old copy, so a new one can be put in place.
+    func prepareForInstall() throws {
+        try FileManager.default.createDirectory(at: Self.folder, withIntermediateDirectories: true)
         terminateRunningServer()
-        if fileManager.fileExists(atPath: Self.installedURL.path) {
-            try fileManager.removeItem(at: Self.installedURL)
+        if FileManager.default.fileExists(atPath: Self.installedURL.path) {
+            try FileManager.default.removeItem(at: Self.installedURL)
         }
-        try fileManager.copyItem(at: Bundle.main.bundleURL, to: Self.installedURL)
-        removeQuarantine(Self.installedURL)
+    }
 
+    /// Copies this app to `destination` (the place the user chose in the save panel).
+    func copy(to destination: URL) throws {
+        try FileManager.default.copyItem(at: Bundle.main.bundleURL, to: destination)
+    }
+
+    /// macOS refuses to run a program that a sandboxed app created on its own ("created without user consent"):
+    /// the quarantine flags of such a file lack the user-approved bit (0x40). A copy the user made in the save panel
+    /// or in the Finder has it, or has no quarantine at all.
+    func canRun(_ url: URL) -> Bool {
+        let name = "com.apple.quarantine"
+        let size = getxattr(url.path, name, nil, 0, 0, XATTR_NOFOLLOW)
+        guard size > 0 else {
+            return true
+        }
+        var buffer = [UInt8](repeating: 0, count: size)
+        guard getxattr(url.path, name, &buffer, size, 0, XATTR_NOFOLLOW) == size,
+              let text = String(bytes: buffer, encoding: .utf8),
+              let field = text.split(separator: ";").first,
+              let flags = UInt32(field, radix: 16) else {
+            return false
+        }
+        return flags & 0x40 != 0 || flags & 0x80 == 0
+    }
+
+    func removeInstalledCopy() {
+        terminateRunningServer()
+        try? FileManager.default.removeItem(at: Self.installedURL)
+    }
+
+    /// Tells the system about the copy in ~/Library/Input Methods and turns its input sources on.
+    @discardableResult
+    func register() -> Outcome {
         let status = TISRegisterInputSource(Self.installedURL as CFURL)
         var listed = !sources().isEmpty
-        if listed {
-            for source in sources() {
-                TISEnableInputSource(source)
-            }
-        } else {
+        if !listed {
             // The list can lag behind the registration by a moment.
             Thread.sleep(forTimeInterval: 1)
             listed = !sources().isEmpty
         }
+        for source in sources() {
+            TISEnableInputSource(source)
+        }
         return Outcome(registerStatus: status, listed: listed)
+    }
+
+    /// True when a copy is in place but the system does not list it yet (it was put there by hand).
+    var needsRegistration: Bool {
+        installedVersion != nil && sources().isEmpty
     }
 
     func uninstall() throws {
@@ -119,17 +153,6 @@ final class InputMethodInstaller {
             if !app.terminate() {
                 app.forceTerminate()
             }
-        }
-    }
-
-    /// A copy made by a sandboxed app is marked as downloaded; the mark would make macOS ask before it loads.
-    private func removeQuarantine(_ url: URL) {
-        guard let items = FileManager.default.enumerator(atPath: url.path) else {
-            return
-        }
-        removexattr(url.path, "com.apple.quarantine", XATTR_NOFOLLOW)
-        for case let item as String in items {
-            removexattr(url.appendingPathComponent(item).path, "com.apple.quarantine", XATTR_NOFOLLOW)
         }
     }
 }

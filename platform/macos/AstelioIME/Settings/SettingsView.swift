@@ -99,6 +99,19 @@ private struct SetupTab: View {
                                 .foregroundStyle(.secondary)
                         }
                     }
+                    if setup.manualInstall || setup.status == .notInstalled {
+                        DisclosureGroup("うまくいかないとき: Finder で入れる", isExpanded: $setup.manualInstall) {
+                            VStack(alignment: .leading, spacing: 8) {
+                                Text("① 下のボタンで、Finder に「Input Methods」フォルダーと Astelio IME が出ます。\n② Astelio IME を、Input Methods のフォルダーへドラッグしてコピーします（Option を押しながらだと確実です）。\n③ このウインドウが自動で気づいて登録します。")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                    .fixedSize(horizontal: false, vertical: true)
+                                Button("Finder で開く") { setup.showInFinder() }
+                            }
+                            .padding(.top, 4)
+                        }
+                        .font(.callout)
+                    }
                 }
 
                 Step(number: 2, title: "キーボードに追加", done: setup.status == .ready,

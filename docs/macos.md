@@ -51,10 +51,14 @@ tools/install-astelio-mac.sh        # ~/Library/Input Methods に入れて入力
 
 App Store 版は App Sandbox を有効にした `AstelioIME-AppStore.entitlements` で署名し、`/Applications` に入ります。ただし macOS は、`~/Library/Input Methods` か `/Library/Input Methods` にあるアプリしか入力ソースとして認識しません（`/Applications` のまま `TISRegisterInputSource` を呼んでも、成功を返すだけで一覧に出ないことを実機で確認）。そこで同じアプリが 2 つの役割を持ちます。
 
-- `/Applications` などから開くと **設定アプリ**（SwiftUI）。［はじめに］の［インストール］で自分自身を `~/Library/Input Methods` にコピーして登録し、［システム設定を開く］から日本語の入力ソースに追加する。入力・履歴・ユーザー辞書の設定もここで行う
+- `/Applications` などから開くと **設定アプリ**（SwiftUI）。［はじめに］の［インストール］が保存パネルを開き、ユーザーが［インストール］を押すと自分自身を `~/Library/Input Methods` にコピーして登録する。入力・履歴・ユーザー辞書の設定もここで行う
 - `Input Methods` フォルダーのコピーは、macOS が起動する **入力メソッド本体**（画面なし）
 
-置き場所で役割を決めます（`AppMode.isInputMethodServer`）。設定は同じ Bundle ID の UserDefaults とデータフォルダーで共有します。サンドボックスで `~/Library/Input Methods` に書くため、`temporary-exception.files.home-relative-path.read-write`（`/Library/Input Methods/`）の例外を使います。
+置き場所で役割を決めます（`AppMode.isInputMethodServer`）。
+
+> [!IMPORTANT]
+> **サンドボックスのアプリが自分でコピーした実行ファイルは、macOS が実行を拒否します**（`File created by an AppSandbox, exec/open not allowed`、カーネルのログは `quarantined by AstelioIME; and created without user consent`）。隔離属性の解除もサンドボックスからはできません。そのため、コピーは保存パネル（ユーザーの同意が付く）経由で行い、コピー後に隔離属性のフラグ（ユーザー承認のビット 0x40）を確かめます。実行できない状態なら、Finder でコピーする手順（Finder で Input Methods フォルダーと本アプリを開き、ドラッグ）に切り替えます。Finder でコピーしたものは実機で起動を確認済みです。
+設定は同じ Bundle ID の UserDefaults とデータフォルダーで共有します。サンドボックスで `~/Library/Input Methods` に書くため、`temporary-exception.files.home-relative-path.read-write`（`/Library/Input Methods/`）の例外を使います。
 
 署名とアップロードは、**開発者の Mac で** `tools/release-astelio-mac-appstore.sh` を実行して行います（このリポジトリは公開なので、App Store Connect の鍵を GitHub に置かず、署名のワークフローも置きません）。証明書（Apple Distribution と Mac Installer Distribution）とプロビジョニングプロファイルはその実行のためだけに App Store Connect API で作り、処理が終わったら失効させます。Apple が配布用に署名し直すので、失効させてもアップロード済みのビルドには影響しません。
 
