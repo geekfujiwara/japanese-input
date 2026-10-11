@@ -1,6 +1,7 @@
 #!/bin/bash
 # Builds the Mac App Store version of AstelioIME.app, signs it for the store and uploads it to App Store Connect
-# (it then appears in TestFlight). Run on a Mac by .github/workflows/macos-testflight.yml, or by hand.
+# (it then appears in TestFlight). Run it on the developer's Mac: the API key stays there, and this public repository
+# has no signing workflow.
 #
 #   tools/release-astelio-mac-appstore.sh --build-number N [--tester EMAIL] [--no-upload]
 #

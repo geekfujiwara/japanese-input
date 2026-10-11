@@ -44,23 +44,22 @@ tools/install-astelio-mac.sh        # ~/Library/Input Methods に入れて入力
 | `platform/macos/AstelioIME/*.swift` | IMKInputController、候補ウィンドウ、モード表示、設定、入力ソースの登録 |
 | `platform/macos/project.yml` | XcodeGen のプロジェクト定義（`.xcodeproj` はコミットしない） |
 | `platform/macos/Tests/` | 橋渡しの XCTest |
-| `.github/workflows/macos.yml` | Universal 2 のビルドとテスト。成果物 `astelio-ime-macos` に zip を置く |
+| `.github/workflows/macos.yml` | Universal 2 のビルドとテスト（署名は ad hoc）。成果物 `astelio-ime-macos` に zip を置く |
+| `tools/asc_mac_release.py`、`tools/release-astelio-mac-appstore.sh` | Mac App Store 用の署名・アップロード・TestFlight（開発者の Mac で実行する） |
 
 ## Mac App Store に出すには（まず TestFlight）
 
 App Store 版は App Sandbox を有効にした `AstelioIME-AppStore.entitlements` で署名し、`/Applications` に入ります。起動のたびに自分を入力ソースとして登録する（`TISRegisterInputSource`）ので、TestFlight で入れたあと［システム設定］→［キーボード］→［テキスト入力］から「Astelio IME」を加えれば使えます（実機で確かめる項目）。
 
-署名とアップロードは `.github/workflows/macos-testflight.yml`（手動で実行）が行います。証明書（Apple Distribution と Mac Installer Distribution）とプロビジョニングプロファイルはその実行のためだけに App Store Connect API で作り、最後に失効させます。Apple が配布用に署名し直すので、失効させてもアップロード済みのビルドには影響しません。
+署名とアップロードは、**開発者の Mac で** `tools/release-astelio-mac-appstore.sh` を実行して行います（このリポジトリは公開なので、App Store Connect の鍵を GitHub に置かず、署名のワークフローも置きません）。証明書（Apple Distribution と Mac Installer Distribution）とプロビジョニングプロファイルはその実行のためだけに App Store Connect API で作り、処理が終わったら失効させます。Apple が配布用に署名し直すので、失効させてもアップロード済みのビルドには影響しません。
 
-準備（初回だけ。Apple の画面での作業）:
+準備（初回だけ）:
 
-1. App Store Connect →［ユーザーとアクセス］→［統合］→［App Store Connect API］で、**Admin** の役割のキーを作り、`.p8` をダウンロードする（再ダウンロードできない）
-2. GitHub のリポジトリの［Settings］→［Secrets and variables］→［Actions］に `ASC_KEY_ID`、`ASC_ISSUER_ID`、`ASC_KEY_P8`（`.p8` の中身）を登録する
-3. ワークフローを一度実行する。Bundle ID（`com.geekfujiwara.inputmethod.Astelio`、macOS）を登録し、アプリがまだ無いので止まる
-4. App Store Connect →［アプリ］→［+］→［新規アプリ］で、プラットフォーム macOS、上の Bundle ID、名前「Astelio IME」、主言語 日本語、SKU（任意）でアプリを作る（API では作れない）
-5. ワークフローをもう一度実行する（`tester` に自分の App Store Connect のメールアドレスを入れると、内部テストに招待する）。処理が終わると Mac の TestFlight アプリに出る
-
-手元の Mac で同じことをするときは、`ASC_KEY_ID`・`ASC_ISSUER_ID`・`ASC_KEY_PATH` を設定して `tools/release-astelio-mac-appstore.sh --build-number <前回より大きい番号>` を実行します（`--no-upload` で署名した .pkg を作るだけ）。
+1. App Store Connect →［ユーザーとアクセス］→［統合］→［App Store Connect API］で、**Admin** の役割のキーを作り、`.p8` を Mac の `~/.appstoreconnect/private_keys/` に置く（再ダウンロードできない。リポジトリやチャットに貼らない）
+2. `ASC_KEY_ID`・`ASC_ISSUER_ID`・`ASC_KEY_PATH` を環境変数に設定し、`python3 tools/asc_mac_release.py check --bundle-id com.geekfujiwara.inputmethod.Astelio` を実行する。Bundle ID（macOS）を登録し、アプリがまだ無いので止まる
+3. App Store Connect →［アプリ］→［+］→［新規アプリ］で、プラットフォーム macOS、上の Bundle ID、名前「Astelio IME」、主言語 日本語、SKU（任意）でアプリを作る（API では作れない）
+4. `tools/release-astelio-mac-appstore.sh --build-number <前回より大きい番号> --no-upload` で、署名した .pkg ができるところまで確かめる
+5. `--no-upload` を外し、`--tester <自分の App Store Connect のメールアドレス>` を付けて実行する。処理が終わると Mac の TestFlight アプリに出る
 
 内部テスト（チームのメンバー）は Beta 版審査が要りません。外部のテスターに配るときと、App Store に出すときは審査があります。
 
