@@ -9,5 +9,11 @@
 	<!-- InputMethodKit publishes the connection under this name; without it a sandboxed input method does not load. -->
 	<key>com.apple.security.temporary-exception.mach-register.global-name</key>
 	<string>$(PRODUCT_BUNDLE_IDENTIFIER)_Connection</string>
+	<!-- A Mac App Store app lives in /Applications, but macOS lists an input method only from an Input Methods folder.
+	     The settings window copies the input method (this same app) to ~/Library/Input Methods. -->
+	<key>com.apple.security.temporary-exception.files.home-relative-path.read-write</key>
+	<array>
+		<string>/Library/Input Methods/</string>
+	</array>
 </dict>
 </plist>

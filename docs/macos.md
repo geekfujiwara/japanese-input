@@ -49,7 +49,12 @@ tools/install-astelio-mac.sh        # ~/Library/Input Methods に入れて入力
 
 ## Mac App Store に出すには（まず TestFlight）
 
-App Store 版は App Sandbox を有効にした `AstelioIME-AppStore.entitlements` で署名し、`/Applications` に入ります。起動のたびに自分を入力ソースとして登録する（`TISRegisterInputSource`）ので、TestFlight で入れたあと［システム設定］→［キーボード］→［テキスト入力］から「Astelio IME」を加えれば使えます（実機で確かめる項目）。
+App Store 版は App Sandbox を有効にした `AstelioIME-AppStore.entitlements` で署名し、`/Applications` に入ります。ただし macOS は、`~/Library/Input Methods` か `/Library/Input Methods` にあるアプリしか入力ソースとして認識しません（`/Applications` のまま `TISRegisterInputSource` を呼んでも、成功を返すだけで一覧に出ないことを実機で確認）。そこで同じアプリが 2 つの役割を持ちます。
+
+- `/Applications` などから開くと **設定アプリ**（SwiftUI）。［はじめに］の［インストール］で自分自身を `~/Library/Input Methods` にコピーして登録し、［システム設定を開く］から日本語の入力ソースに追加する。入力・履歴・ユーザー辞書の設定もここで行う
+- `Input Methods` フォルダーのコピーは、macOS が起動する **入力メソッド本体**（画面なし）
+
+置き場所で役割を決めます（`AppMode.isInputMethodServer`）。設定は同じ Bundle ID の UserDefaults とデータフォルダーで共有します。サンドボックスで `~/Library/Input Methods` に書くため、`temporary-exception.files.home-relative-path.read-write`（`/Library/Input Methods/`）の例外を使います。
 
 署名とアップロードは、**開発者の Mac で** `tools/release-astelio-mac-appstore.sh` を実行して行います（このリポジトリは公開なので、App Store Connect の鍵を GitHub に置かず、署名のワークフローも置きません）。証明書（Apple Distribution と Mac Installer Distribution）とプロビジョニングプロファイルはその実行のためだけに App Store Connect API で作り、処理が終わったら失効させます。Apple が配布用に署名し直すので、失効させてもアップロード済みのビルドには影響しません。
 
@@ -76,7 +81,7 @@ App Store 版は App Sandbox を有効にした `AstelioIME-AppStore.entitlement
 | 内容 | メモ |
 | --- | --- |
 | 実機での確認 | テキストエディット、Safari、VS Code で Windows 版と同じ操作ができること（フェーズ7の完了条件）。候補ウィンドウの位置、ライト/ダーク、マルチディスプレイ、Command の単押しとショートカットの区別 |
-| SwiftUI の設定アプリ | ユーザー辞書の管理、履歴の管理、日付の表記、アプリごとの設定。今は入力メニューの項目と `user_dictionary.tsv` の直接編集 |
+| 設定アプリの残り | アプリごとの設定、辞書の取り込み・書き出し（Windows 版にある他 IME の形式）、App Store 版のサンドボックス内での動作確認（TestFlight） |
 | Developer ID 署名・公証・.pkg | 証明書と公証の認証情報を GitHub の Secrets に入れ、main とタグのビルドだけで署名する（計画書4.7） |
 | Release への追加 | タグのビルドで zip（のちに .pkg）を GitHub Release に置く |
 | 入力モードのアイコン | メニューバーのアイコンは Astelio のアイコン1つ。日本語・英語でアイコンを変えるには入力モード（`ComponentInputModeDict`）を使う |
