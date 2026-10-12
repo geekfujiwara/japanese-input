@@ -248,6 +248,9 @@ SessionOutput InputSession::HandleComposition(const KeyEvent& key)
         if (!Composing()) {
             output.commit = SpaceCharacter(settings_);
             output.composition_changed = false;
+        } else if (composer_.IsTemporaryAlphanumeric()) {
+            // English text started with Shift: a space is a space, and the text stays as typed.
+            composer_.InsertSpace();
         } else if (converter_ == nullptr) {
             output.composition_changed = false;
         } else {

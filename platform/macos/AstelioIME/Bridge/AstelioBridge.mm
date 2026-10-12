@@ -119,6 +119,8 @@ std::filesystem::path ToPath(NSString* path)
         _firstIndex = static_cast<NSInteger>(view.first_index);
         _total = static_cast<NSInteger>(view.total);
         _columns = static_cast<NSInteger>(view.columns);
+        _category = static_cast<NSInteger>(view.category);
+        _active = view.active;
         _title = ToNSString(view.title);
         _related = ToNSArray(view.related);
         _relatedSelected = IndexOrNone(view.related_selected);
@@ -302,6 +304,14 @@ std::filesystem::path ToPath(NSString* path)
         return [[ASTOutput alloc] initWithOutput:astelio::SessionOutput{}];
     }
     return [[ASTOutput alloc] initWithOutput:_session->Pick(static_cast<std::size_t>(index))];
+}
+
+- (BOOL)selectCategory:(NSInteger)category
+{
+    if (category < 0 || category >= static_cast<NSInteger>(astelio::kEmojiCategoryCount)) {
+        return NO;
+    }
+    return _session->SelectCategory(static_cast<astelio::EmojiCategory>(category));
 }
 
 - (ASTOutput*)pickRelated:(NSInteger)index

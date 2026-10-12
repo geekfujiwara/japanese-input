@@ -52,6 +52,12 @@ public:
         builder.Add({u"にほんご", u"日本語", kNoun, kNoun, 0, 400});
         builder.Add({u"いぬ", u"犬", kNoun, kNoun, 0, 300});
         builder.Add({u"いぬ", u"🐶", kNoun, kNoun, 0, 2000});
+        builder.Add({u"えがお", u"😀", kNoun, kNoun, 0, 2000});
+        // A reading with 20 candidates: the list spreads into columns of 9.
+        for (int i = 0; i < 20; ++i) {
+            builder.Add({u"かんじ", std::u16string(u"感") + static_cast<char16_t>(u'Ａ' + i), kNoun, kNoun, 0,
+                         static_cast<std::int16_t>(300 + i * 10)});
+        }
         const std::vector<std::byte> bytes = builder.Build();
         const std::filesystem::path path = directory_ / "system.dic";
         std::ofstream file(path, std::ios::binary);

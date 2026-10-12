@@ -165,7 +165,7 @@ Composition MacSession::CurrentComposition() const
 CandidateView MacSession::Candidates() const
 {
     CandidateView view;
-    if (session_.EmojiPaletteActive()) {
+    if (session_.EmojiPaletteActive() || session_.EmojiPaletteOffered()) {
         const EmojiPaletteView palette = session_.EmojiPalette();
         constexpr std::size_t page = InputSession::kEmojiColumns * InputSession::kEmojiRows;
         const std::size_t selected = palette.selected == kNoEmojiSelection ? 0 : palette.selected;
@@ -182,6 +182,8 @@ CandidateView MacSession::Candidates() const
             view.selected = palette.selected - view.first_index;
         }
         view.title = palette.query;
+        view.category = static_cast<std::size_t>(palette.category);
+        view.active = palette.active;
         return view;
     }
     if (session_.Converting() && session_.CandidateListVisible()) {
@@ -190,8 +192,10 @@ CandidateView MacSession::Candidates() const
         const std::size_t selected = session_.SelectedCandidate(focus);
         view.kind = CandidateKind::Candidates;
         view.total = candidates.size();
-        view.first_index = selected / InputSession::kCandidatePageSize * InputSession::kCandidatePageSize;
-        const std::size_t end = std::min(view.first_index + InputSession::kCandidatePageSize, candidates.size());
+        // B-03: 27 at a time, in columns of 9; the digits pick from the column of the selection.
+        view.first_index = selected / InputSession::kCandidateGridSize * InputSession::kCandidateGridSize;
+        const std::size_t end = std::min(view.first_index + InputSession::kCandidateGridSize, candidates.size());
+        view.columns = (end - view.first_index + InputSession::kCandidatePageSize - 1) / InputSession::kCandidatePageSize;
         for (std::size_t i = view.first_index; i < end; ++i) {
             view.items.push_back(candidates[i]);
             view.marks.push_back(session_.IsTypoCandidate(focus, i)      ? CandidateMark::Typo
@@ -234,6 +238,18 @@ SessionOutput MacSession::Pick(std::size_t index)
             Finish(session_.Handle(tab));
             if (!session_.Converting()) {
                 return {};
+            }
+        }
+        if (view.kind == CandidateKind::Candidates) {
+            // The digits pick from the focused column: move there with Left / Right first.
+            const std::size_t focus = session_.FocusedSegment();
+            const std::size_t target = (view.first_index + index) / InputSession::kCandidatePageSize;
+            for (std::size_t step = 0; step < InputSession::kCandidateColumns; ++step) {
+                const std::size_t column = session_.SelectedCandidate(focus) / InputSession::kCandidatePageSize;
+                if (column == target) {
+                    break;
+                }
+                Finish(session_.Handle(KeyEvent{column < target ? KeyKind::Right : KeyKind::Left, 0}));
             }
         }
         const std::size_t digit = index % InputSession::kCandidatePageSize;

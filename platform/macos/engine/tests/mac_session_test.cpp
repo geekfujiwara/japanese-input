@@ -32,6 +32,7 @@ std::uint16_t LetterCode(char c)
     case 'e': return 0x0E;
     case 'm': return 0x2E;
     case 'j': return 0x26;
+    case 'k': return 0x28;
     default: ADD_FAILURE() << "no key code for " << c; return 0x7F;
     }
 }
@@ -108,6 +109,98 @@ TEST_F(MacSessionTest, ClickingACandidatePicksIt)
     session_.Pick(1);
     EXPECT_EQ(session_.CurrentComposition().text, u"渡し");
     EXPECT_EQ(Press(kReturn).output.commit, u"渡し");
+}
+
+// R-11: "(" is closed at once and the caret waits between the brackets.
+TEST_F(MacSessionTest, BracketsAreClosedWithTheCaretInside)
+{
+    constexpr std::uint16_t kDigit9 = 0x19;
+    constexpr std::uint16_t kDigit0 = 0x1D;
+    ASSERT_TRUE(Press(kDigit9, {.shift = true}).handled);
+    Composition composition = session_.CurrentComposition();
+    EXPECT_EQ(composition.text, u"()");
+    EXPECT_EQ(composition.cursor, 1u);
+    Type("a");
+    composition = session_.CurrentComposition();
+    EXPECT_EQ(composition.text, u"(あ)");
+    EXPECT_EQ(composition.cursor, 2u);
+    Press(kDigit0, {.shift = true}); // types over the closing bracket
+    composition = session_.CurrentComposition();
+    EXPECT_EQ(composition.text, u"(あ)");
+    EXPECT_EQ(composition.cursor, 3u);
+}
+
+// Shift+letter starts English text; a space in it is a space, not a conversion.
+TEST_F(MacSessionTest, SpaceInTemporaryEnglishTypesASpace)
+{
+    ASSERT_TRUE(Press(LetterCode('h'), {.shift = true}).handled);
+    Type("i");
+    ASSERT_TRUE(Press(kSpace).handled);
+    Type("a");
+    const Composition composition = session_.CurrentComposition();
+    EXPECT_EQ(composition.text, u"Hi a");
+    EXPECT_EQ(composition.cursor, 4u);
+    EXPECT_EQ(session_.Candidates().kind, CandidateKind::Hidden);
+    EXPECT_EQ(Press(kReturn).output.commit, u"Hi a");
+}
+
+// B-03: more than 9 candidates stand in columns of 9, up to 3 columns (27) at a time.
+TEST_F(MacSessionTest, CandidatesStandInThreeColumns)
+{
+    Type("kanji");
+    Press(kSpace);
+    Press(kSpace);
+    CandidateView view = session_.Candidates();
+    ASSERT_EQ(view.kind, CandidateKind::Candidates);
+    EXPECT_GE(view.total, 20u); // the 20 words and the kana forms the converter adds
+    EXPECT_EQ(view.items.size(), view.total); // fewer than 27: all in one page
+    EXPECT_EQ(view.columns, 3u);
+    EXPECT_EQ(view.first_index, 0u);
+
+    // Right moves to the next column, and the digit then picks from it.
+    constexpr std::uint16_t kRightArrow = 0x7C;
+    Press(kRightArrow);
+    view = session_.Candidates();
+    EXPECT_GE(view.selected, 9u);
+    EXPECT_LT(view.selected, 18u);
+}
+
+// A click on a candidate in another column picks that very candidate.
+TEST_F(MacSessionTest, ClickingACandidateInAnotherColumn)
+{
+    Type("kanji");
+    Press(kSpace);
+    Press(kSpace);
+    const CandidateView view = session_.Candidates();
+    ASSERT_GE(view.items.size(), 20u);
+    const std::u16string wanted = view.items[13];
+    session_.Pick(13);
+    EXPECT_EQ(session_.CurrentComposition().text, wanted);
+    EXPECT_EQ(Press(kReturn).output.commit, wanted);
+}
+
+// B-13: typing えもじ offers the palette at once; Tab or Down opens it.
+TEST_F(MacSessionTest, EmojiPaletteIsOfferedForEmoji)
+{
+    Type("emoji");
+    ASSERT_EQ(session_.CurrentComposition().text, u"えもじ");
+    CandidateView view = session_.Candidates();
+    ASSERT_EQ(view.kind, CandidateKind::Emoji);
+    EXPECT_FALSE(view.items.empty());
+    EXPECT_FALSE(view.active);
+    EXPECT_EQ(view.selected, kNoEmojiSelection);
+    EXPECT_EQ(view.columns, 8u);
+
+    constexpr std::uint16_t kTab = 0x30;
+    Press(kTab);
+    view = session_.Candidates();
+    EXPECT_EQ(view.kind, CandidateKind::Emoji);
+    EXPECT_TRUE(view.active);
+    EXPECT_EQ(view.selected, 0u);
+
+    // A tab of the palette can be clicked.
+    EXPECT_TRUE(session_.SelectCategory(EmojiCategory::People));
+    EXPECT_EQ(session_.Candidates().category, static_cast<std::size_t>(EmojiCategory::People));
 }
 
 TEST_F(MacSessionTest, PredictionsWhileTyping)

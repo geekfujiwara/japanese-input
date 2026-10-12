@@ -60,8 +60,8 @@ enum class CandidateMark : std::uint8_t {
 enum class CandidateKind : std::uint8_t {
     Hidden,
     Predictions, // while typing; Tab or Down selects
-    Candidates,  // the focused segment's column of up to 9
-    Emoji,       // B-13: the palette
+    Candidates,  // B-03: the focused segment's candidates, columns of 9 and up to 3 columns at a time
+    Emoji,       // B-13: the palette (offered when the kana is えもじ, opened with Tab or Down)
 };
 
 struct CandidateView {
@@ -71,7 +71,11 @@ struct CandidateView {
     std::size_t selected = kNoEmojiSelection; // index into items
     std::size_t first_index = 0;              // index of items[0] in the full list
     std::size_t total = 0;                    // size of the full list
-    std::size_t columns = 1;                  // Emoji: items per row
+    // Candidates: the columns shown (of 9 rows, numbered 1-9 each); Emoji: items per row.
+    std::size_t columns = 1;
+    // Emoji: the EmojiCategory shown, and whether the palette is open (false: only offered).
+    std::size_t category = 0;
+    bool active = false;
     std::u16string title;                     // Emoji: the category or the search text
     // B-03: emoji related to the focused segment, shown beside the candidates.
     std::vector<std::u16string> related;
@@ -119,6 +123,8 @@ public:
     // Mouse: picks items[index] of Candidates() (a prediction, a candidate or an emoji).
     SessionOutput Pick(std::size_t index);
     SessionOutput PickRelated(std::size_t index) { return Finish(session_.PickRelatedEmoji(index)); }
+    // Mouse: a tab of the emoji palette (opens it when it is only offered).
+    bool SelectCategory(EmojiCategory category) { return session_.SelectEmojiCategory(category); }
 
     InputSession& session() { return session_; }
 

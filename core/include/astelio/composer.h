@@ -17,6 +17,8 @@ public:
     Composer(const RomajiTable& table, CharacterSettings settings);
 
     void InsertKey(char16_t key);
+    // A space typed inside temporary alphanumeric text (the session does not convert it): the configured space.
+    void InsertSpace();
     void Backspace();
     void Delete();
     void MoveLeft();

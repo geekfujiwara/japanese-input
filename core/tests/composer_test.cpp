@@ -161,6 +161,25 @@ TEST(Composer, ShiftLetterStartsTemporaryAlphanumeric)
     EXPECT_FALSE(composer.IsTemporaryAlphanumeric());
 }
 
+// A space typed inside temporary alphanumeric text is a space (the session does not convert it).
+TEST(Composer, InsertSpaceWritesTheConfiguredSpace)
+{
+    Composer composer = MakeComposer();
+    Type(composer, u"Hello");
+    ASSERT_TRUE(composer.IsTemporaryAlphanumeric());
+    composer.InsertSpace();
+    Type(composer, u"world");
+    EXPECT_EQ(composer.Text(), u"Hello world");
+    EXPECT_TRUE(composer.IsTemporaryAlphanumeric());
+
+    CharacterSettings full;
+    full.space = Width::Full;
+    Composer wide(RomajiTable::Default(), full);
+    wide.InsertKey(u'A');
+    wide.InsertSpace();
+    EXPECT_EQ(wide.Text(), u"A\u3000");
+}
+
 TEST(Composer, TemporaryAlphanumericKeepsSymbolsAsTyped)
 {
     EXPECT_EQ(Typed(u"Node.js"), u"Node.js");

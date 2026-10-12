@@ -71,6 +71,12 @@ void Composer::InsertKey(char16_t key)
     InsertSymbol(KanaModeCharacter(key, settings_));
 }
 
+void Composer::InsertSpace()
+{
+    list_period_ = false;
+    InsertSymbol(SpaceCharacter(settings_));
+}
+
 void Composer::InsertSymbol(std::u16string text)
 {
     if (settings_.auto_close_brackets && text.size() == 1) {

@@ -199,6 +199,9 @@ final class AstelioInputController: IMKInputController {
                 self.apply(self.session.pick(index), client: client)
             case .related(let index):
                 self.apply(self.session.pickRelated(index), client: client)
+            case .category(let index):
+                _ = self.session.selectCategory(index)
+                self.showCandidates(client: client, anchor: self.session.currentComposition().anchor)
             }
         }
     }

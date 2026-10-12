@@ -58,7 +58,11 @@ typedef NS_ENUM(NSInteger, ASTModeSwitch) {
 @property (nonatomic, readonly) NSInteger selected;
 @property (nonatomic, readonly) NSInteger firstIndex;
 @property (nonatomic, readonly) NSInteger total;
+/// Candidates: the columns shown (rows of 9, numbered 1-9 in each); emoji: items per row.
 @property (nonatomic, readonly) NSInteger columns;
+/// Emoji: the EmojiCategory shown (0: recent ... 9: flags) and whether the palette is open (false: only offered).
+@property (nonatomic, readonly) NSInteger category;
+@property (nonatomic, readonly) BOOL active;
 @property (nonatomic, readonly, copy) NSString *title;
 @property (nonatomic, readonly, copy) NSArray<NSString *> *related;
 /// Index into related, or -1.
@@ -129,6 +133,8 @@ typedef NS_ENUM(NSInteger, ASTModeSwitch) {
 /// Mouse: items[index] of candidates.
 - (ASTOutput *)pick:(NSInteger)index NS_SWIFT_NAME(pick(_:));
 - (ASTOutput *)pickRelated:(NSInteger)index NS_SWIFT_NAME(pickRelated(_:));
+/// Mouse: a tab of the emoji palette. NO when the palette is not showing.
+- (BOOL)selectCategory:(NSInteger)category NS_SWIFT_NAME(selectCategory(_:));
 @end
 
 NS_ASSUME_NONNULL_END

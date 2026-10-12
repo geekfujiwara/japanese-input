@@ -234,6 +234,25 @@ TEST_F(ConversionTest, SpaceConvertsAndEnterCommits)
     EXPECT_FALSE(session_.Converting());
 }
 
+// Space inside the English text started with Shift types a space; it does not convert.
+TEST_F(ConversionTest, SpaceInTemporaryAlphanumericTypesASpace)
+{
+    Type(session_, u"Hello");
+    const SessionOutput output = session_.Handle(Key(KeyKind::Space));
+    EXPECT_TRUE(output.composition_changed);
+    EXPECT_TRUE(output.commit.empty());
+    EXPECT_FALSE(session_.Converting());
+    EXPECT_EQ(session_.CompositionText(), u"Hello ");
+    Type(session_, u"world");
+    EXPECT_EQ(session_.CompositionText(), u"Hello world");
+    EXPECT_EQ(session_.Handle(Key(KeyKind::Enter)).commit, u"Hello world");
+
+    // Kana typed in the usual way still converts with Space.
+    Type(session_, u"watasi");
+    session_.Handle(Key(KeyKind::Space));
+    EXPECT_TRUE(session_.Converting());
+}
+
 // B-02, B-03: Space / Down / Up choose candidates of the focused segment.
 TEST_F(ConversionTest, SpaceAndArrowsChooseCandidates)
 {
