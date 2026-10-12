@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- Registered by the settings window (SMAppService.agent) when the user turns on switching with Command:
+	     the app runs at login as `AstelioIME --switcher` (ModifierSwitcher.swift). -->
+	<key>Label</key>
+	<string>com.geekfujiwara.inputmethod.Astelio.switcher</string>
+	<key>BundleProgram</key>
+	<string>Contents/MacOS/AstelioIME</string>
+	<key>ProgramArguments</key>
+	<array>
+		<string>AstelioIME</string>
+		<string>--switcher</string>
+	</array>
+	<key>RunAtLoad</key>
+	<true/>
+	<key>KeepAlive</key>
+	<dict>
+		<key>SuccessfulExit</key>
+		<false/>
+	</dict>
+	<key>LimitLoadToSessionType</key>
+	<string>Aqua</string>
+	<key>ProcessType</key>
+	<string>Interactive</string>
+	<key>AssociatedBundleIdentifiers</key>
+	<array>
+		<string>com.geekfujiwara.inputmethod.Astelio</string>
+	</array>
+</dict>
+</plist>

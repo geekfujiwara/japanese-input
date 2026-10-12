@@ -31,7 +31,14 @@ if arguments.contains("--install-input-method") {
     }
 }
 
-if AppMode.isInputMethodServer {
+if arguments.contains("--switcher") {
+    // Started at login by the LaunchAgent: switches input sources with single presses of Command.
+    let application = NSApplication.shared
+    application.setActivationPolicy(.prohibited)
+    let switcher = ModifierSwitcher()
+    switcher.start()
+    application.run()
+} else if AppMode.isInputMethodServer {
     let connectionName = Bundle.main.infoDictionary?["InputMethodConnectionName"] as? String
         ?? "com.geekfujiwara.inputmethod.Astelio_Connection"
     guard let server = IMKServer(name: connectionName, bundleIdentifier: Bundle.main.bundleIdentifier) else {

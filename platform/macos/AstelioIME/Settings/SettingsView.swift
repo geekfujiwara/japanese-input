@@ -120,8 +120,30 @@ private struct SetupTab: View {
                         .disabled(!installed)
                 }
 
-                Step(number: 3, title: "使ってみる", done: false,
-                     detail: "メニューバーの入力メニューで「Astelio IME」を選び、下の欄に入力してみます。ローマ字で打って Space で変換、Return で確定。右⌘で日本語、左⌘で英語です。") {
+                Step(number: 3, title: "左右の ⌘ で切り替える", done: setup.switcherRegistered && setup.inputMonitoringAllowed,
+                     detail: "左⌘の単押しで Apple の英語入力（ABC など）、右⌘の単押しで Astelio に切り替えます。どのアプリでも働くよう、ログイン時に小さな常駐処理を起動し、キーの押し方だけを見るために「入力監視」の許可を使います。入力した内容は記録も送信もしません。") {
+                    VStack(alignment: .leading, spacing: 6) {
+                        HStack {
+                            if setup.switcherRegistered {
+                                Button("止める") { setup.disableSwitcher() }
+                            } else {
+                                Button("有効にする") { setup.enableSwitcher() }
+                                    .buttonStyle(.borderedProminent)
+                                    .tint(accent)
+                            }
+                            Button("入力監視の設定を開く") { setup.openInputMonitoringSettings() }
+                        }
+                        Text(setup.inputMonitoringAllowed ? "入力監視: 許可されています"
+                             : "入力監視: 未許可（システム設定 →［プライバシーとセキュリティ］→［入力監視］で Astelio IME をオン）")
+                            .font(.caption).foregroundStyle(.secondary)
+                        if setup.switcherNeedsApproval {
+                            Text("［ログイン項目］で Astelio IME の許可が必要です。").font(.caption).foregroundStyle(.secondary)
+                        }
+                    }
+                }
+
+                Step(number: 4, title: "使ってみる", done: false,
+                     detail: "メニューバーの入力メニューで「Astelio IME」を選び、下の欄に入力してみます。ローマ字で打って Space で変換、Return で確定。Shift+英字で英字、Shift の単押しでかなに戻ります。") {
                     TextField("ここに入力して試す", text: $trial, axis: .vertical)
                         .textFieldStyle(.roundedBorder)
                         .lineLimit(2...4)

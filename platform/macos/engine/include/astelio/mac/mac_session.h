@@ -59,7 +59,7 @@ enum class CandidateMark : std::uint8_t {
 
 enum class CandidateKind : std::uint8_t {
     Hidden,
-    Predictions, // while typing; Tab or Down selects
+    Predictions, // while typing, in columns of 9 like the candidates; Tab or Down selects
     Candidates,  // B-03: the focused segment's candidates, columns of 9 and up to 3 columns at a time
     Emoji,       // B-13: the palette (offered when the kana is えもじ, opened with Tab or Down)
 };
@@ -109,7 +109,11 @@ public:
     // A modifier went down or up (flagsChanged). Returns the mode to switch to when this completes a tap.
     std::optional<bool> ModifierChanged(std::uint16_t key_code, bool down, std::uint64_t time_ms);
     // A mouse click or anything else between the press and the release of a modifier.
-    void MarkChordUsed() { taps_.MarkChordUsed(); }
+    void MarkChordUsed()
+    {
+        taps_.MarkChordUsed();
+        shift_taps_.MarkChordUsed();
+    }
 
     // The app ended the composition (focus change, click).
     void Abandon();
@@ -138,6 +142,7 @@ private:
     std::optional<Converter> converter_;
     InputSession session_;
     ModifierTapTracker taps_;
+    ModifierTapTracker shift_taps_; // a single Shift press ends temporary English
     bool recording_allowed_ = true;
 };
 

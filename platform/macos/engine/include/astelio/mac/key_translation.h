@@ -26,5 +26,8 @@ inline constexpr std::uint16_t kLeftCommandKeyCode = 0x37;
 inline constexpr std::uint16_t kRightCommandKeyCode = 0x36;
 inline constexpr std::uint16_t kLeftOptionKeyCode = 0x3A;
 inline constexpr std::uint16_t kRightOptionKeyCode = 0x3D;
+// Shift: a single press ends the English text started with Shift+letter.
+inline constexpr std::uint16_t kLeftShiftKeyCode = 0x38;
+inline constexpr std::uint16_t kRightShiftKeyCode = 0x3C;
 
 } // namespace astelio::mac

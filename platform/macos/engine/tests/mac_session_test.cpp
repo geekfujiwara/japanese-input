@@ -81,17 +81,21 @@ TEST_F(MacSessionTest, TypesConvertsAndCommits)
     EXPECT_FALSE(session_.Composing());
 }
 
-TEST_F(MacSessionTest, SecondSpaceOpensTheCandidates)
+// Many candidates at a glance: the list opens with the first Space; the next Space moves to the second.
+TEST_F(MacSessionTest, FirstSpaceOpensTheCandidates)
 {
     Type("watashi");
     Press(kSpace);
-    EXPECT_EQ(session_.Candidates().kind, CandidateKind::Hidden);
-    Press(kSpace);
-    const CandidateView view = session_.Candidates();
+    CandidateView view = session_.Candidates();
     ASSERT_EQ(view.kind, CandidateKind::Candidates);
     ASSERT_GE(view.items.size(), 2u);
     EXPECT_EQ(view.items[0], u"私");
     EXPECT_EQ(view.items[1], u"渡し");
+    EXPECT_EQ(view.selected, 0u);
+    EXPECT_EQ(session_.CurrentComposition().text, u"私");
+
+    Press(kSpace);
+    view = session_.Candidates();
     EXPECT_EQ(view.selected, 1u);
     EXPECT_EQ(session_.CurrentComposition().text, u"渡し");
 
@@ -99,6 +103,45 @@ TEST_F(MacSessionTest, SecondSpaceOpensTheCandidates)
     Press(kDigit1);
     EXPECT_EQ(session_.CurrentComposition().text, u"私");
     EXPECT_EQ(session_.Candidates().kind, CandidateKind::Hidden);
+}
+
+// A single Shift press ends the English text started with Shift+letter; Shift used with a letter does not.
+TEST_F(MacSessionTest, ShiftTapEndsTemporaryEnglish)
+{
+    session_.ModifierChanged(kLeftShiftKeyCode, true, 0);
+    Press(LetterCode('h'), {.shift = true});
+    session_.ModifierChanged(kLeftShiftKeyCode, false, 100);
+    Type("i");
+    EXPECT_EQ(session_.CurrentComposition().text, u"Hi");
+
+    session_.ModifierChanged(kRightShiftKeyCode, true, 200);
+    session_.ModifierChanged(kRightShiftKeyCode, false, 300);
+    Type("ka");
+    EXPECT_EQ(session_.CurrentComposition().text, u"Hiか");
+}
+
+// Deleting all the English text leaves the mode, so the next letters are kana.
+TEST_F(MacSessionTest, DeletingTheEnglishTextEndsIt)
+{
+    Press(LetterCode('h'), {.shift = true});
+    Press(kBackspace);
+    EXPECT_FALSE(session_.Composing());
+    Type("ka");
+    EXPECT_EQ(session_.CurrentComposition().text, u"か");
+}
+
+// The predictions while typing fill up to 3 columns of 9 too, and a click picks the very one.
+TEST_F(MacSessionTest, PredictionsStandInColumns)
+{
+    Type("kanj");
+    const CandidateView view = session_.Candidates();
+    ASSERT_EQ(view.kind, CandidateKind::Predictions);
+    ASSERT_GE(view.items.size(), 19u);
+    EXPECT_EQ(view.columns, 3u);
+    const std::u16string wanted = view.items[13];
+    session_.Pick(13);
+    EXPECT_EQ(session_.CurrentComposition().text, wanted);
+    EXPECT_EQ(Press(kReturn).output.commit, wanted);
 }
 
 TEST_F(MacSessionTest, ClickingACandidatePicksIt)

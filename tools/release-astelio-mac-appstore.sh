@@ -3,7 +3,9 @@
 # (it then appears in TestFlight). Run it on the developer's Mac: the API key stays there, and this public repository
 # has no signing workflow.
 #
-#   tools/release-astelio-mac-appstore.sh --build-number N [--tester EMAIL] [--no-upload]
+#   tools/release-astelio-mac-appstore.sh --build-number N [--version X.Y.Z] [--tester EMAIL] [--no-upload]
+#
+# --version is the App Store version (default: the version of CMakeLists.txt, which the Windows version shares).
 #
 # Needs ASC_KEY_ID, ASC_ISSUER_ID and ASC_KEY_PATH (an App Store Connect API key with the Admin role), Xcode, CMake
 # and XcodeGen. The signing certificates and the profile are made for this run by tools/asc_mac_release.py and
@@ -13,11 +15,13 @@ set -euo pipefail
 root="$(cd "$(dirname "$0")/.." && pwd)"
 bundle_id="com.geekfujiwara.inputmethod.Astelio"
 build_number=""
+version_override=""
 tester=""
 upload=1
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --build-number) build_number="$2"; shift ;;
+        --version) version_override="$2"; shift ;;
         --tester) tester="$2"; shift ;;
         --no-upload) upload=0 ;;
         *) echo "unknown option: $1" >&2; exit 2 ;;
@@ -31,6 +35,9 @@ fi
 : "${ASC_KEY_ID:?}" "${ASC_ISSUER_ID:?}" "${ASC_KEY_PATH:?}"
 
 version="$(sed -n 's/^project(AstelioIME VERSION \([0-9.]*\).*/\1/p' "$root/CMakeLists.txt")"
+if [[ -n "$version_override" ]]; then
+    version="$version_override"
+fi
 macos="$root/platform/macos"
 work="$root/build/macos-appstore"
 rm -rf "$work"

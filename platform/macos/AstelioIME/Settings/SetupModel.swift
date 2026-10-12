@@ -1,5 +1,7 @@
 import AppKit
+import CoreGraphics
 import Foundation
+import ServiceManagement
 import SwiftUI
 
 /// What the setup tab shows: whether the input method is installed and turned on, and the buttons that change it.
@@ -9,6 +11,11 @@ final class SetupModel: ObservableObject {
     @Published var message: String?
     @Published private(set) var installedVersion: String?
     @Published var manualInstall = false
+    /// R-03 across input sources: `AstelioIME --switcher` at login and the Input Monitoring permission.
+    @Published private(set) var switcherRegistered = false
+    @Published private(set) var switcherNeedsApproval = false
+    @Published private(set) var inputMonitoringAllowed = false
+    private let switcher = SMAppService.agent(plistName: "com.geekfujiwara.inputmethod.Astelio.switcher.plist")
 
     let currentVersion: String
     private let installer = InputMethodInstaller()
@@ -35,6 +42,38 @@ final class SetupModel: ObservableObject {
         }
         status = installer.status()
         installedVersion = installer.installedVersion
+        switcherRegistered = switcher.status == .enabled
+        switcherNeedsApproval = switcher.status == .requiresApproval
+        inputMonitoringAllowed = CGPreflightListenEventAccess()
+    }
+
+    /// Asks for Input Monitoring (macOS shows its dialog once) and starts the switcher now and at every login.
+    func enableSwitcher() {
+        if !CGPreflightListenEventAccess() {
+            _ = CGRequestListenEventAccess()
+        }
+        do {
+            try switcher.register()
+        } catch {
+            if switcher.status != .requiresApproval {
+                message = "左右⌘の切り替えを始められませんでした: \(error.localizedDescription)"
+            }
+        }
+        if switcher.status == .requiresApproval {
+            SMAppService.openSystemSettingsLoginItems()
+        }
+        refresh()
+    }
+
+    func disableSwitcher() {
+        try? switcher.unregister()
+        refresh()
+    }
+
+    func openInputMonitoringSettings() {
+        if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ListenEvent") {
+            NSWorkspace.shared.open(url)
+        }
     }
 
     /// The save panel is the user's consent for the copy: macOS will not run a program a sandboxed app wrote by itself.

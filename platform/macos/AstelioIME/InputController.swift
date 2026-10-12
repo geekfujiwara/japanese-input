@@ -32,6 +32,7 @@ final class AstelioInputController: IMKInputController {
         super.activateServer(sender)
         session.resetContext()
         session.applySettings(AppState.shared.preferences.settings())
+        AppState.shared.japaneseMode = true // English is another input source now (R-03)
         if session.japaneseMode != AppState.shared.japaneseMode {
             _ = session.changeMode(toJapanese: AppState.shared.japaneseMode)
         }
@@ -127,12 +128,22 @@ final class AstelioInputController: IMKInputController {
         }
     }
 
-    /// R-03: leaving Japanese commits the uncommitted text; the mode is shown briefly near the caret.
+    /// R-03: left Command switches to Apple's English input (the uncommitted text is committed first), right Command
+    /// to Japanese. Switching back from English is done by `AstelioIME --switcher`, which sees keys in every input source.
     private func setMode(japanese: Bool, client: IMKTextInput) {
-        AppState.shared.japaneseMode = japanese
-        let output = session.changeMode(toJapanese: japanese)
-        apply(output, client: client)
-        AppState.shared.modeIndicator.show(japanese: japanese, near: caretRect(client: client, index: 0))
+        guard japanese else {
+            commitComposition(client)
+            AppState.shared.candidatePanel.hide()
+            DispatchQueue.main.async {
+                InputSources.selectEnglish()
+            }
+            return
+        }
+        AppState.shared.japaneseMode = true
+        if !session.japaneseMode {
+            apply(session.changeMode(toJapanese: true), client: client)
+        }
+        AppState.shared.modeIndicator.show(japanese: true, near: caretRect(client: client, index: 0))
     }
 
     // MARK: - Showing the text
@@ -215,99 +226,33 @@ final class AstelioInputController: IMKInputController {
 
     // MARK: - Menu (the input menu in the menu bar)
 
+    /// Only the way to the settings window: every setting lives there.
     override func menu() -> NSMenu! {
-        let preferences = AppState.shared.preferences
-        let menu = NSMenu(title: "Astelio IME")
-
-        let modifier = NSMenuItem(title: "切り替えのキー", action: nil, keyEquivalent: "")
-        let modifierMenu = NSMenu(title: "切り替えのキー")
-        let command = NSMenuItem(title: "左右の⌘ Command の単押し", action: #selector(useCommand(_:)), keyEquivalent: "")
-        command.state = preferences.tapModifier == .command ? .on : .off
-        let option = NSMenuItem(title: "左右の⌥ Option の単押し", action: #selector(useOption(_:)), keyEquivalent: "")
-        option.state = preferences.tapModifier == .option ? .on : .off
-        modifierMenu.addItem(command)
-        modifierMenu.addItem(option)
-        modifier.submenu = modifierMenu
-        menu.addItem(modifier)
-        menu.addItem(.separator())
-
-        menu.addItem(toggle("もしかして（打ち間違いの候補）", preferences.typoSuggestions, #selector(toggleTypo(_:))))
-        menu.addItem(toggle("括弧を閉じる", preferences.autoCloseBrackets, #selector(toggleBrackets(_:))))
-        menu.addItem(toggle("文の頭の数字の後のピリオドを「. 」にする", preferences.listNumberPeriod,
-                            #selector(toggleListNumber(_:))))
-        menu.addItem(.separator())
-        menu.addItem(toggle("入力の履歴を使う", preferences.learningEnabled, #selector(toggleLearning(_:))))
-        menu.addItem(toggle("履歴の記録を一時停止（シークレットモード）", preferences.learningPaused,
-                            #selector(togglePaused(_:))))
-        // A submenu instead of a dialog: this background app cannot bring a dialog to the front reliably.
-        let clear = NSMenuItem(title: "入力の履歴をすべて削除", action: nil, keyEquivalent: "")
-        let clearMenu = NSMenu(title: "入力の履歴をすべて削除")
-        clearMenu.addItem(NSMenuItem(title: "削除する（元に戻せません）", action: #selector(clearLearning(_:)),
-                                     keyEquivalent: ""))
-        clear.submenu = clearMenu
-        menu.addItem(clear)
-        menu.addItem(NSMenuItem(title: "ユーザー辞書と履歴のフォルダーを開く", action: #selector(openDataFolder(_:)),
-                                keyEquivalent: ""))
-        menu.addItem(.separator())
-        let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "?"
-        let about = NSMenuItem(title: "Astelio IME \(version)", action: nil, keyEquivalent: "")
-        about.isEnabled = false
-        menu.addItem(about)
+        let menu = NSMenu(title: "Astelio")
+        let open = NSMenuItem(title: "Astelio の設定を開く…", action: #selector(openSettings(_:)), keyEquivalent: "")
+        open.target = self
+        menu.addItem(open)
         return menu
     }
 
-    private func toggle(_ title: String, _ on: Bool, _ action: Selector) -> NSMenuItem {
-        let item = NSMenuItem(title: title, action: action, keyEquivalent: "")
-        item.state = on ? .on : .off
-        return item
-    }
-
-    private func settingsChanged() {
-        session.applySettings(AppState.shared.preferences.settings())
-    }
-
-    @objc private func useCommand(_ sender: Any?) {
-        AppState.shared.preferences.tapModifier = .command
-        settingsChanged()
-    }
-
-    @objc private func useOption(_ sender: Any?) {
-        AppState.shared.preferences.tapModifier = .option
-        settingsChanged()
-    }
-
-    @objc private func toggleTypo(_ sender: Any?) {
-        AppState.shared.preferences.typoSuggestions.toggle()
-        settingsChanged()
-    }
-
-    @objc private func toggleBrackets(_ sender: Any?) {
-        AppState.shared.preferences.autoCloseBrackets.toggle()
-        settingsChanged()
-    }
-
-    @objc private func toggleListNumber(_ sender: Any?) {
-        AppState.shared.preferences.listNumberPeriod.toggle()
-        settingsChanged()
-    }
-
-    @objc private func toggleLearning(_ sender: Any?) {
-        AppState.shared.preferences.learningEnabled.toggle()
-        settingsChanged()
-    }
-
-    @objc private func togglePaused(_ sender: Any?) {
-        AppState.shared.preferences.learningPaused.toggle()
-        settingsChanged()
-    }
-
-    @objc private func clearLearning(_ sender: Any?) {
-        _ = AppState.shared.engine.clearLearning()
-    }
-
-    @objc private func openDataFolder(_ sender: Any?) {
-        let folder = URL(fileURLWithPath: AppState.shared.engine.dataDirectory, isDirectory: true)
-        try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-        NSWorkspace.shared.open(folder)
+    /// The settings window is this same app opened from /Applications (not the copy in Input Methods, which would start
+    /// a second input method).
+    @objc private func openSettings(_ sender: Any?) {
+        let isSettingsCopy: (URL) -> Bool = { $0.deletingLastPathComponent().lastPathComponent != "Input Methods" }
+        if let running = NSRunningApplication.runningApplications(withBundleIdentifier: AppMode.bundleID)
+            .first(where: { $0.bundleURL.map(isSettingsCopy) == true }) {
+            running.activate()
+            return
+        }
+        let candidates = [URL(fileURLWithPath: "/Applications/AstelioIME.app")]
+            + NSWorkspace.shared.urlsForApplications(withBundleIdentifier: AppMode.bundleID)
+        guard let app = candidates.first(where: { isSettingsCopy($0) && FileManager.default.fileExists(atPath: $0.path) })
+        else {
+            NSLog("Astelio IME: the settings app was not found")
+            return
+        }
+        let configuration = NSWorkspace.OpenConfiguration()
+        configuration.activates = true
+        NSWorkspace.shared.openApplication(at: app, configuration: configuration)
     }
 }

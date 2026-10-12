@@ -180,6 +180,21 @@ TEST(Composer, InsertSpaceWritesTheConfiguredSpace)
     EXPECT_EQ(wide.Text(), u"A\u3000");
 }
 
+// Deleting all the English text ends the mode: the next letter is romaji again.
+TEST(Composer, DeletingEverythingEndsTemporaryAlphanumeric)
+{
+    Composer composer = MakeComposer();
+    Type(composer, u"Ab");
+    ASSERT_TRUE(composer.IsTemporaryAlphanumeric());
+    composer.Backspace();
+    EXPECT_TRUE(composer.IsTemporaryAlphanumeric()) << "text is left";
+    composer.Backspace();
+    EXPECT_TRUE(composer.Empty());
+    EXPECT_FALSE(composer.IsTemporaryAlphanumeric());
+    Type(composer, u"ka");
+    EXPECT_EQ(composer.Text(), u"か");
+}
+
 TEST(Composer, TemporaryAlphanumericKeepsSymbolsAsTyped)
 {
     EXPECT_EQ(Typed(u"Node.js"), u"Node.js");

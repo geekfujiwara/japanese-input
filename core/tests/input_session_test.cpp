@@ -253,6 +253,19 @@ TEST_F(ConversionTest, SpaceInTemporaryAlphanumericTypesASpace)
     EXPECT_TRUE(session_.Converting());
 }
 
+// The list can open with the first Space; the next Space then moves to the second candidate.
+TEST_F(ConversionTest, ListOnFirstConversion)
+{
+    session_.SetListOnFirstConversion(true);
+    Type(session_, u"watasi");
+    session_.Handle(Key(KeyKind::Space));
+    ASSERT_TRUE(session_.Converting());
+    EXPECT_TRUE(session_.CandidateListVisible());
+    EXPECT_EQ(session_.SelectedCandidate(0), 0u);
+    session_.Handle(Key(KeyKind::Space));
+    EXPECT_EQ(session_.SelectedCandidate(0), 1u);
+}
+
 // B-02, B-03: Space / Down / Up choose candidates of the focused segment.
 TEST_F(ConversionTest, SpaceAndArrowsChooseCandidates)
 {

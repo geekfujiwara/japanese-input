@@ -53,6 +53,12 @@ public:
         builder.Add({u"いぬ", u"犬", kNoun, kNoun, 0, 300});
         builder.Add({u"いぬ", u"🐶", kNoun, kNoun, 0, 2000});
         builder.Add({u"えがお", u"😀", kNoun, kNoun, 0, 2000});
+        // 20 readings that start with かん: the predictions spread into columns too.
+        const std::u16string tails = u"あいうえおかきくけこさしすせそたちつてと";
+        for (std::size_t i = 0; i < tails.size(); ++i) {
+            builder.Add({std::u16string(u"かん") + tails[i], std::u16string(u"予") + static_cast<char16_t>(u'Ａ' + i),
+                         kNoun, kNoun, 0, static_cast<std::int16_t>(500 + i * 10)});
+        }
         // A reading with 20 candidates: the list spreads into columns of 9.
         for (int i = 0; i < 20; ++i) {
             builder.Add({u"かんじ", std::u16string(u"感") + static_cast<char16_t>(u'Ａ' + i), kNoun, kNoun, 0,

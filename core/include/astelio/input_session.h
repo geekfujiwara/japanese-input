@@ -158,6 +158,10 @@ public:
     // B-04: candidates predicted from the kana typed so far (shown while typing; Tab or Down selects them).
     const std::vector<std::u16string>& Predictions() const { return predictions_; }
     static constexpr std::size_t kMinPredictionLength = 2;
+    // How many predictions to offer (default: one column of 9; at most kCandidateGridSize are useful).
+    void SetPredictionLimit(std::size_t limit) { prediction_limit_ = limit == 0 ? kCandidatePageSize : limit; }
+    // Open the candidate list with the first Space (the first candidate selected) instead of the second.
+    void SetListOnFirstConversion(bool enabled) { list_on_first_conversion_ = enabled; }
 
     // B-13: the emoji palette, offered when the kana is えもじ. The catalog is built on first use.
     void SetEmojiCatalog(std::function<const EmojiCatalog*()> provider) { emoji_provider_ = std::move(provider); }
@@ -248,6 +252,8 @@ private:
     std::size_t focus_ = 0;
     bool candidate_list_visible_ = false;
     std::vector<std::u16string> predictions_;
+    std::size_t prediction_limit_ = kCandidatePageSize;
+    bool list_on_first_conversion_ = false;
     // Keys typed for the current composition, for F9/F10; cleared when the text is edited in the middle.
     std::u16string typed_keys_;
     bool typed_keys_valid_ = true;

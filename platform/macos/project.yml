@@ -51,6 +51,13 @@ targets:
           - "*.entitlements"
           - Info.plist
           - Bridge/**
+          - LaunchAgents/**
+      # Started at login when the user turns on switching input sources with Command (ModifierSwitcher.swift).
+      - path: AstelioIME/LaunchAgents/com.geekfujiwara.inputmethod.Astelio.switcher.plist
+        buildPhase:
+          copyFiles:
+            destination: wrapper
+            subpath: Contents/Library/LaunchAgents
       # Built by tools/build-astelio-mac.sh or CI from azooKey_dictionary_storage; without it only kana input works.
       - path: Dictionary/system.dic
         optional: true

@@ -169,10 +169,10 @@ void InputSession::UpdatePredictions()
         reading.pop_back();
     }
     if (reading.size() >= kMinPredictionLength) {
-        predictions_ = converter_->Predict(reading, kCandidatePageSize);
+        predictions_ = converter_->Predict(reading, prediction_limit_);
         if (learning_ != nullptr) {
             // Words chosen before come first.
-            std::vector<std::u16string> learned = learning_->Predictions(reading, kCandidatePageSize);
+            std::vector<std::u16string> learned = learning_->Predictions(reading, prediction_limit_);
             if (user_dictionary_ != nullptr) {
                 // The history keeps the kana typed, not the word's reading.
                 std::erase_if(learned, [this](const std::u16string& surface) {
@@ -180,7 +180,7 @@ void InputSession::UpdatePredictions()
                 });
             }
             for (std::u16string& prediction : predictions_) {
-                if (learned.size() >= kCandidatePageSize) {
+                if (learned.size() >= prediction_limit_) {
                     break;
                 }
                 if (std::find(learned.begin(), learned.end(), prediction) == learned.end()) {
@@ -256,6 +256,9 @@ SessionOutput InputSession::HandleComposition(const KeyEvent& key)
         } else {
             reading_ = composer_.Commit();
             Convert({});
+            if (list_on_first_conversion_ && converting_) {
+                candidate_list_visible_ = true;
+            }
         }
         break;
     case KeyKind::Enter:

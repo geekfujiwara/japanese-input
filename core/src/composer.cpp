@@ -141,6 +141,9 @@ void Composer::Backspace()
         }
         before_.pop_back();
     }
+    if (Empty()) {
+        temporary_alphanumeric_ = false; // nothing left: the next letter starts kana again
+    }
 }
 
 void Composer::Delete()
@@ -149,6 +152,9 @@ void Composer::Delete()
     ResolvePending(true);
     if (!after_.empty()) {
         after_.erase(0, 1);
+    }
+    if (Empty()) {
+        temporary_alphanumeric_ = false;
     }
 }
 

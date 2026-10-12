@@ -24,7 +24,8 @@ public:
     void MoveLeft();
     void MoveRight();
 
-    // Shift+letter starts temporary alphanumeric mode; it ends on commit, clear, or this call (Shift tap).
+    // Shift+letter starts temporary alphanumeric mode; it ends on commit, clear, deleting everything, or this call
+    // (Shift tap).
     void ExitTemporaryAlphanumeric();
     bool IsTemporaryAlphanumeric() const { return temporary_alphanumeric_; }
 

@@ -73,7 +73,7 @@ final class CandidatePanel {
     /// B-03: the candidates stand in columns of 9 (up to 3), each numbered 1-9; the digits pick from the focused column.
     private func fillCandidates(_ view: ASTCandidateView) {
         let numbered = view.kind == .candidates
-        let perColumn = numbered ? 9 : max(view.items.count, 1)
+        let perColumn = 9
         let columns = NSStackView()
         columns.orientation = .horizontal
         columns.alignment = .top
@@ -115,7 +115,7 @@ final class CandidatePanel {
         default:
             position = "\(view.firstIndex + max(view.selected, 0) + 1) / \(view.total)"
         }
-        let hint = view.columns > 1 ? "← → 列の移動" : ""
+        let hint = view.kind == .candidates && view.columns > 1 ? "← → 列の移動" : ""
         stack.addArrangedSubview(Self.footer(hint: hint, position: position))
     }
 

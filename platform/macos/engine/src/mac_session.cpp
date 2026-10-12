@@ -14,6 +14,9 @@ MacSession::MacSession(Engine& engine) : engine_(engine), session_(RomajiTable::
         session_.SetEmojiCatalog([&engine = engine_] { return engine.EmojiCatalogForDictionary(); });
     }
     session_.SetRecentEmoji(engine_.LoadRecentEmoji());
+    // Many candidates at a glance: the list opens with the first Space, and the predictions fill 3 columns too.
+    session_.SetListOnFirstConversion(true);
+    session_.SetPredictionLimit(InputSession::kCandidateGridSize);
     ApplySettings(settings_);
 }
 
@@ -60,7 +63,7 @@ SessionOutput MacSession::SetJapaneseMode(bool japanese)
 
 KeyResult MacSession::KeyDown(std::uint16_t key_code, const Modifiers& modifiers)
 {
-    taps_.MarkChordUsed();
+    MarkChordUsed();
     KeyResult result;
     const std::optional<KeyEvent> key = TranslateKey(key_code, modifiers);
     if (!key || !session_.WillHandle(*key)) {
@@ -100,6 +103,19 @@ std::optional<ModifierSide> MacSession::TapSide(std::uint16_t key_code) const
 
 std::optional<bool> MacSession::ModifierChanged(std::uint16_t key_code, bool down, std::uint64_t time_ms)
 {
+    if (key_code == kLeftShiftKeyCode || key_code == kRightShiftKeyCode) {
+        const ModifierSide shift = key_code == kLeftShiftKeyCode ? ModifierSide::Left : ModifierSide::Right;
+        if (down) {
+            taps_.MarkChordUsed(); // Command+Shift is not a Command tap
+            shift_taps_.Press(shift, time_ms);
+        } else if (shift_taps_.Release(shift, time_ms)) {
+            session_.ExitTemporaryAlphanumeric();
+        }
+        return std::nullopt;
+    }
+    if (down) {
+        shift_taps_.MarkChordUsed();
+    }
     const std::optional<ModifierSide> side = TapSide(key_code);
     if (!side) {
         // Shift, Control, Fn...: a chord such as Command+Shift is not a tap.
@@ -213,7 +229,8 @@ CandidateView MacSession::Candidates() const
         const std::vector<std::u16string>& predictions = session_.Predictions();
         view.kind = CandidateKind::Predictions;
         view.total = predictions.size();
-        const std::size_t end = std::min(InputSession::kCandidatePageSize, predictions.size());
+        const std::size_t end = std::min(InputSession::kCandidateGridSize, predictions.size());
+        view.columns = (end + InputSession::kCandidatePageSize - 1) / InputSession::kCandidatePageSize;
         for (std::size_t i = 0; i < end; ++i) {
             view.items.push_back(predictions[i]);
             view.marks.push_back(session_.IsTypoPrediction(i) ? CandidateMark::Typo : CandidateMark::None);
@@ -232,25 +249,24 @@ SessionOutput MacSession::Pick(std::size_t index)
     case CandidateKind::Emoji: return Finish(session_.PickEmoji(view.first_index + index));
     case CandidateKind::Candidates:
     case CandidateKind::Predictions: {
-        // The digits pick from the column shown: move to it with Down (predictions) or the digit key itself.
+        std::size_t first_index = view.first_index;
         if (view.kind == CandidateKind::Predictions) {
-            KeyEvent tab{KeyKind::Tab, 0};
-            Finish(session_.Handle(tab));
+            // Tab turns the predictions into the candidate list (the first one selected), in the same order.
+            Finish(session_.Handle(KeyEvent{KeyKind::Tab, 0}));
             if (!session_.Converting()) {
                 return {};
             }
+            first_index = 0;
         }
-        if (view.kind == CandidateKind::Candidates) {
-            // The digits pick from the focused column: move there with Left / Right first.
-            const std::size_t focus = session_.FocusedSegment();
-            const std::size_t target = (view.first_index + index) / InputSession::kCandidatePageSize;
-            for (std::size_t step = 0; step < InputSession::kCandidateColumns; ++step) {
-                const std::size_t column = session_.SelectedCandidate(focus) / InputSession::kCandidatePageSize;
-                if (column == target) {
-                    break;
-                }
-                Finish(session_.Handle(KeyEvent{column < target ? KeyKind::Right : KeyKind::Left, 0}));
+        // The digits pick from the focused column: move there with Left / Right first.
+        const std::size_t focus = session_.FocusedSegment();
+        const std::size_t target = (first_index + index) / InputSession::kCandidatePageSize;
+        for (std::size_t step = 0; step < InputSession::kCandidateColumns; ++step) {
+            const std::size_t column = session_.SelectedCandidate(focus) / InputSession::kCandidatePageSize;
+            if (column == target) {
+                break;
             }
+            Finish(session_.Handle(KeyEvent{column < target ? KeyKind::Right : KeyKind::Left, 0}));
         }
         const std::size_t digit = index % InputSession::kCandidatePageSize;
         KeyEvent key{KeyKind::Character, static_cast<char16_t>(u'1' + digit)};
