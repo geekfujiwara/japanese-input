@@ -7,14 +7,16 @@ The signing identities are made for one run and revoked afterwards, so CI needs 
     asc_mac_release.py check   --bundle-id com.example.App          # API key, bundle ID, app record
     asc_mac_release.py prepare --bundle-id com.example.App --keychain K --keychain-password P --state S
     asc_mac_release.py testflight --state S --build 12 [--tester someone@example.com]
-    asc_mac_release.py cleanup --state S                              # revoke what prepare made
+    asc_mac_release.py cleanup --state S [--keep]                     # revoke what prepare made
 
 Credentials come from the environment: ASC_KEY_ID, ASC_ISSUER_ID and ASC_KEY_PATH (the .p8). The key needs the
 Admin role to create certificates and profiles.
 
 `prepare` creates an Apple Distribution and a Mac Installer Distribution certificate from fresh keys, imports them
-into the keychain, and creates and installs a Mac App Store provisioning profile. Apple re-signs what it distributes,
-so revoking these certificates after the build is processed does not affect it. `testflight` waits for processing,
+into the keychain, and creates and installs a Mac App Store provisioning profile. Revoking them after the upload is
+fine for TestFlight, but NOT for a build that goes to App Review: the review checks the signature again and rejects
+it as an invalid binary (ITMS-90238 / ITMS-90721, certificate revoked; seen 2026-10). For such a build run cleanup
+with --keep, and revoke the certificates (cleanup with the saved state) after that version is released. `testflight` waits for processing,
 then gives the build to the internal testers (it never deletes a tester: a betaTester DELETE removes the person from
 every app of the account).
 """
@@ -264,6 +266,15 @@ def command_cleanup(args):
         return
     with open(args.state) as f:
         state = json.load(f)
+    if args.keep:
+        kept = os.path.join(os.path.dirname(os.path.abspath(args.state)) + "-kept",
+                            f"signing-{state.get('profile_id', 'unknown')}.json")
+        os.makedirs(os.path.dirname(kept), exist_ok=True)
+        shutil.copyfile(args.state, kept)
+        print(f"Kept the certificates {', '.join(state.get('certificates', []))} and the profile "
+              f"{state.get('profile_id')} for App Review. After the version is released, revoke them with:\n"
+              f"  python3 tools/asc_mac_release.py cleanup --state {kept}")
+        return
     if state.get("profile_id"):
         try:
             request("delete", f"/v1/profiles/{state['profile_id']}")
@@ -364,6 +375,8 @@ def main():
     p.add_argument("--wait-minutes", type=int, default=45)
     p = sub.add_parser("cleanup")
     p.add_argument("--state", required=True)
+    p.add_argument("--keep", action="store_true",
+                   help="keep the certificates and the profile (a build for App Review needs them valid)")
     args = parser.parse_args()
     {"check": command_check, "prepare": command_prepare, "testflight": command_testflight,
      "cleanup": command_cleanup}[args.command](args)

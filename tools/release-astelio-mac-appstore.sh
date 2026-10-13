@@ -3,7 +3,10 @@
 # (it then appears in TestFlight). Run it on the developer's Mac: the API key stays there, and this public repository
 # has no signing workflow.
 #
-#   tools/release-astelio-mac-appstore.sh --build-number N [--version X.Y.Z] [--tester EMAIL] [--no-upload]
+#   tools/release-astelio-mac-appstore.sh --build-number N [--version X.Y.Z] [--tester EMAIL] [--for-review] [--no-upload]
+#
+# --for-review keeps the signing certificates valid: App Review rejects a build whose certificate was revoked
+# (ITMS-90238 / ITMS-90721). Revoke them after the version is released (the script prints how).
 #
 # --version is the App Store version (default: the version of CMakeLists.txt, which the Windows version shares).
 #
@@ -18,12 +21,14 @@ build_number=""
 version_override=""
 tester=""
 upload=1
+keep_signing=""
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --build-number) build_number="$2"; shift ;;
         --version) version_override="$2"; shift ;;
         --tester) tester="$2"; shift ;;
         --no-upload) upload=0 ;;
+        --for-review) keep_signing="--keep" ;;
         *) echo "unknown option: $1" >&2; exit 2 ;;
     esac
     shift
@@ -54,7 +59,7 @@ while IFS= read -r line; do
 done < <(security list-keychains -d user)
 
 cleanup() {
-    "${helper[@]}" cleanup --state "$state" || true
+    "${helper[@]}" cleanup --state "$state" $keep_signing || true
     security list-keychains -d user -s "${original_keychains[@]}" > /dev/null 2>&1 || true
     security delete-keychain "$keychain" > /dev/null 2>&1 || true
 }
