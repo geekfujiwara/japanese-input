@@ -52,6 +52,12 @@ if arguments.contains("--switcher") {
     ) { _ in
         _ = AppState.shared.engine.clearLearning()
     }
+    // InputMethodKit does not pass modifier presses to the input method; the switcher sees them and says so.
+    DistributedNotificationCenter.default().addObserver(
+        forName: AppMode.shiftTapNotification, object: nil, queue: .main
+    ) { _ in
+        AppState.shared.activeSession?.exitTemporaryEnglish()
+    }
     NSApplication.shared.run()
 } else {
     let application = NSApplication.shared

@@ -125,6 +125,8 @@ typedef NS_ENUM(NSInteger, ASTModeSwitch) {
 - (void)markChordUsed NS_SWIFT_NAME(markChordUsed());
 
 - (void)abandon NS_SWIFT_NAME(abandon());
+/// A single Shift press: the next letters are kana again.
+- (void)exitTemporaryEnglish NS_SWIFT_NAME(exitTemporaryEnglish());
 - (void)resetContext NS_SWIFT_NAME(resetContext());
 
 @property (nonatomic, readonly) BOOL composing;

@@ -14,6 +14,8 @@ final class AppState {
 
     /// C-14: the mode is shared by every app (as the input source itself is on macOS).
     var japaneseMode = true
+    /// The session of the text field that has the input method now (for the Shift press seen by the switcher).
+    weak var activeSession: ASTSession?
 
     private init() {
         let dictionary = Bundle.main.path(forResource: "system", ofType: "dic")

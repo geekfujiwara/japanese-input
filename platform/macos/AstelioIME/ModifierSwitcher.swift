@@ -9,13 +9,14 @@ final class ModifierSwitcher {
     private var retry: Timer?
     private let preferences = Preferences()
 
-    // Device-dependent bits of the flags (NX_DEVICE*KEYMASK): which side of a modifier is down.
-    private static let sideMasks: [Int64: UInt64] = [0x37: 0x08, 0x36: 0x10, 0x3A: 0x20, 0x3D: 0x40]
     private static let maxHold: TimeInterval = 1.0
+    private static let leftShift: Int64 = 0x38
+    private static let rightShift: Int64 = 0x3C
 
-    private enum Side { case left, right }
-    private var pressed: (side: Side, at: TimeInterval)?
+    private enum Key { case left, right, shift }
+    private var pressed: (key: Key, at: TimeInterval)?
     private var used = false
+    private var debug = ProcessInfo.processInfo.environment["ASTELIO_DEBUG"] != nil
 
     func start() {
         if !installTap() {
@@ -62,44 +63,71 @@ final class ModifierSwitcher {
             }
         case .flagsChanged:
             flagsChanged(event)
+        case .keyDown where [0x66, 0x68].contains(event.getIntegerValueField(.keyboardEventKeycode)):
+            // 英数 / かな (JIS keys, or sent by Karabiner-Elements for a single press of Command): macOS answers them
+            // with its own choice of input source, so choose ours just after it, twice in case macOS is slow.
+            used = true
+            let english = event.getIntegerValueField(.keyboardEventKeycode) == 0x66
+            for delay in [0.15, 0.5] {
+                DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
+                    if english {
+                        InputSources.selectEnglish()
+                    } else {
+                        InputSources.selectAstelio()
+                    }
+                }
+            }
         default:
             used = true // a key or a click between the press and the release: a shortcut, not a single press
         }
     }
 
+    /// Which modifier went down or up. Tools such as Karabiner-Elements send the modifiers without the bits that tell
+    /// left from right, so the key code says which key changed, and the flags whether it is now down.
     private func flagsChanged(_ event: CGEvent) {
         let code = event.getIntegerValueField(.keyboardEventKeycode)
-        if ProcessInfo.processInfo.environment["ASTELIO_DEBUG"] != nil {
-            NSLog("Astelio IME switcher: flags code=%lld flags=0x%llx", code, event.flags.rawValue)
+        let flags = event.flags
+        if debug {
+            NSLog("Astelio IME switcher: flags code=%lld flags=0x%llx", code, flags.rawValue)
         }
         let (left, right): (Int64, Int64) = preferences.tapModifier == .option ? (0x3A, 0x3D) : (0x37, 0x36)
-        guard code == left || code == right, let mask = Self.sideMasks[code] else {
-            used = true // Shift, Control... with the modifier is a chord
+        let key: Key
+        let down: Bool
+        switch code {
+        case left, right:
+            key = code == left ? .left : .right
+            let generic: CGEventFlags = preferences.tapModifier == .option ? .maskAlternate : .maskCommand
+            let sideBits: [Int64: UInt64] = [0x37: 0x08, 0x36: 0x10, 0x3A: 0x20, 0x3D: 0x40]
+            let side = sideBits[code] ?? 0
+            let anySide = flags.rawValue & (sideBits[left]! | sideBits[right]!) != 0
+            down = anySide ? flags.rawValue & side != 0 : flags.contains(generic)
+        case Self.leftShift, Self.rightShift:
+            key = .shift
+            let side: UInt64 = code == Self.leftShift ? 0x02 : 0x04
+            let anySide = flags.rawValue & 0x06 != 0
+            down = anySide ? flags.rawValue & side != 0 : flags.contains(.maskShift)
+        default:
+            used = true // Control, Fn... with the modifier is a chord
             return
         }
-        let side: Side = code == left ? .left : .right
-        let down = event.flags.rawValue & mask != 0
         let now = ProcessInfo.processInfo.systemUptime
         if down {
-            if pressed != nil {
-                used = true // both sides held
-            } else {
-                used = false
-            }
-            pressed = (side, now)
+            used = pressed != nil // two modifiers held together
+            pressed = (key, now)
             return
         }
         defer { pressed = nil }
-        guard let press = pressed, press.side == side, !used, now - press.at <= Self.maxHold else {
+        guard let press = pressed, press.key == key, !used, now - press.at <= Self.maxHold else {
             return
         }
-        switch side {
+        switch key {
         case .left:
             InputSources.selectEnglish()
         case .right:
-            if !InputSources.isAstelioCurrent() {
-                InputSources.selectAstelio()
-            }
+            InputSources.selectAstelio()
+        case .shift:
+            DistributedNotificationCenter.default().postNotificationName(
+                AppMode.shiftTapNotification, object: nil, userInfo: nil, deliverImmediately: true)
         }
     }
 }

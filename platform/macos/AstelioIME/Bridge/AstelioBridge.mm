@@ -306,6 +306,11 @@ std::filesystem::path ToPath(NSString* path)
     return [[ASTOutput alloc] initWithOutput:_session->Pick(static_cast<std::size_t>(index))];
 }
 
+- (void)exitTemporaryEnglish
+{
+    _session->ExitTemporaryEnglish();
+}
+
 - (BOOL)selectCategory:(NSInteger)category
 {
     if (category < 0 || category >= static_cast<NSInteger>(astelio::kEmojiCategoryCount)) {

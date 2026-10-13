@@ -30,6 +30,7 @@ final class AstelioInputController: IMKInputController {
 
     override func activateServer(_ sender: Any!) {
         super.activateServer(sender)
+        AppState.shared.activeSession = session
         session.resetContext()
         session.applySettings(AppState.shared.preferences.settings())
         AppState.shared.japaneseMode = true // English is another input source now (R-03)
@@ -83,7 +84,16 @@ final class AstelioInputController: IMKInputController {
         }
     }
 
+    // The 英数 and かな keys of JIS keyboards (and of tools such as Karabiner-Elements that send them for a single
+    // press of Command): 英数 is Apple's English input, かな stays in Astelio.
+    private static let eisuKeyCode: UInt16 = 0x66
+    private static let kanaKeyCode: UInt16 = 0x68
+
     private func handleKey(_ event: NSEvent, client: IMKTextInput) -> Bool {
+        if event.keyCode == Self.eisuKeyCode || event.keyCode == Self.kanaKeyCode {
+            setMode(japanese: event.keyCode == Self.kanaKeyCode, client: client)
+            return true
+        }
         // B-11: password fields turn on Secure Input; the keys go to the app as they are and nothing is recorded.
         if IsSecureEventInputEnabled() {
             session.setRecordingAllowed(false)
@@ -230,7 +240,6 @@ final class AstelioInputController: IMKInputController {
     override func menu() -> NSMenu! {
         let menu = NSMenu(title: "Astelio")
         let open = NSMenuItem(title: "Astelio の設定を開く…", action: #selector(openSettings(_:)), keyEquivalent: "")
-        open.target = self
         menu.addItem(open)
         return menu
     }

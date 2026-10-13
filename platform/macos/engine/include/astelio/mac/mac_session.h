@@ -119,6 +119,8 @@ public:
     void Abandon();
     // The caret may have moved: the next word does not follow the last one.
     void ResetContext() { session_.ResetContext(); }
+    // A single Shift press seen outside the input method (the switcher): leave the English text started with Shift.
+    void ExitTemporaryEnglish() { session_.ExitTemporaryAlphanumeric(); }
 
     bool Composing() const { return session_.Composing(); }
     Composition CurrentComposition() const;
