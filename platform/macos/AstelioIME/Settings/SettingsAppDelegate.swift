@@ -1,19 +1,26 @@
 import Cocoa
 import SwiftUI
 
-/// The settings app: one window with the setup steps, the input settings, the history and the user dictionary.
-final class SettingsAppDelegate: NSObject, NSApplicationDelegate {
+/// The settings window of the running input method. macOS starts the app in the background to serve the input
+/// method; the window appears when the user opens the app (it becomes active, or is opened again) or chooses
+/// "Astelio の設定を開く…" in the input menu. Closing it leaves the input method running.
+final class SettingsAppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private var window: NSWindow?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         _ = Preferences() // registers the defaults the input method also uses
         NSApp.mainMenu = Self.makeMenu()
-        showWindow()
-        NSApp.activate(ignoringOtherApps: true)
+    }
+
+    /// A double click in the Finder or the Dock activates the app; macOS starting the input method does not.
+    func applicationDidBecomeActive(_ notification: Notification) {
+        if window?.isVisible != true {
+            showWindow()
+        }
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
-        true
+        false // the input method keeps serving the text fields
     }
 
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
@@ -21,19 +28,26 @@ final class SettingsAppDelegate: NSObject, NSApplicationDelegate {
         return true
     }
 
-    private func showWindow() {
+    func showWindow() {
+        NSApp.setActivationPolicy(.regular)
         if window == nil {
             let controller = NSHostingController(rootView: SettingsView())
             let window = NSWindow(contentViewController: controller)
-            window.title = "Astelio IME"
+            window.title = "Astelio"
             window.styleMask = [.titled, .closable, .miniaturizable, .resizable]
             window.setContentSize(NSSize(width: 680, height: 640))
             window.minSize = NSSize(width: 600, height: 560)
             window.center()
             window.isReleasedWhenClosed = false
+            window.delegate = self
             self.window = window
         }
         window?.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
+    }
+
+    func windowWillClose(_ notification: Notification) {
+        NSApp.setActivationPolicy(.accessory) // out of the Dock again
     }
 
     private static func makeMenu() -> NSMenu {

@@ -59,7 +59,7 @@ App Store 版は App Sandbox を有効にした `AstelioIME-AppStore.entitlement
 - `/Applications` などから開くと **設定アプリ**（SwiftUI）。［はじめに］の［インストール］が保存パネルを開き、ユーザーが［インストール］を押すと自分自身を `~/Library/Input Methods` にコピーして登録する。入力・履歴・ユーザー辞書の設定もここで行う
 - `Input Methods` フォルダーのコピーは、macOS が起動する **入力メソッド本体**（画面なし）
 
-置き場所で役割を決めます（`AppMode.isInputMethodServer`）。
+どのコピーも入力メソッドとして待ち受けます。macOS は入力メソッドを Bundle ID で探して起動・接続し、Launch Services はそれを `/Applications` のコピー（Mac App Store 版）に解決することがあるためです（実機で確認。待ち受けないと「Request for Endpoint Invalid」で入力できない）。設定ウインドウは、利用者がアプリを開いたとき（前面になったとき・再度開いたとき）と、入力メニューの［Astelio の設定を開く…］で出します。
 
 > [!IMPORTANT]
 > **サンドボックスのアプリが自分でコピーした実行ファイルは、macOS が実行を拒否します**（`File created by an AppSandbox, exec/open not allowed`、カーネルのログは `quarantined by AstelioIME; and created without user consent`）。隔離属性の解除もサンドボックスからはできません。そのため、コピーは保存パネル（ユーザーの同意が付く）経由で行い、コピー後に隔離属性のフラグ（ユーザー承認のビット 0x40）を確かめます。実行できない状態なら、Finder でコピーする手順（Finder で Input Methods フォルダーと本アプリを開き、ドラッグ）に切り替えます。Finder でコピーしたものは実機で起動を確認済みです。

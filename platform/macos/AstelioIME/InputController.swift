@@ -68,7 +68,17 @@ final class AstelioInputController: IMKInputController {
 
     override func handle(_ event: NSEvent!, client sender: Any!) -> Bool {
         guard let event = event, let client = sender as? IMKTextInput else {
+            if UserDefaults.standard.bool(forKey: "DebugLog") {
+                NSLog("Astelio IME debug: event without a client (%@)", String(describing: sender))
+            }
             return false
+        }
+        if UserDefaults.standard.bool(forKey: "DebugLog") {
+            // Diagnostics only (defaults write com.geekfujiwara.inputmethod.Astelio DebugLog -bool true): the event
+            // type and key code, never the characters typed.
+            NSLog("Astelio IME debug: event type=%lu code=%u japanese=%d secure=%d", event.type.rawValue,
+                  event.type == .keyDown || event.type == .flagsChanged ? event.keyCode : 0,
+                  session.japaneseMode ? 1 : 0, IsSecureEventInputEnabled() ? 1 : 0)
         }
         switch event.type {
         case .flagsChanged:
@@ -244,9 +254,14 @@ final class AstelioInputController: IMKInputController {
         return menu
     }
 
-    /// The settings window is this same app opened from /Applications (not the copy in Input Methods, which would start
-    /// a second input method).
+    /// The settings window belongs to this same process (every copy is the input method and the settings app).
     @objc private func openSettings(_ sender: Any?) {
+        if let delegate = NSApp.delegate as? SettingsAppDelegate {
+            DispatchQueue.main.async {
+                delegate.showWindow()
+            }
+            return
+        }
         let isSettingsCopy: (URL) -> Bool = { $0.deletingLastPathComponent().lastPathComponent != "Input Methods" }
         if let running = NSRunningApplication.runningApplications(withBundleIdentifier: AppMode.bundleID)
             .first(where: { $0.bundleURL.map(isSettingsCopy) == true }) {
