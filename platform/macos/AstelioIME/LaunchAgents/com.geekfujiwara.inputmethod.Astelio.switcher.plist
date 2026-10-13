@@ -15,11 +15,9 @@
 	</array>
 	<key>RunAtLoad</key>
 	<true/>
+	<!-- Always: turning on Input Monitoring makes macOS quit the app (exit 0), and the switcher must come back. -->
 	<key>KeepAlive</key>
-	<dict>
-		<key>SuccessfulExit</key>
-		<false/>
-	</dict>
+	<true/>
 	<key>LimitLoadToSessionType</key>
 	<string>Aqua</string>
 	<key>ProcessType</key>

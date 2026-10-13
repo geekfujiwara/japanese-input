@@ -115,7 +115,7 @@ private struct SetupTab: View {
                 }
 
                 Step(number: 2, title: "キーボードに追加", done: setup.status == .ready,
-                     detail: "システム設定 →［キーボード］→［テキスト入力］の［編集…］→［＋］→［日本語］→「Astelio IME」を選んで［追加］。") {
+                     detail: "システム設定 →［キーボード］→［テキスト入力］の［編集…］→［＋］→［日本語］→「Astelio」を選んで［追加］。") {
                     Button("システム設定を開く") { setup.openKeyboardSettings() }
                         .disabled(!installed)
                 }
@@ -134,7 +134,7 @@ private struct SetupTab: View {
                             Button("入力監視の設定を開く") { setup.openInputMonitoringSettings() }
                         }
                         Text(setup.inputMonitoringAllowed ? "入力監視: 許可されています"
-                             : "入力監視: 未許可（システム設定 →［プライバシーとセキュリティ］→［入力監視］で Astelio IME をオン）")
+                             : "入力監視: 未許可（システム設定 →［プライバシーとセキュリティ］→［入力監視］で Astelio をオン）")
                             .font(.caption).foregroundStyle(.secondary)
                         if setup.switcherNeedsApproval {
                             Text("［ログイン項目］で Astelio IME の許可が必要です。").font(.caption).foregroundStyle(.secondary)
@@ -143,7 +143,7 @@ private struct SetupTab: View {
                 }
 
                 Step(number: 4, title: "使ってみる", done: false,
-                     detail: "メニューバーの入力メニューで「Astelio IME」を選び、下の欄に入力してみます。ローマ字で打って Space で変換、Return で確定。Shift+英字で英字、Shift の単押しでかなに戻ります。") {
+                     detail: "メニューバーの入力メニューで「Astelio」を選び、下の欄に入力してみます。ローマ字で打って Space で変換、Return で確定。Shift+英字で英字、Shift の単押しでかなに戻ります。") {
                     TextField("ここに入力して試す", text: $trial, axis: .vertical)
                         .textFieldStyle(.roundedBorder)
                         .lineLimit(2...4)
