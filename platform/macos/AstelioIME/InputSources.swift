@@ -44,6 +44,10 @@ enum InputSources {
             return false
         }
         TISEnableInputSource(abc)
+        // A source just turned on is not always ready to be chosen; try again a moment later.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+            TISSelectInputSource(abc)
+        }
         return TISSelectInputSource(abc) == noErr
     }
 

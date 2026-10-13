@@ -102,7 +102,7 @@ private struct SetupTab: View {
                     if setup.manualInstall || setup.status == .notInstalled {
                         DisclosureGroup("うまくいかないとき: Finder で入れる", isExpanded: $setup.manualInstall) {
                             VStack(alignment: .leading, spacing: 8) {
-                                Text("① 下のボタンで、Finder に「Input Methods」フォルダーと Astelio IME が出ます。\n② Astelio IME を、Input Methods のフォルダーへドラッグしてコピーします（Option を押しながらだと確実です）。\n③ このウインドウが自動で気づいて登録します。")
+                                Text("① 下のボタンで、Finder に「Input Methods」フォルダーと、選ばれた AstelioIME.app が出ます。\n② AstelioIME.app を ⌘C でコピーし、Input Methods のウインドウで ⌘V で貼り付けます（エイリアスではなく、アプリそのものを入れてください）。\n③ このウインドウが自動で気づいて登録します。")
                                     .font(.caption)
                                     .foregroundStyle(.secondary)
                                     .fixedSize(horizontal: false, vertical: true)
