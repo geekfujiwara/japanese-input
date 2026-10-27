@@ -6,6 +6,8 @@ import SwiftUI
 /// "Astelio の設定を開く…" in the input menu. Closing it leaves the input method running.
 final class SettingsAppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private var window: NSWindow?
+    private var wizardWindow: NSWindow?
+    private static let wizardDoneKey = "SetupWizardCompleted"
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         _ = Preferences() // registers the defaults the input method also uses
@@ -14,8 +16,12 @@ final class SettingsAppDelegate: NSObject, NSApplicationDelegate, NSWindowDelega
 
     /// A double click in the Finder or the Dock activates the app; macOS starting the input method does not.
     func applicationDidBecomeActive(_ notification: Notification) {
-        if window?.isVisible != true {
-            showWindow()
+        if window?.isVisible != true && wizardWindow?.isVisible != true {
+            if UserDefaults.standard.bool(forKey: Self.wizardDoneKey) {
+                showWindow()
+            } else {
+                showWizard()
+            }
         }
     }
 
@@ -46,8 +52,40 @@ final class SettingsAppDelegate: NSObject, NSApplicationDelegate, NSWindowDelega
         NSApp.activate(ignoringOtherApps: true)
     }
 
+    /// The first-run wizard (SetupWizard). Finishing it, or closing it, marks it done; the settings window follows.
+    @MainActor
+    func showWizard() {
+        NSApp.setActivationPolicy(.regular)
+        if wizardWindow == nil {
+            let view = SetupWizard(setup: SetupModel()) { [weak self] in
+                self?.wizardWindow?.close()
+                self?.showWindow()
+            }
+            let window = NSWindow(contentViewController: NSHostingController(rootView: view))
+            window.title = "Astelio のセットアップ"
+            window.styleMask = [.titled, .closable, .miniaturizable, .fullSizeContentView]
+            window.titlebarAppearsTransparent = true
+            window.setContentSize(NSSize(width: 820, height: 600))
+            window.center()
+            window.isReleasedWhenClosed = false
+            window.delegate = self
+            wizardWindow = window
+        }
+        wizardWindow?.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
+    }
+
     func windowWillClose(_ notification: Notification) {
-        NSApp.setActivationPolicy(.accessory) // out of the Dock again
+        if let closing = notification.object as? NSWindow, closing === wizardWindow {
+            UserDefaults.standard.set(true, forKey: Self.wizardDoneKey)
+            wizardWindow = nil
+        }
+        // Out of the Dock again once no window is left.
+        DispatchQueue.main.async { [weak self] in
+            if self?.window?.isVisible != true && self?.wizardWindow?.isVisible != true {
+                NSApp.setActivationPolicy(.accessory)
+            }
+        }
     }
 
     private static func makeMenu() -> NSMenu {

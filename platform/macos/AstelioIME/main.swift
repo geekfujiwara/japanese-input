@@ -1,12 +1,12 @@
 import Cocoa
 import InputMethodKit
 
-// Every copy is the input method server: macOS finds the input method by its bundle ID, which Launch Services may
-// resolve to the copy in /Applications (the Mac App Store one) as well as to the one in ~/Library/Input Methods (which
-// macOS needs to list the input source at all). The settings window appears only when the user opens the app.
+// The app is the input method server. The Mac App Store version stays in /Applications; macOS lists it as an input
+// source through a link the user puts in ~/Library/Input Methods (InputMethodInstaller), and launches it by its bundle
+// ID. The settings window appears only when the user opens the app.
 //
-// `AstelioIME --install` (run by tools/install-astelio-mac.sh) registers this copy with the system and turns it on
-// in the input sources; `--uninstall` turns it off.
+// `AstelioIME --install` (run by tools/install-astelio-mac.sh for the version outside the App Store) registers this
+// copy with the system and turns it on in the input sources; `--uninstall` turns it off.
 let arguments = CommandLine.arguments.dropFirst()
 if arguments.contains("--install") {
     exit(InputSourceRegistration.install() ? 0 : 1)
@@ -15,20 +15,15 @@ if arguments.contains("--uninstall") {
     exit(InputSourceRegistration.uninstall() ? 0 : 1)
 }
 
-// For scripts and tests: copy to ~/Library/Input Methods and register (a copy made here, outside the sandbox, runs).
-if arguments.contains("--install-input-method") {
-    do {
-        let installer = InputMethodInstaller()
-        try installer.prepareForInstall()
-        try installer.copy(to: InputMethodInstaller.installedURL)
-        let outcome = installer.register()
-        print("registered: \(outcome.registerStatus), listed: \(outcome.listed)")
-        exit(outcome.registerStatus == noErr ? 0 : 1)
-    } catch {
-        print("install failed: \(error)")
-        exit(1)
+#if DEBUG
+if let index = CommandLine.arguments.firstIndex(of: "--snapshot"), CommandLine.arguments.count > index + 2 {
+    MainActor.assumeIsolated {
+        SettingsSnapshot.run(tab: Int(CommandLine.arguments[index + 1]) ?? 0,
+                             output: URL(fileURLWithPath: CommandLine.arguments[index + 2]),
+                             ready: CommandLine.arguments.contains("ready"))
     }
 }
+#endif
 
 if arguments.contains("--switcher") {
     // Started at login by the LaunchAgent: switches input sources with single presses of Command.
@@ -39,7 +34,7 @@ if arguments.contains("--switcher") {
     application.run()
 } else {
     let connectionName = Bundle.main.infoDictionary?["InputMethodConnectionName"] as? String
-        ?? "com.geekfujiwara.inputmethod.Astelio_Connection"
+        ?? "72XRBY5B5K.com.geekfujiwara.inputmethod.Astelio.Connection"
     if let server = IMKServer(name: connectionName, bundleIdentifier: Bundle.main.bundleIdentifier) {
         AppState.shared.server = server
     } else {

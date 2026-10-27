@@ -35,7 +35,7 @@
 	<key>NSPrincipalClass</key>
 	<string>NSApplication</string>
 	<key>InputMethodConnectionName</key>
-	<string>$(PRODUCT_BUNDLE_IDENTIFIER)_Connection</string>
+	<string>$(ASTELIO_APP_GROUP).Connection</string>
 	<key>InputMethodServerControllerClass</key>
 	<string>AstelioInputController</string>
 	<key>TISInputSourceID</key>

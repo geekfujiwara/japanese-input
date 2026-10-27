@@ -80,6 +80,9 @@ targets:
         ASTELIO_SIGN_IDENTITY: "-"
         ASTELIO_PROFILE: ""
         ASTELIO_TEAM: ""
+        # The input method's Mach service (InputMethodConnectionName) is "<app group>.Connection": the App Sandbox
+        # lets the app register names under its app group without a temporary exception.
+        ASTELIO_APP_GROUP: 72XRBY5B5K.$(PRODUCT_BUNDLE_IDENTIFIER)
         CODE_SIGN_ENTITLEMENTS: $(ASTELIO_ENTITLEMENTS)
         CODE_SIGN_STYLE: Manual
         CODE_SIGN_IDENTITY: $(ASTELIO_SIGN_IDENTITY)

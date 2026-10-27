@@ -1,0 +1,14 @@
+#!/bin/sh
+# Runs as root after the installer put AstelioIME.app in /Library/Input Methods.
+# Stop the old input method and switcher (launchd starts the switcher again; macOS starts the input method when it is
+# chosen), register the input source for the user at the console, and open the setup wizard.
+app="/Library/Input Methods/AstelioIME.app"
+pkill -f "Input Methods/AstelioIME.app/Contents/MacOS/AstelioIME" 2> /dev/null || true
+user="$(stat -f %Su /dev/console)"
+if [ -n "$user" ] && [ "$user" != "root" ]; then
+    uid="$(id -u "$user")"
+    launchctl asuser "$uid" sudo -u "$user" "$app/Contents/MacOS/AstelioIME" --install || true
+    # Opens the app for the user: the setup wizard walks through the rest (keyboard, left/right Command, a try).
+    launchctl asuser "$uid" sudo -u "$user" /usr/bin/open "$app" || true
+fi
+exit 0

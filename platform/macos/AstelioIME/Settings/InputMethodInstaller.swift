@@ -1,12 +1,17 @@
 import Carbon
 import Cocoa
 
-/// Puts the input method where macOS looks for it and reports whether it is turned on. The sandbox of the App Store
-/// build may write to ~/Library/Input Methods through the entitlement in AstelioIME-AppStore.entitlements.
+/// Makes macOS list this app as an input source and reports whether it is turned on.
+///
+/// macOS lists input methods only from an "Input Methods" folder, while a Mac App Store app stays in /Applications.
+/// The app does not copy itself or any other code: the user puts a symbolic link to this app in
+/// ~/Library/Input Methods through the save panel (the App Sandbox's user-selected access), and the input method keeps
+/// running from the app bundle in /Applications.
 final class InputMethodInstaller {
     enum Status {
         case notInstalled
-        case needsUpdate
+        /// Something else is where the link goes: a copy of the app from an older version, or a link to another copy.
+        case needsRepair
         case needsEnabling
         case ready
     }
@@ -28,8 +33,8 @@ final class InputMethodInstaller {
         realHome.appendingPathComponent("Library/Input Methods", isDirectory: true)
     }
 
-    static var installedURL: URL {
-        folder.appendingPathComponent("AstelioIME.app", isDirectory: true)
+    static var linkURL: URL {
+        folder.appendingPathComponent("AstelioIME.app", isDirectory: false)
     }
 
     static func versionText(of bundle: Bundle?) -> String? {
@@ -42,64 +47,63 @@ final class InputMethodInstaller {
     }
 
     var currentVersion: String { Self.versionText(of: Bundle.main) ?? "?" }
-    var installedVersion: String? {
-        FileManager.default.fileExists(atPath: Self.installedURL.path) ? Self.versionText(of: Bundle(url: Self.installedURL)) : nil
+
+    /// Where the link points, or nil when there is no link (nothing, or a real folder).
+    static func linkTarget(at url: URL) -> URL? {
+        guard let path = try? FileManager.default.destinationOfSymbolicLink(atPath: url.path) else {
+            return nil
+        }
+        return URL(fileURLWithPath: path, relativeTo: url.deletingLastPathComponent()).standardizedFileURL
+    }
+
+    /// The version outside the App Store (Developer ID): the installer puts the app itself in /Library/Input Methods,
+    /// so no link is needed and the app is listed from where it runs.
+    static var runsFromInputMethods: Bool {
+        Bundle.main.bundleURL.deletingLastPathComponent().lastPathComponent == "Input Methods"
+    }
+
+    /// What is registered with Text Input Sources: the app itself, or the link to it.
+    static var registrationURL: URL {
+        runsFromInputMethods ? Bundle.main.bundleURL : linkURL
+    }
+
+    var hasLink: Bool {
+        Self.linkTarget(at: Self.linkURL) == Bundle.main.bundleURL.standardizedFileURL
+    }
+
+    /// Anything at the link's place (a link, a copy of the app, or a broken link).
+    var somethingInPlace: Bool {
+        (try? FileManager.default.attributesOfItem(atPath: Self.linkURL.path)) != nil
     }
 
     func status() -> Status {
-        guard let installed = installedVersion else {
-            return .notInstalled
+        if hasLink || Self.runsFromInputMethods {
+            return isEnabled() ? .ready : .needsEnabling
         }
-        if installed != currentVersion {
-            return .needsUpdate
-        }
-        return isEnabled() ? .ready : .needsEnabling
+        return somethingInPlace ? .needsRepair : .notInstalled
     }
 
-    // MARK: - Install and remove
+    // MARK: - Link and register
 
-    /// Stops the running server and removes an old copy, so a new one can be put in place.
-    func prepareForInstall() throws {
-        try FileManager.default.createDirectory(at: Self.folder, withIntermediateDirectories: true)
-        terminateRunningServer()
-        if FileManager.default.fileExists(atPath: Self.installedURL.path) {
-            try FileManager.default.removeItem(at: Self.installedURL)
+    /// Puts a link to this app at `destination`, the place the user chose in the save panel (the panel asked before
+    /// replacing what was there). `destination` may also be a new "Input Methods" folder the user chose to create.
+    func makeLink(at destination: URL) throws {
+        let fileManager = FileManager.default
+        var link = destination
+        if destination.lastPathComponent == "Input Methods" {
+            try fileManager.createDirectory(at: destination, withIntermediateDirectories: false)
+            link = destination.appendingPathComponent(Self.linkURL.lastPathComponent)
+        } else if (try? fileManager.attributesOfItem(atPath: destination.path)) != nil {
+            try fileManager.removeItem(at: destination)
         }
+        try fileManager.createSymbolicLink(at: link, withDestinationURL: Bundle.main.bundleURL)
     }
 
-    /// Copies this app to `destination` (the place the user chose in the save panel).
-    func copy(to destination: URL) throws {
-        try FileManager.default.copyItem(at: Bundle.main.bundleURL, to: destination)
-    }
-
-    /// macOS refuses to run a program that a sandboxed app created on its own ("created without user consent"):
-    /// the quarantine flags of such a file lack the user-approved bit (0x40). A copy the user made in the save panel
-    /// or in the Finder has it, or has no quarantine at all.
-    func canRun(_ url: URL) -> Bool {
-        let name = "com.apple.quarantine"
-        let size = getxattr(url.path, name, nil, 0, 0, XATTR_NOFOLLOW)
-        guard size > 0 else {
-            return true
-        }
-        var buffer = [UInt8](repeating: 0, count: size)
-        guard getxattr(url.path, name, &buffer, size, 0, XATTR_NOFOLLOW) == size,
-              let text = String(bytes: buffer, encoding: .utf8),
-              let field = text.split(separator: ";").first,
-              let flags = UInt32(field, radix: 16) else {
-            return false
-        }
-        return flags & 0x40 != 0 || flags & 0x80 == 0
-    }
-
-    func removeInstalledCopy() {
-        terminateRunningServer()
-        try? FileManager.default.removeItem(at: Self.installedURL)
-    }
-
-    /// Tells the system about the copy in ~/Library/Input Methods and turns its input sources on.
+    /// Tells the system about the link in ~/Library/Input Methods. Recent macOS asks the user to add the input source
+    /// in System Settings; TISEnableInputSource is tried as well, for the systems that still allow it.
     @discardableResult
     func register() -> Outcome {
-        let status = TISRegisterInputSource(Self.installedURL as CFURL)
+        let status = TISRegisterInputSource(Self.registrationURL as CFURL)
         var listed = !sources().isEmpty
         if !listed {
             // The list can lag behind the registration by a moment.
@@ -112,19 +116,22 @@ final class InputMethodInstaller {
         return Outcome(registerStatus: status, listed: listed)
     }
 
-    /// True when a copy is in place but the system does not list it yet (it was put there by hand).
+    /// True when the link is in place but the system does not list the input source yet.
     var needsRegistration: Bool {
-        installedVersion != nil && sources().isEmpty
+        (hasLink || Self.runsFromInputMethods) && sources().isEmpty
     }
 
-    func uninstall() throws {
+    /// Turns the input sources off. The link itself is removed by the user in the Finder (the app cannot write there
+    /// on its own); a link left behind does nothing once the app is gone.
+    func disable() {
         for source in sources() {
             TISDisableInputSource(source)
         }
-        terminateRunningServer()
-        if FileManager.default.fileExists(atPath: Self.installedURL.path) {
-            try FileManager.default.removeItem(at: Self.installedURL)
-        }
+    }
+
+    /// Shows the link (or the old copy) in the Finder, so the user can move it to the Trash.
+    func revealInFinder() {
+        NSWorkspace.shared.activateFileViewerSelecting([Self.runsFromInputMethods ? Bundle.main.bundleURL : Self.linkURL])
     }
 
     // MARK: - Input sources
@@ -141,18 +148,5 @@ final class InputMethodInstaller {
     private func sources() -> [TISInputSource] {
         let filter = [kTISPropertyBundleID as String: AppMode.bundleID] as CFDictionary
         return (TISCreateInputSourceList(filter, true)?.takeRetainedValue() as? [TISInputSource]) ?? []
-    }
-
-    // MARK: - Helpers
-
-    /// The server keeps running after a new copy is put in place; stop it so macOS starts the new one.
-    private func terminateRunningServer() {
-        let installed = Self.installedURL.standardizedFileURL
-        for app in NSRunningApplication.runningApplications(withBundleIdentifier: AppMode.bundleID)
-        where app.bundleURL?.standardizedFileURL == installed {
-            if !app.terminate() {
-                app.forceTerminate()
-            }
-        }
     }
 }

@@ -3,17 +3,18 @@
 <plist version="1.0">
 <dict>
 	<!-- The Mac App Store requires the App Sandbox. The user's data then lives in the container
-	     (~/Library/Containers/<bundle id>/Data/Library/Application Support/AstelioIME). -->
+	     (~/Library/Containers/<bundle id>/Data/Library/Application Support/AstelioIME). No temporary exceptions. -->
 	<key>com.apple.security.app-sandbox</key>
 	<true/>
-	<!-- InputMethodKit publishes the connection under this name; without it a sandboxed input method does not load. -->
-	<key>com.apple.security.temporary-exception.mach-register.global-name</key>
-	<string>$(PRODUCT_BUNDLE_IDENTIFIER)_Connection</string>
-	<!-- A Mac App Store app lives in /Applications, but macOS lists an input method only from an Input Methods folder.
-	     The settings window copies the input method (this same app) to ~/Library/Input Methods. -->
-	<key>com.apple.security.temporary-exception.files.home-relative-path.read-write</key>
+	<!-- InputMethodKit publishes the connection under InputMethodConnectionName (Info.plist). The sandbox lets an app
+	     register Mach services whose names start with one of its app groups and a dot, so the name is
+	     "<app group>.Connection". -->
+	<key>com.apple.security.application-groups</key>
 	<array>
-		<string>/Library/Input Methods/</string>
+		<string>$(ASTELIO_APP_GROUP)</string>
 	</array>
+	<!-- The save panel of the setup tab: the user chooses where the link to this app goes (~/Library/Input Methods). -->
+	<key>com.apple.security.files.user-selected.read-write</key>
+	<true/>
 </dict>
 </plist>

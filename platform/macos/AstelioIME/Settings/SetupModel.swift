@@ -9,8 +9,6 @@ import SwiftUI
 final class SetupModel: ObservableObject {
     @Published private(set) var status: InputMethodInstaller.Status = .notInstalled
     @Published var message: String?
-    @Published private(set) var installedVersion: String?
-    @Published var manualInstall = false
     /// R-03 across input sources: `AstelioIME --switcher` at login and the Input Monitoring permission.
     @Published private(set) var switcherRegistered = false
     @Published private(set) var switcherNeedsApproval = false
@@ -18,6 +16,10 @@ final class SetupModel: ObservableObject {
     private let switcher = SMAppService.agent(plistName: "com.geekfujiwara.inputmethod.Astelio.switcher.plist")
 
     let currentVersion: String
+    #if DEBUG
+    /// For SettingsSnapshot: the status to show instead of this Mac's.
+    static var shownStatus: InputMethodInstaller.Status?
+    #endif
     private let installer = InputMethodInstaller()
     private var timer: Timer?
 
@@ -35,13 +37,16 @@ final class SetupModel: ObservableObject {
     }
 
     func refresh() {
-        // A copy put there by hand (Finder) is not known to the system yet.
+        // A link from an earlier run, or one the system forgot, is registered again.
         if installer.needsRegistration {
             installer.register()
-            manualInstall = false
         }
         status = installer.status()
-        installedVersion = installer.installedVersion
+        #if DEBUG
+        if let shown = Self.shownStatus {
+            status = shown
+        }
+        #endif
         switcherRegistered = switcher.status == .enabled
         switcherNeedsApproval = switcher.status == .requiresApproval
         inputMonitoringAllowed = CGPreflightListenEventAccess()
@@ -76,45 +81,43 @@ final class SetupModel: ObservableObject {
         }
     }
 
-    /// The save panel is the user's consent for the copy: macOS will not run a program a sandboxed app wrote by itself.
+    /// The save panel is the user's choice of where the link goes: the App Sandbox lets the app write only there.
+    /// Nothing is copied; the link points to this app, which stays where the App Store put it.
     func install() {
         message = nil
-        do {
-            try installer.prepareForInstall()
-        } catch {
-            message = "古いコピーを取り除けませんでした: \(error.localizedDescription)"
-            refresh()
-            return
-        }
+        let fileManager = FileManager.default
+        let folder = InputMethodInstaller.folder
+        let folderExists = fileManager.fileExists(atPath: folder.path)
         let panel = NSSavePanel()
-        panel.directoryURL = InputMethodInstaller.folder
-        panel.nameFieldStringValue = InputMethodInstaller.installedURL.lastPathComponent
-        panel.canCreateDirectories = false
-        panel.prompt = "インストール"
-        panel.title = "Astelio IME をインストール"
-        panel.message = "「Input Methods」フォルダーのまま［インストール］を押してください。"
+        panel.canCreateDirectories = true
+        panel.showsHiddenFiles = false
+        panel.prompt = "追加"
+        panel.title = "Astelio IME を入力ソースに追加"
+        if folderExists {
+            panel.directoryURL = folder
+            panel.nameFieldStringValue = InputMethodInstaller.linkURL.lastPathComponent
+            panel.message = "「Input Methods」フォルダーに Astelio へのリンクを置きます（アプリはコピーしません）。このまま［追加］を押してください。"
+        } else {
+            // A new user has no Input Methods folder yet: the user creates it here, and the link goes inside.
+            panel.directoryURL = folder.deletingLastPathComponent()
+            panel.nameFieldStringValue = folder.lastPathComponent
+            panel.message = "「ライブラリ」に「Input Methods」フォルダーを作り、その中に Astelio へのリンクを置きます（アプリはコピーしません）。このまま［追加］を押してください。"
+        }
+        NSApp.activate(ignoringOtherApps: true)
         guard panel.runModal() == .OK, let destination = panel.url else {
             refresh()
             return
         }
-        guard destination.deletingLastPathComponent().lastPathComponent == "Input Methods" else {
-            message = "保存先は「Input Methods」フォルダーにしてください（ライブラリ内の Input Methods）。"
+        let expected = folderExists ? InputMethodInstaller.linkURL : folder
+        guard destination.standardizedFileURL.path == expected.standardizedFileURL.path else {
+            message = "場所や名前を変えずに［追加］を押してください（\(expected.path)）。"
             refresh()
             return
         }
         do {
-            try installer.copy(to: destination)
+            try installer.makeLink(at: destination)
         } catch {
-            message = "コピーできませんでした: \(error.localizedDescription)"
-            manualInstall = true
-            refresh()
-            return
-        }
-        guard installer.canRun(destination) else {
-            // The system would refuse to start this copy; the Finder's copy is fine.
-            installer.removeInstalledCopy()
-            manualInstall = true
-            message = "この Mac では、アプリが自分でコピーしたものは起動できませんでした。下の手順で、Finder からコピーしてください。"
+            message = "リンクを作れませんでした: \(error.localizedDescription)"
             refresh()
             return
         }
@@ -122,26 +125,37 @@ final class SetupModel: ObservableObject {
         if outcome.registerStatus != noErr {
             message = "入力ソースへの登録が失敗しました（エラー \(outcome.registerStatus)）。ログアウトして入り直してから、もう一度お試しください。"
         } else if !outcome.listed {
-            message = "インストールしました。入力ソースの一覧に出るまで少し時間がかかります。出ないときは、一度ログアウトして入り直してください。"
+            message = "追加しました。入力ソースの一覧に出るまで少し時間がかかります。出ないときは、一度ログアウトして入り直してください。"
         }
         refresh()
+        if status == .needsEnabling {
+            openKeyboardSettings()
+        }
     }
 
-    /// Opens the Input Methods folder and shows this app, so the user can drag it across (the Finder's copy runs).
+    /// Registers the input source and asks macOS to turn it on; when macOS leaves that to the user, opens the
+    /// keyboard settings where the user adds it.
+    func turnOn() {
+        message = nil
+        let outcome = installer.register()
+        refresh()
+        if status != .ready {
+            if outcome.registerStatus != noErr {
+                message = "入力ソースへの登録が失敗しました（エラー \(outcome.registerStatus)）。"
+            }
+            openKeyboardSettings()
+        }
+    }
+
+    /// Shows the link (or a copy of the app left by an older version) in the Finder, to be moved to the Trash.
     func showInFinder() {
-        manualInstall = true
-        try? FileManager.default.createDirectory(at: InputMethodInstaller.folder, withIntermediateDirectories: true)
-        NSWorkspace.shared.open(InputMethodInstaller.folder)
-        NSWorkspace.shared.activateFileViewerSelecting([Bundle.main.bundleURL])
+        installer.revealInFinder()
     }
 
     func uninstall() {
-        do {
-            try installer.uninstall()
-            message = "取り除きました。履歴とユーザー辞書は残っています。"
-        } catch {
-            message = "取り除けませんでした: \(error.localizedDescription)"
-        }
+        installer.disable()
+        message = "入力ソースから外しました。Finder で選ばれている「AstelioIME.app」（Input Methods フォルダー内のリンク）をゴミ箱に入れると、取り除けます。履歴とユーザー辞書は残っています。"
+        installer.revealInFinder()
         refresh()
     }
 

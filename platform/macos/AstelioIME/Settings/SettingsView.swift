@@ -5,21 +5,31 @@ private let accent = Color(red: 0.31, green: 0.62, blue: 0.43)
 
 struct SettingsView: View {
     @StateObject private var setup = SetupModel()
+    @State private var tab: Int
+
+    init(tab: Int = 0) {
+        _tab = State(initialValue: tab)
+    }
 
     var body: some View {
         VStack(spacing: 0) {
             Header(status: setup.status)
-            TabView {
+            TabView(selection: $tab) {
                 SetupTab(setup: setup)
                     .tabItem { Label("はじめに", systemImage: "checklist") }
+                    .tag(0)
                 TypingTab()
                     .tabItem { Label("入力", systemImage: "keyboard") }
+                    .tag(1)
                 HistoryTab()
                     .tabItem { Label("履歴", systemImage: "clock.arrow.circlepath") }
+                    .tag(2)
                 DictionaryTab()
                     .tabItem { Label("ユーザー辞書", systemImage: "character.book.closed") }
+                    .tag(3)
                 AboutTab(version: setup.currentVersion)
                     .tabItem { Label("情報", systemImage: "info.circle") }
+                    .tag(4)
             }
             .padding(.horizontal, 8)
             .padding(.bottom, 8)
@@ -41,7 +51,7 @@ private struct Header: View {
                 Text("Astelio IME")
                     .font(.system(size: 24, weight: .semibold))
                     .foregroundStyle(.white)
-                Text("日本語入力。変換も履歴も、すべて Mac の中だけで動きます。")
+                Text("日本語入力。変換も履歴も、すべてこのコンピューターの中だけで動きます。")
                     .font(.system(size: 12))
                     .foregroundStyle(Color(white: 0.8))
             }
@@ -61,8 +71,8 @@ private struct Badge: View {
         let (text, color): (String, Color) = switch status {
         case .ready: ("使えます", Color(red: 0.55, green: 0.85, blue: 0.62))
         case .needsEnabling: ("キーボードへの追加が必要", .orange)
-        case .needsUpdate: ("更新が必要", .orange)
-        case .notInstalled: ("未インストール", Color(white: 0.75))
+        case .needsRepair: ("入れ直しが必要", .orange)
+        case .notInstalled: ("入力ソースに未追加", Color(white: 0.75))
         }
         Text(text)
             .font(.system(size: 12, weight: .semibold))
@@ -80,37 +90,43 @@ private struct SetupTab: View {
     @State private var trial = ""
     @State private var confirmRemove = false
 
-    private var installed: Bool { setup.status != .notInstalled && setup.status != .needsUpdate }
+    private var installed: Bool { setup.status == .needsEnabling || setup.status == .ready }
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 14) {
-                Step(number: 1, title: "入力メソッドをインストール", done: installed,
-                     detail: "Astelio IME 本体を、このユーザーの「~/Library/Input Methods」に入れます（管理者のパスワードは要りません）。") {
-                    HStack {
-                        Button(setup.status == .needsUpdate ? "更新する" : installed ? "入れ直す" : "インストール") {
-                            setup.install()
-                        }
-                        .buttonStyle(.borderedProminent)
-                        .tint(accent)
-                        if let installedVersion = setup.installedVersion {
-                            Text("入っている版: \(installedVersion)")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
+                HStack {
+                    Text("はじめての方は、アニメーション付きのウィザードで順番に設定できます。")
+                        .font(.callout).foregroundStyle(.secondary)
+                    Spacer()
+                    Button("セットアップウィザードを開く") {
+                        (NSApp.delegate as? SettingsAppDelegate)?.showWizard()
                     }
-                    if setup.manualInstall || setup.status == .notInstalled {
-                        DisclosureGroup("うまくいかないとき: Finder で入れる", isExpanded: $setup.manualInstall) {
+                }
+                if InputMethodInstaller.runsFromInputMethods {
+                    Step(number: 1, title: "入力ソースの一覧に出す", done: installed,
+                         detail: "インストーラーで「\(Bundle.main.bundleURL.deletingLastPathComponent().path)」に入れてあります。") {
+                        EmptyView()
+                    }
+                } else {
+                    Step(number: 1, title: "入力ソースの一覧に出す", done: installed,
+                         detail: "macOS は「~/Library/Input Methods」にあるものだけを入力ソースとして扱います。保存パネルで［追加］を押すと、そこにこのアプリへのリンクを置きます。アプリのコピーやダウンロードはしません（管理者のパスワードも要りません）。") {
+                        HStack {
+                            Button(setup.status == .needsRepair ? "入れ直す" : installed ? "もう一度追加" : "入力ソースに追加…") {
+                                setup.install()
+                            }
+                            .buttonStyle(.borderedProminent)
+                            .tint(accent)
+                        }
+                        if setup.status == .needsRepair {
                             VStack(alignment: .leading, spacing: 8) {
-                                Text("① 下のボタンで、Finder に「Input Methods」フォルダーと、選ばれた AstelioIME.app が出ます。\n② AstelioIME.app を ⌘C でコピーし、Input Methods のウインドウで ⌘V で貼り付けます（エイリアスではなく、アプリそのものを入れてください）。\n③ このウインドウが自動で気づいて登録します。")
+                                Text("「Input Methods」に、以前の版が入れた AstelioIME.app のコピーがあります。［入れ直す］で保存パネルの［置き換える］を選ぶと、コピーの代わりにリンクを置きます。うまくいかないときは、下のボタンで Finder に出るコピーをゴミ箱に入れてから、もう一度［入れ直す］を押してください。")
                                     .font(.caption)
                                     .foregroundStyle(.secondary)
                                     .fixedSize(horizontal: false, vertical: true)
-                                Button("Finder で開く") { setup.showInFinder() }
+                                Button("Finder で表示") { setup.showInFinder() }
                             }
-                            .padding(.top, 4)
                         }
-                        .font(.callout)
                     }
                 }
 
@@ -158,7 +174,7 @@ private struct SetupTab: View {
                         .background(RoundedRectangle(cornerRadius: 6).fill(Color.orange.opacity(0.15)))
                 }
 
-                if setup.status != .notInstalled {
+                if installed {
                     HStack {
                         Spacer()
                         Button("入力メソッドを取り除く…", role: .destructive) { confirmRemove = true }
@@ -166,7 +182,9 @@ private struct SetupTab: View {
                             .confirmationDialog("Astelio IME を取り除きますか？", isPresented: $confirmRemove) {
                                 Button("取り除く", role: .destructive) { setup.uninstall() }
                             } message: {
-                                Text("入力の履歴とユーザー辞書は残ります。この設定アプリも消すと、すべてなくなります。")
+                                Text(InputMethodInstaller.runsFromInputMethods
+                                     ? "入力ソースから外し、Finder で Astelio を表示します（ゴミ箱に入れるには管理者のパスワードが要ります）。入力の履歴とユーザー辞書は残ります。"
+                                     : "入力ソースから外し、Input Methods のリンクを Finder で表示します（ゴミ箱に入れてください）。入力の履歴とユーザー辞書は残ります。")
                             }
                     }
                 }
@@ -276,7 +294,7 @@ private struct HistoryTab: View {
                 Toggle("入力の履歴を使って変換と予測を良くする", isOn: $learningEnabled)
                 Toggle("履歴の記録を一時停止する（シークレットモード）", isOn: $learningPaused)
                     .disabled(!learningEnabled)
-                Text("履歴はこの Mac の中だけに保存され、外部には送りません。パスワード欄では記録しません。")
+                Text("履歴はこのコンピューターの中だけに保存され、外部には送りません。パスワード欄では記録しません。")
                     .font(.caption).foregroundStyle(.secondary)
             }
             Section("データ") {
