@@ -89,7 +89,29 @@ pkgbuild --root "$root_dir" --component-plist "$work/components.plist" --install
     --scripts "$root/tools/macos-pkg-scripts" --identifier "com.geekfujiwara.inputmethod.Astelio.pkg" \
     --version "$version.$build_number" "$work/component.pkg"
 package="$root/build/Astelio-$version-$build_number.pkg"
-productbuild --package "$work/component.pkg" --sign "$installer_sha1" --timestamp "$package"
+# The installer's pages (tools/macos-pkg-resources): welcome with what happens and why, the license, a background
+# with the icon, and the last page pointing to the setup wizard that postinstall opens.
+productbuild --synthesize --package "$work/component.pkg" "$work/distribution.xml"
+python3 - "$work/distribution.xml" "$version" <<'PY'
+import sys
+path, version = sys.argv[1], sys.argv[2]
+text = open(path, encoding="utf-8").read()
+pages = f"""    <title>Astelio {version}</title>
+    <welcome file="welcome.html" mime-type="text/html"/>
+    <license file="license.html" mime-type="text/html"/>
+    <conclusion file="conclusion.html" mime-type="text/html"/>
+    <background file="background.png" alignment="bottomleft" scaling="none"/>
+    <background-darkAqua file="background-dark.png" alignment="bottomleft" scaling="none"/>
+    <domains enable_anywhere="false" enable_currentUserHome="false" enable_localSystem="true"/>
+    <allowed-os-versions><os-version min="14.0"/></allowed-os-versions>
+"""
+text = text.replace('<options customize="never"', pages + '    <options customize="never"', 1)
+text = text.replace('minSpecVersion="1"', 'minSpecVersion="2"', 1)
+open(path, "w", encoding="utf-8").write(text)
+PY
+grep -q "<welcome" "$work/distribution.xml" || { echo "The distribution file has no welcome page." >&2; exit 1; }
+productbuild --distribution "$work/distribution.xml" --resources "$root/tools/macos-pkg-resources" \
+    --package-path "$work" --sign "$installer_sha1" --timestamp "$package"
 pkgutil --check-signature "$package" | head -n 5
 
 if [[ $notarize -eq 1 ]]; then
